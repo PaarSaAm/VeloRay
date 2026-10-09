@@ -4,6 +4,7 @@ set -Eeuo pipefail
 project="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 TEST_ROOT="$(mktemp -d)";export TEST_ROOT
 trap 'rm -rf -- "$TEST_ROOT"' EXIT
+trap 'printf "Installer test failed at line %s.\n" "$LINENO" >&2; for output in "$TEST_ROOT/result" "$TEST_ROOT/host-result";do [[ ! -f "$output" ]]||tail -n 20 "$output" >&2;done' ERR
 mkdir -p "$TEST_ROOT/commands" "$TEST_ROOT/fixture/scripts" "$TEST_ROOT/fixture/frontend" "$TEST_ROOT/fixture/deploy/node"
 printf 'ID=ubuntu\nVERSION_ID=24.04\n' >"$TEST_ROOT/os-release"
 sed -e 's|source /etc/os-release|source "$TEST_ROOT/os-release"|' \
@@ -22,12 +23,17 @@ printf '#!/usr/bin/env bash\nexit 0\n' >"bin/linux-$1/veloray"
 cp "bin/linux-$1/veloray" "bin/linux-$1/veloray-agent"
 chmod +x "bin/linux-$1/"*
 touch frontend/dist/index.html
+(cd "bin/linux-$1" && sha256sum veloray veloray-agent >SHA256SUMS)
 echo "build=$1" >>"$TEST_ROOT/calls"
 BUILD
 cat >"$TEST_ROOT/fixture/scripts/install-panel.sh" <<'PANEL'
 #!/usr/bin/env bash
-test -f "$VELORAY_XRAY_ARCHIVE"
-printf '%s  %s\n' "$VELORAY_XRAY_SHA256" "$VELORAY_XRAY_ARCHIVE" | sha256sum -c - >/dev/null
+if [[ -n "${VELORAY_XRAY_DIRECTORY:-}" ]];then
+ (cd "$VELORAY_XRAY_DIRECTORY" && sha256sum -c SHA256SUMS >/dev/null)
+else
+ test -f "$VELORAY_XRAY_ARCHIVE"
+ printf '%s  %s\n' "$VELORAY_XRAY_SHA256" "$VELORAY_XRAY_ARCHIVE" | sha256sum -c - >/dev/null
+fi
 echo "panel=$VELORAY_INSTALL_LANG" >>"$TEST_ROOT/calls"
 PANEL
 sed 's/panel=/node=/' "$TEST_ROOT/fixture/scripts/install-panel.sh" >"$TEST_ROOT/fixture/deploy/node/install.sh"
@@ -40,8 +46,11 @@ printf '#!/usr/bin/env bash\necho v24.21.0\n' >"$TEST_ROOT/node-v24.21.0-linux-a
 printf '#!/usr/bin/env bash\nexit 0\n' >"$TEST_ROOT/node-v24.21.0-linux-arm64/bin/npm"
 chmod +x "$TEST_ROOT/go/bin/go" "$TEST_ROOT/node-v24.21.0-linux-arm64/bin/"*
 tar -czf "$TEST_ROOT/go.tar.gz" -C "$TEST_ROOT" go
+sed -i 's/go1.27.2/go1.26.9/' "$TEST_ROOT/go/bin/go"
+tar -czf "$TEST_ROOT/go-fallback.tar.gz" -C "$TEST_ROOT" go
 tar -cJf "$TEST_ROOT/node.tar.xz" -C "$TEST_ROOT" node-v24.21.0-linux-arm64
 export TEST_GO_SHA="$(sha256sum "$TEST_ROOT/go.tar.gz" | cut -d' ' -f1)" TEST_NODE_SHA="$(sha256sum "$TEST_ROOT/node.tar.xz" | cut -d' ' -f1)"
+export TEST_GO_FALLBACK_SHA="$(sha256sum "$TEST_ROOT/go-fallback.tar.gz" | cut -d' ' -f1)"
 cat >"$TEST_ROOT/commands/curl" <<'CURL'
 #!/usr/bin/env bash
 set -e
@@ -49,11 +58,20 @@ url='';destination=''
 while [[ $# -gt 0 ]];do case "$1" in -o) destination="$2";shift 2;;https://*) url="$1";shift;;*) shift;;esac;done
 echo "$url" >>"$TEST_ROOT/requests"
 case "$url" in
- https://go.dev/dl/\?mode=json) printf '[{"stable":true,"files":[{"os":"linux","arch":"arm64","kind":"archive","version":"go1.27.2","filename":"go1.27.2.linux-arm64.tar.gz","sha256":"%s"}]}]' "$TEST_GO_SHA" >"$destination";;
- https://go.dev/dl/go1.27.2.linux-arm64.tar.gz) if [[ "${TEST_BAD_GO_DIGEST:-}" == 1 ]];then printf broken >"$destination";else cp "$TEST_ROOT/go.tar.gz" "$destination";fi;;
+ https://go.dev/dl/\?mode=json) printf '[{"stable":true,"version":"go1.27.2","files":[{"os":"linux","arch":"arm64","kind":"archive","filename":"go1.27.2.linux-arm64.tar.gz","sha256":"%s"}]},{"stable":true,"version":"go1.26.9","files":[{"os":"linux","arch":"arm64","kind":"archive","filename":"go1.26.9.linux-arm64.tar.gz","sha256":"%s"}]}]' "$TEST_GO_SHA" "$TEST_GO_FALLBACK_SHA" >"$destination";;
+ https://*/go1.27.2.linux-arm64.tar.gz)
+  [[ "${TEST_GO_ROUTE:-}" != unavailable && "${TEST_GO_ROUTE:-}" != previous ]]||exit 22
+  [[ "${TEST_GO_ROUTE:-}" != mirror || "$url" != https://dl.google.com/* ]]||exit 22
+  if [[ "${TEST_BAD_GO_DIGEST:-}" == 1 ]];then printf broken >"$destination";else cp "$TEST_ROOT/go.tar.gz" "$destination";fi;;
+ https://*/go1.26.9.linux-arm64.tar.gz)
+  [[ "${TEST_GO_ROUTE:-}" != unavailable ]]||exit 22
+  cp "$TEST_ROOT/go-fallback.tar.gz" "$destination";;
  https://nodejs.org/dist/index.json) printf '[{"version":"v24.21.0","lts":"Krypton","files":["linux-arm64"]}]' >"$destination";;
- */SHASUMS256.txt) printf '%s  node-v24.21.0-linux-arm64.tar.xz\n' "$TEST_NODE_SHA" >"$destination";;
- */node-v24.21.0-linux-arm64.tar.xz) cp "$TEST_ROOT/node.tar.xz" "$destination";;
+ */SHASUMS256.txt)
+  [[ "${TEST_NODE_ROUTE:-}" != mirror || "$url" != https://nodejs.org/dist/* ]]||exit 22
+  printf '%s  node-v24.21.0-linux-arm64.tar.xz\n' "$TEST_NODE_SHA" >"$destination";;
+ */node-v24.21.0-linux-arm64.tar.xz)
+  if [[ "${TEST_BAD_NODE_DIGEST:-}" == 1 ]];then printf broken >"$destination";else cp "$TEST_ROOT/node.tar.xz" "$destination";fi;;
  */commits/*) printf '{"sha":"1111111111111111111111111111111111111111"}' >"$destination";;
  https://codeload.github.com/PaarSaAm/VeloRay/tar.gz/*)
   [[ "${TEST_SOURCE_ROUTE:-direct}" == direct ]]||exit 22
@@ -88,7 +106,7 @@ NODE
 printf '#!/usr/bin/env bash\nexit 0\n' >"$TEST_ROOT/commands/npm"
 chmod +x "$TEST_ROOT/commands/"*
 export PATH="$TEST_ROOT/commands:$PATH" VELORAY_PUBLIC_HOST=panel.example.com VELORAY_ADMIN_PASSWORD=test-only-password
-unset VELORAY_XRAY_ARCHIVE VELORAY_XRAY_SHA256 VELORAY_REPO VELORAY_REF TEST_SOURCE_ROUTE || true
+unset VELORAY_XRAY_ARCHIVE VELORAY_XRAY_DIRECTORY VELORAY_XRAY_SHA256 VELORAY_REPO VELORAY_REF TEST_SOURCE_ROUTE TEST_GO_ROUTE TEST_NODE_ROUTE || true
 passed=0
 pass() { passed=$((passed+1));printf 'PASS %s\n' "$1"; }
 reject() {
@@ -140,6 +158,33 @@ bash -c "$(cat "$TEST_ROOT/bootstrap.sh")" @ install >"$TEST_ROOT/result" 2>&1
 test -x "$TEST_ROOT/toolchains/go1.27.2/go/bin/go"
 test -x "$TEST_ROOT/toolchains/node-v24.21.0-linux-arm64/bin/node"
 pass build-tool-downloads
+: >"$TEST_ROOT/requests"
+bash -c "$(cat "$TEST_ROOT/bootstrap.sh")" @ install >"$TEST_ROOT/result" 2>&1
+if grep -Eq 'go.dev|dl.google.com|nodejs.org' "$TEST_ROOT/requests";then echo 'Cached tools were downloaded again' >&2;exit 1;fi
+pass cached-build-tools
+for route in mirror previous;do
+ rm -rf -- "$TEST_ROOT/toolchains"
+ export TEST_GO_ROUTE="$route"
+ bash -c "$(cat "$TEST_ROOT/bootstrap.sh")" @ install >"$TEST_ROOT/result" 2>&1
+ version=go1.27.2;[[ "$route" != previous ]]||version=go1.26.9
+ test -x "$TEST_ROOT/toolchains/$version/go/bin/go"
+ pass "go-$route-fallback"
+done
+rm -rf -- "$TEST_ROOT/toolchains"
+export TEST_GO_ROUTE=unavailable
+if bash -c "$(cat "$TEST_ROOT/bootstrap.sh")" @ install >"$TEST_ROOT/result" 2>&1;then echo 'Unavailable Go accepted' >&2;exit 1;fi
+grep -Fq 'Cannot download a verified Go compiler' "$TEST_ROOT/result";pass go-download-failure
+unset TEST_GO_ROUTE
+export TEST_NODE_ROUTE=mirror
+bash -c "$(cat "$TEST_ROOT/bootstrap.sh")" @ install >"$TEST_ROOT/result" 2>&1
+grep -Fq 'nodejs.org/download/release/' "$TEST_ROOT/requests";pass node-mirror-fallback
+unset TEST_NODE_ROUTE
+rm -rf -- "$TEST_ROOT/toolchains"
+export TEST_BAD_NODE_DIGEST=1
+if bash -c "$(cat "$TEST_ROOT/bootstrap.sh")" @ install >"$TEST_ROOT/result" 2>&1;then echo 'Bad Node checksum accepted' >&2;exit 1;fi
+grep -Fq 'checksum mismatch' "$TEST_ROOT/result";pass node-checksum-rejection
+unset TEST_BAD_NODE_DIGEST
+rm -rf -- "$TEST_ROOT/toolchains"
 export TEST_BAD_GO_DIGEST=1
 if bash -c "$(cat "$TEST_ROOT/bootstrap.sh")" @ install >"$TEST_ROOT/result" 2>&1;then echo 'Bad Go checksum accepted' >&2;exit 1;fi
 grep -Fq 'checksum mismatch' "$TEST_ROOT/result";pass build-tool-checksum-rejection
@@ -148,8 +193,173 @@ export TEST_BAD_DIGEST=1
 if bash -c "$(cat "$TEST_ROOT/bootstrap.sh")" @ install >"$TEST_ROOT/result" 2>&1;then echo 'Bad checksum accepted' >&2;exit 1;fi
 grep -Fq 'checksum mismatch' "$TEST_ROOT/result";pass checksum-rejection
 unset TEST_BAD_DIGEST
+cat >"$TEST_ROOT/fixture/scripts/build-runtime.sh" <<'MANIFEST'
+#!/usr/bin/env bash
+cd "$(dirname "$0")/.."
+sha256sum go.mod
+MANIFEST
+mkdir -p "$TEST_ROOT/fixture/runtime"
+for arch in amd64 arm64;do
+ bash "$TEST_ROOT/fixture/scripts/build.sh" "$arch"
+ bundle="$TEST_ROOT/bundle-$arch"
+ mkdir -p "$bundle/bin" "$bundle/frontend" "$bundle/xray"
+ cp -a "$TEST_ROOT/fixture/bin/linux-$arch" "$bundle/bin/"
+ cp -a "$TEST_ROOT/fixture/frontend/dist" "$bundle/frontend/"
+ printf '#!/usr/bin/env bash\nexit 0\n' >"$bundle/xray/xray";chmod +x "$bundle/xray/xray"
+ printf fixture >"$bundle/xray/geoip.dat";cp "$bundle/xray/geoip.dat" "$bundle/xray/geosite.dat"
+ (cd "$bundle/xray" && sha256sum xray geoip.dat geosite.dat >SHA256SUMS)
+ bash "$TEST_ROOT/fixture/scripts/build-runtime.sh" --manifest >"$bundle/source.SHA256SUMS"
+ tar -cJf "$TEST_ROOT/fixture/runtime/linux-$arch.tar.xz" -C "$bundle" bin frontend xray source.SHA256SUMS
+done
+(cd "$TEST_ROOT/fixture/runtime" && sha256sum linux-*.tar.xz >SHA256SUMS)
+rm -rf -- "$TEST_ROOT/fixture/bin" "$TEST_ROOT/fixture/frontend/dist"
+tar -czf "$TEST_ROOT/source.tar.gz" -C "$TEST_ROOT" fixture
+export TEST_OLD_TOOLS=1 TEST_GO_ROUTE=unavailable
+for machine in x86_64 aarch64;do
+ export TEST_MACHINE="$machine"
+ for mode in install node;do
+  : >"$TEST_ROOT/calls";: >"$TEST_ROOT/requests"
+  bash -c "$(cat "$TEST_ROOT/bootstrap.sh")" @ "$mode" >"$TEST_ROOT/result" 2>&1
+  grep -Fq 'Using verified' "$TEST_ROOT/result"
+  if grep -Eq 'go.dev|dl.google.com|nodejs.org|XTLS' "$TEST_ROOT/requests" || grep -Fq build= "$TEST_ROOT/calls";then echo 'Bundled runtime unexpectedly required external tools' >&2;exit 1;fi
+  pass "bundled-$mode/$machine"
+ done
+done
+unset TEST_OLD_TOOLS TEST_GO_ROUTE
+printf '# source changed\n' >>"$TEST_ROOT/fixture/go.mod"
+tar -czf "$TEST_ROOT/source.tar.gz" -C "$TEST_ROOT" fixture
+: >"$TEST_ROOT/calls"
+bash -c "$(cat "$TEST_ROOT/bootstrap.sh")" @ install >"$TEST_ROOT/result" 2>&1
+grep -Fq 'Source files changed' "$TEST_ROOT/result"
+grep -Fq 'build=arm64' "$TEST_ROOT/calls";pass stale-runtime-rebuilt
+sed -i '$d' "$TEST_ROOT/fixture/go.mod"
+cp "$TEST_ROOT/fixture/runtime/linux-arm64.tar.xz" "$TEST_ROOT/good-runtime.tar.xz"
+printf corrupt >>"$TEST_ROOT/fixture/runtime/linux-arm64.tar.xz"
+tar -czf "$TEST_ROOT/source.tar.gz" -C "$TEST_ROOT" fixture
+if bash -c "$(cat "$TEST_ROOT/bootstrap.sh")" @ install >"$TEST_ROOT/result" 2>&1;then echo 'Corrupt runtime accepted' >&2;exit 1;fi
+grep -Fq 'checksum mismatch' "$TEST_ROOT/result";pass runtime-checksum-rejection
+cp "$TEST_ROOT/good-runtime.tar.xz" "$TEST_ROOT/fixture/runtime/linux-arm64.tar.xz"
 ln -s /etc/passwd "$TEST_ROOT/fixture/unsafe-link"
 tar -czf "$TEST_ROOT/source.tar.gz" -C "$TEST_ROOT" fixture
 if bash -c "$(cat "$TEST_ROOT/bootstrap.sh")" @ install >"$TEST_ROOT/result" 2>&1;then echo 'Unsafe archive accepted' >&2;exit 1;fi
 grep -Fq 'links or special files' "$TEST_ROOT/result";pass archive-link-rejection
+
+# Execute the real host installer and controller against a private filesystem.
+# Service management and PostgreSQL CLI commands are simulated; no host files change.
+HOST_ROOT="$TEST_ROOT/host";export HOST_ROOT
+host_project="$TEST_ROOT/host-project";mkdir -p "$host_project/scripts" "$host_project/bin/linux-amd64" "$host_project/frontend/dist" "$TEST_ROOT/host-tools"
+cp -a "$project/deploy" "$host_project/"
+cp "$project/go.mod" "$host_project/";cp "$project/install.sh" "$host_project/"
+cp "$project/frontend/"package{,-lock}.json "$host_project/frontend/"
+touch "$host_project/frontend/dist/index.html"
+for script in scripts/install-panel.sh scripts/velorayctl scripts/xray-install.sh;do
+ sed -e '/^\[\[ ${EUID:/d' -e "s|/etc/|$HOST_ROOT/etc/|g" -e "s|/opt/|$HOST_ROOT/opt/|g" -e "s|/usr/local/|$HOST_ROOT/usr/local/|g" -e "s|/var/lib/|$HOST_ROOT/var/lib/|g" "$project/$script" >"$host_project/$script"
+done
+cat >"$host_project/bin/linux-amd64/veloray" <<'APP'
+#!/usr/bin/env bash
+set -e
+echo "$1" >>"$HOST_ROOT/app-calls"
+case "$1" in
+ version) echo 0.1.0;;
+ bootstrap) [[ "${TEST_BOOTSTRAP_FAIL:-}" != 1 ]]||exit 1;touch "$HOST_ROOT/admin";;
+ backup) printf fixture-backup >"$2";;
+esac
+APP
+printf '#!/usr/bin/env bash\nexit 0\n' >"$host_project/bin/linux-amd64/veloray-agent"
+chmod +x "$host_project/bin/linux-amd64/"*
+(cd "$host_project/bin/linux-amd64" && sha256sum veloray veloray-agent >SHA256SUMS)
+cat >"$TEST_ROOT/host-tools/psql" <<'PG'
+#!/usr/bin/env bash
+set -e
+args="$*"
+if [[ "$args" == *'pg_roles'* && "$args" == *'pg_database'* ]];then
+ if [[ -f "$HOST_ROOT/role" || -f "$HOST_ROOT/database" ]];then echo t;else echo f;fi
+elif [[ "$args" == *'pg_roles'* ]];then
+ if [[ -f "$HOST_ROOT/role" ]];then echo t;else echo f;fi
+elif [[ "$args" == *'pg_database'* ]];then
+ if [[ -f "$HOST_ROOT/database" ]];then echo t;else echo f;fi
+elif [[ "$args" == *'vr_users'* ]];then
+ if [[ -f "$HOST_ROOT/admin" ]];then echo t;else echo f;fi
+elif [[ "$args" == *'core_node'* ]];then echo f
+else
+ sql="$(cat)"
+ [[ "$sql" == *'CREATE ROLE veloray'* ]]
+ test -f "$HOST_ROOT/etc/veloray/veloray.env"
+ touch "$HOST_ROOT/role"
+fi
+PG
+cat >"$TEST_ROOT/host-tools/createdb" <<'DB'
+#!/usr/bin/env bash
+test -f "$HOST_ROOT/etc/veloray/veloray.env"
+touch "$HOST_ROOT/database"
+DB
+cat >"$TEST_ROOT/host-tools/runuser" <<'RUNUSER'
+#!/usr/bin/env bash
+shift 3;exec "$@"
+RUNUSER
+cat >"$TEST_ROOT/host-tools/install" <<'INSTALL'
+#!/usr/bin/env bash
+args=()
+while [[ $# -gt 0 ]];do case "$1" in -o|-g) shift 2;;*) args+=("$1");shift;;esac;done
+exec /usr/bin/install "${args[@]}"
+INSTALL
+cat >"$TEST_ROOT/host-tools/curl" <<'HEALTH'
+#!/usr/bin/env bash
+[[ "${TEST_HEALTH_FAIL:-}" != 1 ]]||exit 22
+echo '{"status":"ok"}'
+HEALTH
+for command in chown id systemctl nginx journalctl sleep;do printf '#!/usr/bin/env bash\nexit 0\n' >"$TEST_ROOT/host-tools/$command";done
+printf '#!/usr/bin/env bash\nprintf fixture-dump\n' >"$TEST_ROOT/host-tools/pg_dump"
+chmod +x "$TEST_ROOT/host-tools/"*
+bootstrap_test_path="$PATH"
+export PATH="$HOST_ROOT/usr/local/bin:$TEST_ROOT/host-tools:$PATH" TEST_MACHINE=x86_64
+reset_host() {
+ rm -rf -- "$HOST_ROOT"
+ mkdir -p "$HOST_ROOT/usr/local/bin" "$HOST_ROOT/opt/veloray" "$HOST_ROOT/etc/systemd/system"
+ printf '#!/usr/bin/env bash\nexit 0\n' >"$HOST_ROOT/usr/local/bin/xray";chmod +x "$HOST_ROOT/usr/local/bin/xray"
+}
+host_install() { bash "$host_project/scripts/install-panel.sh" >"$TEST_ROOT/host-result" 2>&1; }
+reset_host
+host_install
+test -f "$HOST_ROOT/admin";test -f "$HOST_ROOT/database";test -f "$HOST_ROOT/role"
+original_env="$(sha256sum "$HOST_ROOT/etc/veloray/veloray.env")"
+pass host-fresh-install
+: >"$HOST_ROOT/app-calls"
+host_install
+[[ "$(sha256sum "$HOST_ROOT/etc/veloray/veloray.env")" == "$original_env" ]]
+grep -Fxq backup "$HOST_ROOT/app-calls"
+if grep -Fxq bootstrap "$HOST_ROOT/app-calls";then echo 'Upgrade reset the administrator' >&2;exit 1;fi
+pass host-repeat-keeps-secrets
+reset_host
+export TEST_BOOTSTRAP_FAIL=1
+if host_install;then echo 'Interrupted bootstrap accepted' >&2;exit 1;fi
+test -f "$HOST_ROOT/etc/veloray/veloray.env";test -f "$HOST_ROOT/database";test ! -f "$HOST_ROOT/admin"
+original_env="$(sha256sum "$HOST_ROOT/etc/veloray/veloray.env")"
+unset TEST_BOOTSTRAP_FAIL
+host_install
+test -f "$HOST_ROOT/admin"
+[[ "$(sha256sum "$HOST_ROOT/etc/veloray/veloray.env")" == "$original_env" ]]
+pass host-interrupted-install-resumes
+mkdir -p "$HOST_ROOT/var/lib/veloray-agent"
+printf ledger >"$HOST_ROOT/var/lib/veloray-agent/state.json"
+printf 'CANCEL\n' | bash "$HOST_ROOT/usr/local/bin/velorayctl" uninstall >"$TEST_ROOT/host-result" 2>&1
+test -d "$HOST_ROOT/opt/veloray";pass uninstall-cancel
+printf 'REMOVE\n' | bash "$HOST_ROOT/usr/local/bin/velorayctl" uninstall >"$TEST_ROOT/host-result" 2>&1
+test ! -d "$HOST_ROOT/opt/veloray"
+test -f "$HOST_ROOT/database";test -f "$HOST_ROOT/var/lib/veloray-agent/state.json"
+[[ "$(sha256sum "$HOST_ROOT/etc/veloray/veloray.env")" == "$original_env" ]]
+pass uninstall-keeps-data-and-keys
+host_install
+[[ "$(sha256sum "$HOST_ROOT/etc/veloray/veloray.env")" == "$original_env" ]]
+test -f "$HOST_ROOT/admin";pass reinstall-after-uninstall
+reset_host;touch "$HOST_ROOT/database" "$HOST_ROOT/role"
+if host_install;then echo 'Preserved database with lost keys accepted' >&2;exit 1;fi
+grep -Fq 'Restore this environment file from your backup' "$TEST_ROOT/host-result"
+test ! -f "$HOST_ROOT/etc/veloray/veloray.env";pass orphan-database-protected
+reset_host
+export VELORAY_PANEL_PORT=8610
+if host_install;then echo 'Reserved panel port accepted' >&2;exit 1;fi
+grep -Fq 'Invalid or reserved panel port' "$TEST_ROOT/host-result";pass reserved-panel-port
+unset VELORAY_PANEL_PORT
+export PATH="$bootstrap_test_path"
 printf '%s installer checks passed.\n' "$passed"

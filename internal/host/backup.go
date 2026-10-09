@@ -17,6 +17,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -271,6 +272,14 @@ func Verify(path string) (string, Manifest, error) {
 	return tmp, m, nil
 }
 func AtomicFile(path string, raw []byte, mode os.FileMode) error {
+	uid, gid := -1, -1
+	if info, err := os.Stat(path); err == nil {
+		if stat, ok := info.Sys().(*syscall.Stat_t); ok {
+			uid, gid = int(stat.Uid), int(stat.Gid)
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
 	if e := os.MkdirAll(filepath.Dir(path), 0700); e != nil {
 		return e
 	}
@@ -279,7 +288,10 @@ func AtomicFile(path string, raw []byte, mode os.FileMode) error {
 		return e
 	}
 	defer os.Remove(f.Name())
-	if e = f.Chmod(mode); e == nil {
+	if e = f.Chown(uid, gid); e == nil {
+		e = f.Chmod(mode)
+	}
+	if e == nil {
 		_, e = f.Write(raw)
 	}
 	if e == nil {

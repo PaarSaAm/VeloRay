@@ -8,9 +8,44 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 	"time"
 )
+
+func TestSetEnvPreservesServiceGroup(t *testing.T) {
+	groups, err := os.Getgroups()
+	if err != nil {
+		t.Fatal(err)
+	}
+	group := -1
+	for _, gid := range groups {
+		if gid != os.Getegid() {
+			group = gid
+			break
+		}
+	}
+	if group == -1 {
+		t.Skip("requires a supplementary group to reproduce service-group ownership")
+	}
+	path := filepath.Join(t.TempDir(), "veloray.env")
+	if err := os.WriteFile(path, []byte("VELORAY_PANEL_PORT=8443\n"), 0640); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chown(path, -1, group); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetEnv(path, "VELORAY_PANEL_PORT", "9443"); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if int(info.Sys().(*syscall.Stat_t).Gid) != group || info.Mode().Perm() != 0640 {
+		t.Fatal("configuration update changed the service group's read access")
+	}
+}
 
 func archive(t *testing.T, files map[string][]byte) string {
 	t.Helper()

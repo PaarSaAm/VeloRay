@@ -4,6 +4,18 @@ set -Eeuo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 source_dir="$PWD"
 prompt() { if [[ "${VELORAY_INSTALL_LANG:-en}" == fa ]];then printf '%s' "$2";else printf '%s' "$1";fi; }
+ensure_local_database() {
+ [[ -z "${DATABASE_URL:-}" && "${POSTGRES_HOST:-127.0.0.1}" =~ ^(127\.0\.0\.1|localhost)$ && "${POSTGRES_USER:-veloray}" == veloray && "${POSTGRES_DB:-veloray}" == veloray ]]||return 0
+ local present
+ present="$(runuser -u postgres -- psql -tAc "SELECT EXISTS(SELECT 1 FROM pg_roles WHERE rolname='veloray')")"
+ if [[ "${present//[[:space:]]/}" != t ]];then
+  runuser -u postgres -- psql -v ON_ERROR_STOP=1 --set=password="$POSTGRES_PASSWORD" <<'SQL'
+SELECT format('CREATE ROLE veloray WITH LOGIN PASSWORD %L', :'password') \gexec
+SQL
+ fi
+ present="$(runuser -u postgres -- psql -tAc "SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname='veloray')")"
+ [[ "${present//[[:space:]]/}" == t ]]||runuser -u postgres -- createdb -O veloray veloray
+}
 arch="$(uname -m)";case "$arch" in x86_64) arch=amd64;;aarch64|arm64) arch=arm64;;*) echo 'Unsupported CPU' >&2;exit 1;;esac
 [[ -f go.mod && -f frontend/package-lock.json ]]||{ echo 'Extract a complete VeloRay release first.' >&2;exit 1; }
 if [[ ! -x "bin/linux-$arch/veloray" || ! -f frontend/dist/index.html ]];then bash scripts/build.sh "$arch";fi
@@ -17,7 +29,8 @@ chown root:veloray /etc/veloray
 install -d -m 0700 /var/lib/veloray-agent
 install -d -m 0755 /opt/veloray/releases /usr/local/etc/xray /etc/nginx/sites-available /etc/nginx/sites-enabled
 version="$(bin/linux-$arch/veloray version)"
-release="/opt/veloray/releases/$version-$(date -u +%Y%m%dT%H%M%SZ)"
+release="$(mktemp -d "/opt/veloray/releases/$version-$(date -u +%Y%m%dT%H%M%SZ)-XXXXXX")"
+chmod 0755 "$release"
 mkdir -p "$release/frontend"
 cp -a frontend/dist "$release/frontend/"
 cp -a frontend/package-lock.json frontend/package.json "$release/frontend/"
@@ -33,6 +46,7 @@ if [[ -f /etc/veloray/veloray.env ]];then
  [[ "${POSTGRES_HOST:-}" != 127.0.1.0 ]]||export POSTGRES_HOST=127.0.0.1
  # Database and encryption keys are preserved. No account reset during upgrades.
  [[ -n "${VELORAY_FIELD_KEY:-}" && -n "${VELORAY_SECRET_KEY:-}" ]]||{ echo 'Existing secrets are missing.' >&2;exit 1; }
+ ensure_local_database
  if [[ -x /usr/local/bin/veloray && ! -f /opt/veloray/src/backend/manage.py ]];then /usr/local/bin/veloray backup "/var/lib/veloray/backups-pre-upgrade-$(date -u +%Y%m%dT%H%M%SZ).tar.gz";else
   backup="/var/lib/veloray/legacy-pre-upgrade-$(date -u +%Y%m%dT%H%M%SZ)";install -d -m 0700 "$backup"
   PGHOST="${POSTGRES_HOST:-127.0.0.1}" PGPORT="${POSTGRES_PORT:-5432}" PGUSER="${POSTGRES_USER:-veloray}" PGPASSWORD="$POSTGRES_PASSWORD" pg_dump -Fc --no-owner --no-acl "${POSTGRES_DB:-veloray}" >"$backup/database.dump"
@@ -43,13 +57,14 @@ else
  [[ -n "${VELORAY_PUBLIC_HOST:-}" ]]||read -rp "$(prompt 'Public host (domain or IP): ' 'دامنه یا آی‌پی عمومی: ')" VELORAY_PUBLIC_HOST
  [[ "$VELORAY_PUBLIC_HOST" =~ ^[a-zA-Z0-9.:-]+$ ]]||{ echo 'Invalid host.' >&2;exit 2; }
  VELORAY_PANEL_PORT="${VELORAY_PANEL_PORT:-8443}"
- [[ "$VELORAY_PANEL_PORT" =~ ^[0-9]+$ ]]&&((VELORAY_PANEL_PORT>0&&VELORAY_PANEL_PORT<65536))||exit 2
+ [[ "$VELORAY_PANEL_PORT" =~ ^[0-9]+$ ]]&&((VELORAY_PANEL_PORT>0&&VELORAY_PANEL_PORT<65536&&VELORAY_PANEL_PORT!=8610&&VELORAY_PANEL_PORT!=9191&&VELORAY_PANEL_PORT!=10085))||{ echo 'Invalid or reserved panel port.' >&2;exit 2; }
  public_url_host="$VELORAY_PUBLIC_HOST";[[ "$public_url_host" != *:* ]]||public_url_host="[$public_url_host]"
  dbpass="$(openssl rand -hex 32)"
- # Fixed database identifiers; user input is never interpolated into SQL.
- runuser -u postgres -- psql -v ON_ERROR_STOP=1 -c "CREATE ROLE veloray WITH LOGIN PASSWORD '$dbpass';"
- runuser -u postgres -- createdb -O veloray veloray
- cat >/etc/veloray/veloray.env <<ENV
+ preserved="$(runuser -u postgres -- psql -tAc "SELECT EXISTS(SELECT 1 FROM pg_roles WHERE rolname='veloray') OR EXISTS(SELECT 1 FROM pg_database WHERE datname='veloray')")"
+ [[ "${preserved//[[:space:]]/}" != t ]]||{ echo 'PostgreSQL data exists but /etc/veloray/veloray.env is missing. Restore this environment file from your backup before reinstalling; its encryption keys and database credentials are required.' >&2;exit 1; }
+ # Persist credentials before creating the database so interrupted installs can resume.
+ env_temporary="$(mktemp /etc/veloray/.veloray.env.XXXXXX)"
+ cat >"$env_temporary" <<ENV
 VELORAY_SECRET_KEY=$(openssl rand -hex 48)
 VELORAY_FIELD_KEY=$(openssl rand -hex 32)
 VELORAY_PUBLIC_HOST=$VELORAY_PUBLIC_HOST
@@ -65,8 +80,10 @@ POSTGRES_DB=veloray
 POSTGRES_USER=veloray
 POSTGRES_PASSWORD=$dbpass
 ENV
+ mv "$env_temporary" /etc/veloray/veloray.env
  set -a;source /etc/veloray/veloray.env;set +a
  [[ "${POSTGRES_HOST:-}" != 127.0.1.0 ]]||export POSTGRES_HOST=127.0.0.1
+ ensure_local_database
 fi
 chown root:veloray /etc/veloray/veloray.env;chmod 0640 /etc/veloray/veloray.env
 # All changes below use the candidate binary. Keep the previous release for rollback.
@@ -88,7 +105,9 @@ veloray migrate
 if $existing;then
  legacy="$(PGHOST="${POSTGRES_HOST:-127.0.0.1}" PGPORT="${POSTGRES_PORT:-5432}" PGUSER="${POSTGRES_USER:-veloray}" PGPASSWORD="$POSTGRES_PASSWORD" psql -tAc "SELECT to_regclass('core_node') IS NOT NULL AND NOT EXISTS(SELECT 1 FROM vr_users)" "${POSTGRES_DB:-veloray}")"
  if [[ "${legacy//[[:space:]]/}" == t ]];then veloray import-legacy --dry-run;veloray import-legacy;fi
-else
+fi
+has_admin="$(PGHOST="${POSTGRES_HOST:-127.0.0.1}" PGPORT="${POSTGRES_PORT:-5432}" PGUSER="${POSTGRES_USER:-veloray}" PGPASSWORD="$POSTGRES_PASSWORD" psql -tAc "SELECT EXISTS(SELECT 1 FROM vr_users WHERE data->>'is_superuser'='true')" "${POSTGRES_DB:-veloray}")"
+if [[ "${has_admin//[[:space:]]/}" != t ]];then
  export VELORAY_ADMIN_USERNAME="${VELORAY_ADMIN_USERNAME:-admin}"
  if [[ -z "${VELORAY_ADMIN_PASSWORD:-}" ]];then read -rsp "$(prompt 'Administrator password (12+ characters): ' 'رمز مدیر (حداقل ۱۲ کاراکتر): ')" VELORAY_ADMIN_PASSWORD;echo;fi
  export VELORAY_ADMIN_PASSWORD
@@ -122,7 +141,9 @@ systemctl restart veloray-agent.service
 systemctl enable veloray-agent.service veloray-web.service
 veloray render-nginx
 systemctl restart veloray-web.service
-for attempt in {1..15};do if curl -fsS --max-time 3 http://127.0.0.1:8610/api/health >/dev/null;then break;fi;sleep 1;done
+healthy=false
+for attempt in {1..60};do if curl -fsS --max-time 3 http://127.0.0.1:8610/api/health >/dev/null;then healthy=true;break;fi;sleep 1;done
+if ! $healthy;then journalctl -u veloray-web.service -n 40 --no-pager >&2||true;echo 'Panel health check failed. Run velorayctl logs web to inspect the startup error.' >&2;exit 1;fi
 velorayctl doctor
 echo "VeloRay $version installed. Open https://$VELORAY_PUBLIC_HOST:$VELORAY_PANEL_PORT"
 echo 'Use velorayctl for service management. The initial TLS certificate is self-signed.'

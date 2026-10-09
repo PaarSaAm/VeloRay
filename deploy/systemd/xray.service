@@ -6,6 +6,7 @@ Wants=network-online.target
 [Service]
 User=nobody
 Group=nogroup
+Environment=XRAY_LOCATION_ASSET=/usr/local/share/xray
 ExecStart=/usr/local/bin/xray run -config /usr/local/etc/xray/config.json
 Restart=on-failure
 RestartSec=3

@@ -17,7 +17,7 @@ velorayctl logs [web|agent|xray]
 velorayctl backup [FILE.tar.gz] | restore FILE.tar.gz
 velorayctl admin-reset [USERNAME]
 velorayctl domain HOST | port PORT | ssl EMAIL
-velorayctl update RELEASE_DIRECTORY | node
+velorayctl update RELEASE_DIRECTORY | node | uninstall
 HELP
  ;;
  status) systemctl --no-pager status "$WEB" "$AGENT" xray.service; ;;
@@ -69,6 +69,20 @@ HELP
  veloray render-nginx
  ;;
  update) [[ $# -eq 1 && -f "$1/install.sh" ]]||{ echo 'Pass an extracted, verified release directory.' >&2;exit 2; };exec bash "$1/install.sh"; ;;
+ uninstall)
+  echo 'Remove VeloRay services and program files. Configuration, encryption keys, PostgreSQL data and backups are preserved for reinstall.'
+  read -rp 'Type REMOVE to continue: ' confirmation
+  [[ "$confirmation" == REMOVE ]]||{ echo 'Cancelled.';exit 0; }
+  systemctl disable --now veloray-web.service veloray-agent.service veloray-reconcile.timer xray.service 2>/dev/null||true
+  systemctl stop veloray-reconcile.service 2>/dev/null||true
+  rm -f /etc/systemd/system/{veloray-web,veloray-agent,veloray-reconcile,xray}.service /etc/systemd/system/veloray-reconcile.timer
+  rm -f /etc/nginx/sites-enabled/veloray /etc/nginx/sites-available/veloray /etc/letsencrypt/renewal-hooks/deploy/veloray-nginx
+  systemctl daemon-reload
+  if nginx -t;then systemctl reload nginx||true;fi
+  rm -rf -- /opt/veloray
+  rm -f /usr/local/bin/veloray /usr/local/bin/veloray-agent /usr/local/bin/velorayctl
+  echo 'VeloRay removed. Run the installer again to reuse the preserved configuration and data.'
+ ;;
  node) echo 'Extract the release on the remote server and run: sudo bash deploy/node/install.sh'; ;;
  *) echo 'Unknown command. Run velorayctl help.' >&2;exit 2; ;;
 esac

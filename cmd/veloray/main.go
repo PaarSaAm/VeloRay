@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"strconv"
 	"strings"
@@ -62,8 +63,15 @@ func run() error {
 		fmt.Println(panel.Version)
 		return nil
 	}
+	if command == "uninstall" {
+		controller, err := exec.LookPath("velorayctl")
+		if err != nil {
+			return errors.New("velorayctl is required for uninstall; use the installed server command")
+		}
+		return syscall.Exec(controller, append([]string{"velorayctl"}, args...), os.Environ())
+	}
 	if command == "help" || command == "--help" {
-		fmt.Println("veloray serve | migrate | import-legacy [--dry-run] | bootstrap | bootstrap-local | admin-reset | reconcile | version\nInstallation management: velorayctl help\nVELORAY_ENV_FILE selects the environment file. Bootstrap/reset password is read from VELORAY_ADMIN_PASSWORD or stdin.")
+		fmt.Println("veloray serve | migrate | import-legacy [--dry-run] | bootstrap | bootstrap-local | admin-reset | reconcile | version | uninstall\nInstallation management: velorayctl help\nVELORAY_ENV_FILE selects the environment file. Bootstrap/reset password is read from VELORAY_ADMIN_PASSWORD or stdin.")
 		return nil
 	}
 	env := os.Getenv("VELORAY_ENV_FILE")

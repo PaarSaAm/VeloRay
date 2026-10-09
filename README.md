@@ -46,9 +46,11 @@ sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/PaarSaAm/VeloRay/ma
 
 PostgreSQL is the supported database. Omitting `--database` selects PostgreSQL. SQLite, MySQL, MariaDB and TimescaleDB switches are not supported.
 
-The installer downloads a complete project snapshot pinned to the resolved commit, prepares missing Go and Node.js build tools, builds the project, and downloads Xray if it is not installed. If a source archive route fails, it tries alternate GitHub routes for the same commit. Go, Node.js and Xray downloads are checked against SHA-256 metadata from their official sources. Build tools are placed under `/opt/veloray/toolchains` without replacing system tool installations.
+This package includes verified Linux runtimes for amd64 and arm64: the panel, node agent, compiled web interface, Xray `v26.3.27`, GeoIP and GeoSite data. Normal installation does not require Go or Node.js, or a separate Xray download. The installer checks archive checksums and confirms that the binaries match the supplied source files before installing them.
 
-Review `install.sh` before running it. The installer asks for the public host and administrator password; the default panel port is `8443`. Network access to GitHub, Go, Node.js, npm and Ubuntu package servers is required.
+The GitHub download is pinned to a resolved commit and uses alternate archive routes if a route fails. A source checkout without runtime packages, or with changed build inputs, is built locally. In that case the installer prepares missing Go and Node.js tools from verified official downloads, tries alternate routes and supported versions, and reuses cached tools on subsequent runs. These tools are placed under `/opt/veloray/toolchains`.
+
+Review `install.sh` before running it. The installer asks for the public host and administrator password; the default panel port is `8443`. Normal installation needs access to GitHub and Ubuntu package servers. Building changed source additionally needs Go, Node.js and npm download services.
 
 You can also install from an extracted source checkout with `sudo -E bash install.sh`. Use `--repo OWNER/REPOSITORY` and `--ref BRANCH_OR_TAG_OR_COMMIT` for a fork or a pinned version. Ref names must use letters, numbers, dots, underscores or hyphens.
 
@@ -85,6 +87,7 @@ sudo velorayctl backup
 sudo velorayctl restore /path/to/backup.tar.gz
 sudo velorayctl admin-reset admin
 sudo velorayctl update /path/to/built-project
+sudo veloray uninstall
 ```
 
 `veloray` handles application and database commands. `velorayctl` manages services and the host installation. Backups contain database data, application secrets, local certificates, configuration and the local agent ledger. Back up remote node state separately and keep all backups private.
@@ -99,9 +102,19 @@ sudo velorayctl update /path/to/built-project
 
 Environment files live at `/etc/veloray/veloray.env` and `/etc/veloray-node/agent.env`. Preserve the application encryption keys and agent ledger when maintaining the installation.
 
+Uninstall removes VeloRay services and program files after confirmation. It preserves configuration, application encryption keys, PostgreSQL data, certificates and the accounting ledger. Running the installer again reuses that state. If an older uninstall removed `/etc/veloray/veloray.env` while keeping PostgreSQL data, restore the environment file from a backup first; the installer stops rather than generate replacement keys for existing encrypted data. Interrupted first-time installs can resume without resetting an existing administrator.
+
 ## Development
 
 Requirements: Go 1.26+, Node.js 22.12+, PostgreSQL 15+ and a compatible Xray runtime for node integration.
+
+Rebuild both distributable runtime packages after changing application source:
+
+```bash
+bash scripts/build-runtime.sh
+```
+
+Runtime packages include component license notices. Xray is distributed under its own license; its source is available at [XTLS/Xray-core](https://github.com/XTLS/Xray-core/tree/v26.3.27).
 
 ```bash
 cp .env.example .env

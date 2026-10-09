@@ -35,6 +35,12 @@ verify() {
  [[ "$1" =~ ^[a-fA-F0-9]{64}$ ]] || fail 'Missing or invalid SHA-256 checksum.'
  printf '%s  %s\n' "$1" "$2" | sha256sum -c - >/dev/null || fail 'Download checksum mismatch.'
 }
+check_archive() {
+ tar -tf "$1" >"$temporary/members" || fail 'Cannot read archive members.'
+ if awk '/(^\/|(^|\/)\.\.($|\/))/ {bad=1} END {exit !bad}' "$temporary/members";then fail 'Unsafe archive paths.';fi
+ tar -tvf "$1" >"$temporary/types" || fail 'Cannot read archive file types.'
+ if awk 'substr($0,1,1)!="-" && substr($0,1,1)!="d" {bad=1} END {exit !bad}' "$temporary/types";then fail 'Archive contains links or special files.';fi
+}
 
 action=install
 database=postgresql
@@ -79,53 +85,117 @@ if [[ -z "$source_directory" || ! -f "$source_directory/go.mod" || ! -f "$source
  printf 'Downloading %s at %s\n' "$repository" "$commit"
  download_source
  # GitHub archives contain regular files/directories; reject links and traversal before extracting.
- tar -tzf "$temporary/source.tar.gz" >"$temporary/members"
- if awk '/(^\/|(^|\/)\.\.($|\/))/ {bad=1} END {exit !bad}' "$temporary/members";then fail 'Unsafe source archive paths.';fi
- tar -tvzf "$temporary/source.tar.gz" >"$temporary/types"
- if awk 'substr($0,1,1)!="-" && substr($0,1,1)!="d" {bad=1} END {exit !bad}' "$temporary/types";then fail 'Source archive contains links or special files.';fi
+ check_archive "$temporary/source.tar.gz"
  source_directory="$temporary/source"
  mkdir -p "$source_directory"
  tar --no-same-owner --no-same-permissions -xzf "$temporary/source.tar.gz" -C "$source_directory" --strip-components=1
 fi
 [[ -f "$source_directory/go.mod" && -f "$source_directory/frontend/package-lock.json" && -f "$source_directory/scripts/install-panel.sh" ]]||fail 'The selected repository does not contain a complete VeloRay project.'
 
+prepare_runtime() {
+ local archive="$source_directory/runtime/linux-$arch.tar.xz" checksum bundle="$temporary/runtime"
+ [[ -f "$archive" ]]||return 1
+ [[ -f "$source_directory/runtime/SHA256SUMS" && -f "$source_directory/scripts/build-runtime.sh" ]]||fail 'Runtime checksum or build manifest helper is missing.'
+ checksum="$(awk -v name="linux-$arch.tar.xz" '$2==name {print $1}' "$source_directory/runtime/SHA256SUMS")"
+ verify "$checksum" "$archive"
+ check_archive "$archive"
+ mkdir -p "$bundle"
+ tar --no-same-owner --no-same-permissions -xf "$archive" -C "$bundle" || fail 'Cannot extract runtime archive.'
+ [[ -f "$bundle/source.SHA256SUMS" && -x "$bundle/bin/linux-$arch/veloray" && -x "$bundle/bin/linux-$arch/veloray-agent" && -f "$bundle/frontend/dist/index.html" ]]||fail 'Runtime archive is incomplete.'
+ bash "$source_directory/scripts/build-runtime.sh" --manifest >"$temporary/current-source.SHA256SUMS" || fail 'Cannot verify runtime source files.'
+ if ! cmp -s "$temporary/current-source.SHA256SUMS" "$bundle/source.SHA256SUMS";then
+  printf 'Source files changed; building the current source instead of using the bundled runtime.\n'
+  return 1
+ fi
+ (cd "$bundle/bin/linux-$arch" && sha256sum -c SHA256SUMS) || fail 'Runtime binary checksum mismatch.'
+ mkdir -p "$source_directory/bin" "$source_directory/frontend"
+ cp -a "$bundle/bin/linux-$arch" "$source_directory/bin/" || fail 'Cannot copy runtime binaries.'
+ cp -a "$bundle/frontend/dist" "$source_directory/frontend/" || fail 'Cannot copy runtime frontend.'
+ if [[ -z "${VELORAY_XRAY_ARCHIVE:-}" && -x "$bundle/xray/xray" && -f "$bundle/xray/SHA256SUMS" ]];then
+  (cd "$bundle/xray" && sha256sum -c SHA256SUMS) || fail 'Bundled Xray checksum mismatch.'
+  export VELORAY_XRAY_DIRECTORY="$bundle/xray"
+ fi
+ printf 'Using verified %s runtime; Go and Node.js are not required.\n' "$arch"
+}
+
 prepare_build_tools() {
- local current minimum descriptor filename checksum target version
+ local current minimum descriptor filename checksum target version cached downloaded url
  minimum="$(awk '$1=="go" {print $2;exit}' "$source_directory/go.mod")"
  [[ "$minimum" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]||fail 'Invalid Go requirement in go.mod.'
  current="$(go version 2>/dev/null | awk '{sub(/^go/,"",$3);print $3}')"||current=""
  if [[ -z "$current" ]]||! version_at_least "$current" "$minimum";then
+  for cached in /opt/veloray/toolchains/go*/go/bin/go;do
+   [[ -x "$cached" ]]||continue
+   current="$("$cached" version 2>/dev/null | awk '{sub(/^go/,"",$3);print $3}')"||current=""
+   if [[ "$current" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] && version_at_least "$current" "$minimum";then export PATH="$(dirname "$cached"):$PATH";break;fi
+  done
+ fi
+ if [[ -z "$current" ]]||! version_at_least "$current" "$minimum";then
   fetch 'https://go.dev/dl/?mode=json' "$temporary/go.json"
-  descriptor="$(jq -ce --arg arch "$arch" '[.[]|select(.stable==true)|.files[]|select(.os=="linux" and .arch==$arch and .kind=="archive")][0]' "$temporary/go.json")"
-  version="$(jq -er '.version' <<<"$descriptor")";filename="$(jq -er '.filename' <<<"$descriptor")";checksum="$(jq -er '.sha256' <<<"$descriptor")"
-  [[ "$version" =~ ^go[0-9]+\.[0-9]+\.[0-9]+$ && "$filename" == "$version.linux-$arch.tar.gz" ]]||fail 'Unexpected Go download metadata.'
-  version_at_least "${version#go}" "$minimum"||fail 'The available Go compiler is too old.'
-  fetch "https://go.dev/dl/$filename" "$temporary/go.tar.gz";verify "$checksum" "$temporary/go.tar.gz"
+  jq -ce --arg arch "$arch" '.[]|select(.stable==true)|.version as $version|.files[]|select(.os=="linux" and .arch==$arch and .kind=="archive")|. + {version:$version}' "$temporary/go.json" >"$temporary/go-candidates"
+  downloaded=false
+  while IFS= read -r descriptor;do
+   version="$(jq -er '.version' <<<"$descriptor")";filename="$(jq -er '.filename' <<<"$descriptor")";checksum="$(jq -er '.sha256' <<<"$descriptor")"
+   [[ "$version" =~ ^go[0-9]+\.[0-9]+\.[0-9]+$ && "$filename" == "$version.linux-$arch.tar.gz" ]]||fail 'Unexpected Go download metadata.'
+   version_at_least "${version#go}" "$minimum"||continue
+   for url in "https://dl.google.com/go/$filename" "https://go.dev/dl/$filename";do
+    if fetch "$url" "$temporary/go.tar.gz";then downloaded=true;break;fi
+   done
+   if $downloaded;then verify "$checksum" "$temporary/go.tar.gz";break;fi
+   printf 'Go %s is unavailable; trying another supported stable release.\n' "${version#go}"
+  done <"$temporary/go-candidates"
+  $downloaded||fail "Cannot download a verified Go compiler >= $minimum. Use a package with bundled runtimes or check access to dl.google.com and go.dev."
   target="/opt/veloray/toolchains/$version";mkdir -p "$target"
-  tar --no-same-owner -xzf "$temporary/go.tar.gz" -C "$target"
+  mkdir -p "$temporary/go-unpack"
+  tar --no-same-owner -xzf "$temporary/go.tar.gz" -C "$temporary/go-unpack"
+  [[ "$("$temporary/go-unpack/go/bin/go" version | awk '{print $3}')" == "$version" ]]||fail 'Downloaded Go compiler has an unexpected version.'
+  rm -rf -- "$target/go"
+  mv "$temporary/go-unpack/go" "$target/go"
   export PATH="$target/go/bin:$PATH"
  fi
  current="$(node --version 2>/dev/null)"||current=""
  if [[ -z "$current" ]]||! version_at_least "${current#v}" 22.12.0||! command -v npm >/dev/null;then
+  for cached in /opt/veloray/toolchains/node-v*-linux-$node_arch/bin;do
+   [[ -x "$cached/node" && -x "$cached/npm" ]]||continue
+   current="$("$cached/node" --version 2>/dev/null)"||current=""
+   if [[ "$current" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] && version_at_least "${current#v}" 22.12.0;then export PATH="$cached:$PATH";break;fi
+  done
+ fi
+ if [[ -z "$current" ]]||! version_at_least "${current#v}" 22.12.0||! command -v npm >/dev/null;then
   fetch 'https://nodejs.org/dist/index.json' "$temporary/node.json"
-  version="$(jq -er --arg arch "linux-$node_arch" '[.[]|select(.lts!=false and (.files|index($arch))!=null)|select((.version|ltrimstr("v")|split(".")[0]|tonumber)>=22)][0].version' "$temporary/node.json")"
-  [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]||fail 'Unexpected Node.js download metadata.'
-  filename="node-$version-linux-$node_arch.tar.xz"
-  fetch "https://nodejs.org/dist/$version/SHASUMS256.txt" "$temporary/node.sums"
-  checksum="$(awk -v name="$filename" '$2==name {print $1}' "$temporary/node.sums")"
-  fetch "https://nodejs.org/dist/$version/$filename" "$temporary/node.tar.xz";verify "$checksum" "$temporary/node.tar.xz"
+  jq -er --arg arch "linux-$node_arch" '[.[]|select(.lts!=false and (.files|index($arch))!=null)|select((.version|ltrimstr("v")|split(".")[0]|tonumber)>=22)][0:8][].version' "$temporary/node.json" >"$temporary/node-candidates"
+  downloaded=false
+  while IFS= read -r version;do
+   [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]||fail 'Unexpected Node.js download metadata.'
+   version_at_least "${version#v}" 22.12.0||continue
+   filename="node-$version-linux-$node_arch.tar.xz"
+   for url in "https://nodejs.org/dist/$version" "https://nodejs.org/download/release/$version";do
+    if fetch "$url/SHASUMS256.txt" "$temporary/node.sums" && fetch "$url/$filename" "$temporary/node.tar.xz";then
+     checksum="$(awk -v name="$filename" '$2==name {print $1}' "$temporary/node.sums")"
+     verify "$checksum" "$temporary/node.tar.xz";downloaded=true;break
+    fi
+   done
+   $downloaded&&break
+  done <"$temporary/node-candidates"
+  $downloaded||fail 'Cannot download verified Node.js >=22.12. Use a package with bundled runtimes or check nodejs.org access.'
   target=/opt/veloray/toolchains;mkdir -p "$target"
-  tar --no-same-owner -xJf "$temporary/node.tar.xz" -C "$target"
+  mkdir -p "$temporary/node-unpack"
+  tar --no-same-owner -xJf "$temporary/node.tar.xz" -C "$temporary/node-unpack"
+  [[ "$("$temporary/node-unpack/node-$version-linux-$node_arch/bin/node" --version)" == "$version" ]]||fail 'Downloaded Node.js has an unexpected version.'
+  rm -rf -- "$target/node-$version-linux-$node_arch"
+  mv "$temporary/node-unpack/node-$version-linux-$node_arch" "$target/"
   export PATH="$target/node-$version-linux-$node_arch/bin:$PATH"
  fi
 }
 
 if [[ ! -x "$source_directory/bin/linux-$arch/veloray-agent" || ! -x "$source_directory/bin/linux-$arch/veloray" || ! -f "$source_directory/frontend/dist/index.html" ]];then
- prepare_build_tools
- bash "$source_directory/scripts/build.sh" "$arch"
+ if ! prepare_runtime;then
+  prepare_build_tools
+  bash "$source_directory/scripts/build.sh" "$arch"
+ fi
 fi
 
-if [[ ! -x /usr/local/bin/xray && -z "${VELORAY_XRAY_ARCHIVE:-}" ]];then
+if [[ ! -x /usr/local/bin/xray && -z "${VELORAY_XRAY_ARCHIVE:-}" && -z "${VELORAY_XRAY_DIRECTORY:-}" ]];then
  xray_version="${VELORAY_XRAY_VERSION:-latest}"
  if [[ "$xray_version" == latest ]];then release_url=https://api.github.com/repos/XTLS/Xray-core/releases/latest
  else [[ "$xray_version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]||fail 'Invalid Xray version.';release_url="https://api.github.com/repos/XTLS/Xray-core/releases/tags/$xray_version";fi
