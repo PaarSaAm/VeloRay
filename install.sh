@@ -11,7 +11,26 @@ PostgreSQL is the supported database. Default repository: PaarSaAm/VeloRay, ref:
 HELP
 }
 version_at_least() { [[ "$(printf '%s\n%s\n' "$2" "$1" | sort -V | head -n1)" == "$2" ]]; }
-fetch() { curl --proto '=https' --tlsv1.2 -fsSL --retry 3 --connect-timeout 15 --max-time 600 "$1" -o "$2"; }
+fetch() {
+ local status=0
+ curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL --retry 3 --connect-timeout 15 --max-time 600 "$1" -o "$2" || status=$?
+ if [[ "$status" -ne 0 ]];then
+  printf 'VeloRay: download failed (curl %s): %s\n' "$status" "$1" >&2
+  return "$status"
+ fi
+}
+download_source() {
+ local url
+ # All routes resolve the same immutable commit, including fallback downloads.
+ for url in "https://codeload.github.com/$repository/tar.gz/$commit" \
+            "https://api.github.com/repos/$repository/tarball/$commit" \
+            "https://github.com/$repository/archive/$commit.tar.gz";do
+  if fetch "$url" "$temporary/source.tar.gz";then return 0;fi
+  rm -f -- "$temporary/source.tar.gz"
+  printf 'Trying the next GitHub archive route.\n' >&2
+ done
+ fail "Cannot download source commit $commit from $repository. Check GitHub access from this server and retry."
+}
 verify() {
  [[ "$1" =~ ^[a-fA-F0-9]{64}$ ]] || fail 'Missing or invalid SHA-256 checksum.'
  printf '%s  %s\n' "$1" "$2" | sha256sum -c - >/dev/null || fail 'Download checksum mismatch.'
@@ -58,7 +77,7 @@ if [[ -z "$source_directory" || ! -f "$source_directory/go.mod" || ! -f "$source
  commit="$(jq -er '.sha' "$temporary/commit.json")"
  [[ "$commit" =~ ^[a-f0-9]{40}$ ]]||fail 'GitHub did not return a valid source commit.'
  printf 'Downloading %s at %s\n' "$repository" "$commit"
- fetch "https://api.github.com/repos/$repository/tarball/$commit" "$temporary/source.tar.gz"
+ download_source
  # GitHub archives contain regular files/directories; reject links and traversal before extracting.
  tar -tzf "$temporary/source.tar.gz" >"$temporary/members"
  if awk '/(^\/|(^|\/)\.\.($|\/))/ {bad=1} END {exit !bad}' "$temporary/members";then fail 'Unsafe source archive paths.';fi

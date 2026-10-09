@@ -55,7 +55,15 @@ case "$url" in
  */SHASUMS256.txt) printf '%s  node-v24.21.0-linux-arm64.tar.xz\n' "$TEST_NODE_SHA" >"$destination";;
  */node-v24.21.0-linux-arm64.tar.xz) cp "$TEST_ROOT/node.tar.xz" "$destination";;
  */commits/*) printf '{"sha":"1111111111111111111111111111111111111111"}' >"$destination";;
- */tarball/*) cp "$TEST_ROOT/source.tar.gz" "$destination";;
+ https://codeload.github.com/PaarSaAm/VeloRay/tar.gz/*)
+  [[ "${TEST_SOURCE_ROUTE:-direct}" == direct ]]||exit 22
+  cp "$TEST_ROOT/source.tar.gz" "$destination";;
+ https://api.github.com/repos/PaarSaAm/VeloRay/tarball/*)
+  [[ "${TEST_SOURCE_ROUTE:-direct}" != web && "${TEST_SOURCE_ROUTE:-direct}" != unavailable ]]||exit 22
+  cp "$TEST_ROOT/source.tar.gz" "$destination";;
+ https://github.com/PaarSaAm/VeloRay/archive/*.tar.gz)
+  [[ "${TEST_SOURCE_ROUTE:-direct}" != unavailable ]]||exit 22
+  cp "$TEST_ROOT/source.tar.gz" "$destination";;
  */XTLS/Xray-core/releases/latest) printf '{"tag_name":"v26.3.27","assets":[{"name":"Xray-linux-64.zip","digest":"sha256:%s"},{"name":"Xray-linux-arm64-v8a.zip","digest":"sha256:%s"}]}' "$TEST_XRAY_SHA" "$TEST_XRAY_SHA" >"$destination";;
  */releases/download/*) if [[ "${TEST_BAD_DIGEST:-}" == 1 ]];then printf broken >"$destination";else cp "$TEST_ROOT/xray.zip" "$destination";fi;;
  *) echo "Unexpected network request: $url" >&2;exit 2;;
@@ -80,7 +88,7 @@ NODE
 printf '#!/usr/bin/env bash\nexit 0\n' >"$TEST_ROOT/commands/npm"
 chmod +x "$TEST_ROOT/commands/"*
 export PATH="$TEST_ROOT/commands:$PATH" VELORAY_PUBLIC_HOST=panel.example.com VELORAY_ADMIN_PASSWORD=test-only-password
-unset VELORAY_XRAY_ARCHIVE VELORAY_XRAY_SHA256 VELORAY_REPO VELORAY_REF || true
+unset VELORAY_XRAY_ARCHIVE VELORAY_XRAY_SHA256 VELORAY_REPO VELORAY_REF TEST_SOURCE_ROUTE || true
 passed=0
 pass() { passed=$((passed+1));printf 'PASS %s\n' "$1"; }
 reject() {
@@ -103,10 +111,28 @@ for machine in x86_64 aarch64;do
   bash -c "$(cat "$TEST_ROOT/bootstrap.sh")" @ "$mode" --database postgresql --lang fa >"$TEST_ROOT/result" 2>&1
   expected=panel;[[ "$mode" != node ]]||expected=node
   grep -Fq "$expected=fa" "$TEST_ROOT/calls"
-  grep -Fq '/tarball/1111111111111111111111111111111111111111' "$TEST_ROOT/requests"
+  grep -Fq '/tar.gz/1111111111111111111111111111111111111111' "$TEST_ROOT/requests"
   pass "$mode/$machine"
  done
 done
+for route in api web;do
+ export TEST_SOURCE_ROUTE="$route"
+ : >"$TEST_ROOT/requests";: >"$TEST_ROOT/calls"
+ bash -c "$(cat "$TEST_ROOT/bootstrap.sh")" @ install >"$TEST_ROOT/result" 2>&1
+ grep -Fq 'panel=en' "$TEST_ROOT/calls"
+ if [[ "$route" == api ]];then grep -Fq '/tarball/1111111111111111111111111111111111111111' "$TEST_ROOT/requests"
+ else grep -Fq '/archive/1111111111111111111111111111111111111111.tar.gz' "$TEST_ROOT/requests";fi
+ if grep -Fq 'installation failed at line' "$TEST_ROOT/result";then echo 'Recovered download reported as installation failure' >&2;exit 1;fi
+ pass "source-$route-fallback"
+done
+export TEST_SOURCE_ROUTE=unavailable
+: >"$TEST_ROOT/calls"
+if bash -c "$(cat "$TEST_ROOT/bootstrap.sh")" @ install >"$TEST_ROOT/result" 2>&1;then echo 'Unavailable source accepted' >&2;exit 1;fi
+grep -Fq 'Cannot download source commit 1111111111111111111111111111111111111111' "$TEST_ROOT/result"
+grep -Fq 'download failed (curl 22): https://' "$TEST_ROOT/result"
+test ! -s "$TEST_ROOT/calls"
+pass source-download-failure
+unset TEST_SOURCE_ROUTE
 cat "$TEST_ROOT/bootstrap.sh" | bash -s -- install --lang en >"$TEST_ROOT/result" 2>&1
 grep -Fq 'panel=en' "$TEST_ROOT/calls";pass piped-install
 export TEST_OLD_TOOLS=1

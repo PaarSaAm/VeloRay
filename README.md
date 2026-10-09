@@ -46,7 +46,7 @@ sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/PaarSaAm/VeloRay/ma
 
 PostgreSQL is the supported database. Omitting `--database` selects PostgreSQL. SQLite, MySQL, MariaDB and TimescaleDB switches are not supported.
 
-The installer downloads a complete project snapshot pinned to the resolved commit, prepares missing Go and Node.js build tools, builds the project, and downloads Xray if it is not installed. Go, Node.js and Xray downloads are checked against SHA-256 metadata from their official sources. Build tools are placed under `/opt/veloray/toolchains` without replacing system tool installations.
+The installer downloads a complete project snapshot pinned to the resolved commit, prepares missing Go and Node.js build tools, builds the project, and downloads Xray if it is not installed. If a source archive route fails, it tries alternate GitHub routes for the same commit. Go, Node.js and Xray downloads are checked against SHA-256 metadata from their official sources. Build tools are placed under `/opt/veloray/toolchains` without replacing system tool installations.
 
 Review `install.sh` before running it. The installer asks for the public host and administrator password; the default panel port is `8443`. Network access to GitHub, Go, Node.js, npm and Ubuntu package servers is required.
 
