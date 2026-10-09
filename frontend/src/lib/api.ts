@@ -1,0 +1,276 @@
+const API_BASE = import.meta.env.VITE_API_URL || "/api";
+
+function cookie(name: string) {
+  return (
+    document.cookie
+      .split("; ")
+      .find((x) => x.startsWith(name + "="))
+      ?.split("=")[1] || ""
+  );
+}
+
+function errorMessage(data: unknown, fallback: string): string {
+  if (typeof data === "string" && data.trim()) return data.trim();
+  if (!data || typeof data !== "object") return fallback;
+  const record = data as Record<string, unknown>;
+  if (typeof record.detail === "string" && record.detail.trim())
+    return record.detail.trim();
+  const parts: string[] = [];
+  for (const [key, value] of Object.entries(record)) {
+    const values = Array.isArray(value) ? value : [value];
+    for (const item of values) {
+      if (typeof item === "string" && item.trim())
+        parts.push(`${key}: ${item.trim()}`);
+      else if (item && typeof item === "object")
+        parts.push(`${key}: ${JSON.stringify(item)}`);
+    }
+  }
+  return parts.join(" · ") || fallback;
+}
+
+export class APIError extends Error {
+  constructor(
+    message: string,
+    public status: number,
+    public code?: string,
+  ) {
+    super(message);
+  }
+}
+export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const method = (init.method || "GET").toUpperCase();
+  const headers = new Headers(init.headers || {});
+  headers.set("Accept", "application/json");
+  if (init.body && !headers.has("Content-Type"))
+    headers.set("Content-Type", "application/json");
+  if (!["GET", "HEAD", "OPTIONS"].includes(method)) {
+    if (!cookie("csrftoken"))
+      await fetch(`${API_BASE}/auth/csrf`, { credentials: "include" });
+    headers.set("X-CSRFToken", decodeURIComponent(cookie("csrftoken")));
+  }
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      ...init,
+      headers,
+      credentials: "include",
+    });
+  } catch (error) {
+    if (init.signal?.aborted) throw error;
+    const reason =
+      error instanceof Error ? error.message : "Network request failed";
+    throw new Error(`Cannot reach VeloRay API. ${reason}`);
+  }
+  if (res.status === 204) return undefined as T;
+  const ct = res.headers.get("content-type") || "";
+  const data = ct.includes("json") ? await res.json() : await res.text();
+  if (!res.ok) {
+    const code =
+      data && typeof data === "object"
+        ? (data as { code?: string }).code
+        : undefined;
+    if (res.status === 401 && !path.startsWith("/auth/login"))
+      window.dispatchEvent(new Event("veloray:session-expired"));
+    if (code === "two_factor_setup_required")
+      window.dispatchEvent(new Event("veloray:session-update"));
+    throw new APIError(
+      errorMessage(data, `${res.status} ${res.statusText}`),
+      res.status,
+      code,
+    );
+  }
+  if (
+    method === "GET" &&
+    Array.isArray(data) &&
+    !new URLSearchParams(path.split("?")[1] || "").has("offset")
+  ) {
+    const total = Number(res.headers.get("X-Total-Count") || data.length),
+      limit = Number(res.headers.get("X-Page-Limit") || 250),
+      result = [...data];
+    for (let offset = data.length; offset < total; offset += limit) {
+      const next = await api<unknown[]>(
+        `${path}${path.includes("?") ? "&" : "?"}offset=${offset}&limit=${limit}`,
+        init,
+      );
+      result.push(...next);
+      if (next.length === 0) break;
+    }
+    return result as T;
+  }
+  return data as T;
+}
+
+export type Session = {
+  id: number;
+  username: string;
+  is_staff?: boolean;
+  is_superuser?: boolean;
+  two_factor_setup_required?: boolean;
+};
+export async function currentSession() {
+  return api<Session>("/auth/me");
+}
+export type LoginResult = Session | { two_factor_required: true };
+export async function login(
+  username: string,
+  password: string,
+  totp_code = "",
+) {
+  await api("/auth/csrf");
+  return api<LoginResult>("/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ username, password, totp_code }),
+  });
+}
+export async function logout() {
+  return api("/auth/logout", { method: "POST" });
+}
+
+export type NodeItem = {
+  id: number;
+  name: string;
+  public_host: string;
+  agent_url: string;
+  enabled: boolean;
+  verify_tls: boolean;
+  status: string;
+  xray_version: string;
+  last_seen_at: string | null;
+  deploy_state: string;
+  last_deploy_error: string;
+  is_local: boolean;
+  config_patch: Record<string, unknown>;
+};
+export type InboundItem = {
+  id: number;
+  node: number;
+  node_name: string;
+  name: string;
+  listen: string;
+  port: number;
+  protocol: string;
+  transport: string;
+  security: string;
+  flow: string;
+  path: string;
+  host_header: string;
+  service_name: string;
+  tls_server_name: string;
+  tls_cert_file: string;
+  tls_key_file: string;
+  reality_dest: string;
+  reality_server_name: string;
+  reality_private_key: string;
+  reality_public_key: string;
+  reality_short_id: string;
+  protocol_settings: Record<string, any>;
+  enabled: boolean;
+  client_count: number;
+  supports_clients: boolean;
+};
+export type ClientItem = {
+  id: number;
+  inbound: number;
+  inbound_name: string;
+  node_name: string;
+  name: string;
+  credential: string;
+  enabled: boolean;
+  expires_at: string | null;
+  traffic_limit_bytes: number;
+  used_traffic_bytes: number;
+  last_traffic_at: string | null;
+  disabled_reason: string;
+  transport: string;
+  security: string;
+  usage_metered: boolean;
+  renewal_interval_days: number;
+  next_renewal_at: string | null;
+  note: string;
+  protocol: string;
+  protocol_settings: Record<string, any>;
+  share_link: string;
+  profile_text: string;
+  subscription_url: string;
+  subscription_portal_url: string;
+};
+export type AppSettings = {
+  site_name: string;
+  support_url: string;
+  announcement: string;
+  announcement_url: string;
+  default_locale: string;
+  default_client_days: number;
+  default_traffic_gb: number;
+  default_renewal_days: number;
+  traffic_history_days: number;
+  dashboard_refresh_seconds: number;
+  subscription_enabled: boolean;
+  subscription_show_apps: boolean;
+  subscription_show_qr: boolean;
+  subscription_show_connection_uri: boolean;
+  subscription_footer: string;
+  subscription_template: "default" | "compact";
+  maintenance_mode: boolean;
+  require_2fa_for_admins: boolean;
+  api_keys_enabled: boolean;
+  api_key_default_days: number;
+  audit_retention_days: number;
+  accent: string;
+  telegram_enabled: boolean;
+  telegram_configured: boolean;
+  telegram_owner_ids: string[];
+  telegram_alert_cpu_percent: number;
+  telegram_alert_memory_percent: number;
+  telegram_alert_disk_percent: number;
+  telegram_alert_cooldown_minutes: number;
+};
+export type AdminUser = {
+  id: number;
+  username: string;
+  email: string;
+  is_active: boolean;
+  is_staff: boolean;
+  is_superuser: boolean;
+  last_login: string | null;
+  date_joined: string;
+  two_factor_enabled: boolean;
+};
+export type SystemInfo = {
+  hostname: string;
+  platform: string;
+  go_version: string;
+  uptime_seconds: number;
+  load_average: number[];
+  cpu_percent: number;
+  cpu_count: number;
+  memory_total_bytes: number;
+  memory_used_bytes: number;
+  memory_available_bytes: number;
+  memory_percent: number;
+  swap_total_bytes: number;
+  swap_used_bytes: number;
+  swap_free_bytes: number;
+  swap_percent: number;
+  disk_total_bytes: number;
+  disk_used_bytes: number;
+  disk_free_bytes: number;
+  disk_percent: number;
+  users_total: number;
+  admins_total: number;
+};
+
+export type AdminAPIKey = {
+  id: number;
+  name: string;
+  prefix: string;
+  scope: "read" | "write" | "admin";
+  enabled: boolean;
+  expires_at: string | null;
+  last_used_at: string | null;
+  user: number;
+  user_name: string;
+  created_at: string;
+  updated_at: string;
+  token?: string;
+};

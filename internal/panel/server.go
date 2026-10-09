@@ -1,0 +1,193 @@
+package panel
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"github.com/jackc/pgx/v5"
+	"io"
+	"log/slog"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+)
+
+type Server struct {
+	Config Config
+	Store  *Store
+	HTTP   *http.Client
+	Logger *slog.Logger
+}
+type apiError struct {
+	Status       int
+	Code, Detail string
+}
+
+func (e *apiError) Error() string                 { return e.Detail }
+func fail(status int, msg string) error           { return &apiError{Status: status, Detail: msg} }
+func failCode(status int, code, msg string) error { return &apiError{status, code, msg} }
+func readBody(w http.ResponseWriter, r *http.Request) (Data, error) {
+	r.Body = http.MaxBytesReader(w, r.Body, 2<<20)
+	defer r.Body.Close()
+	dec := json.NewDecoder(r.Body)
+	dec.UseNumber()
+	d := Data{}
+	if e := dec.Decode(&d); e != nil || d == nil {
+		return nil, fail(400, "JSON object required")
+	}
+	if e := dec.Decode(new(any)); e != io.EOF {
+		return nil, fail(400, "unexpected data after JSON object")
+	}
+	return d, nil
+}
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(status)
+	if status != 204 {
+		_ = json.NewEncoder(w).Encode(v)
+	}
+}
+func (s *Server) respond(w http.ResponseWriter, r *http.Request, out any, status int, e error) {
+	if e != nil {
+		var ae *apiError
+		if errors.As(e, &ae) {
+			out = Data{"detail": ae.Detail}
+			if ae.Code != "" {
+				out.(Data)["code"] = ae.Code
+			}
+			status = ae.Status
+		} else if errors.Is(e, pgx.ErrNoRows) {
+			status = 404
+			out = Data{"detail": "not found"}
+		} else {
+			status = 500
+			out = Data{"detail": "The request could not be completed"}
+			s.Logger.Error("request failed", "method", r.Method, "path", r.URL.Path, "error", e)
+		}
+	}
+	if status == 0 {
+		status = 200
+	}
+	writeJSON(w, status, out)
+}
+func (s *Server) Handler() http.Handler {
+	if s.Logger == nil {
+		s.Logger = slog.Default()
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
+		defer func() {
+			if v := recover(); v != nil {
+				s.Logger.Error("panic recovered", "path", r.URL.Path, "panic", v)
+				writeJSON(w, 500, Data{"detail": "Internal server error"})
+			}
+		}()
+		if strings.HasPrefix(r.URL.Path, "/sub/") {
+			s.subscription(w, r)
+			return
+		}
+		if !strings.HasPrefix(r.URL.Path, "/api/") {
+			s.frontend(w, r)
+			return
+		}
+		path := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/"), "/")
+		if path == "health" && r.Method == "GET" {
+			ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+			defer cancel()
+			if e := s.Store.Pool.Ping(ctx); e != nil {
+				writeJSON(w, 503, Data{"status": "degraded"})
+				return
+			}
+			writeJSON(w, 200, Data{"status": "ok", "version": Version})
+			return
+		}
+		if path == "version" && r.Method == "GET" {
+			writeJSON(w, 200, Data{"version": Version})
+			return
+		}
+		if path == "auth/csrf" && r.Method == "GET" {
+			token := csrfToken(s.Config.SecretKey)
+			s.cookie(w, "csrftoken", token, 86400, false)
+			writeJSON(w, 200, Data{"csrfToken": token})
+			return
+		}
+		if e := s.checkCSRF(r); e != nil {
+			s.respond(w, r, nil, 0, e)
+			return
+		}
+		if path == "auth/login" && r.Method == "POST" {
+			out, status, e := s.login(w, r)
+			s.respond(w, r, out, status, e)
+			return
+		}
+		a, e := s.authenticate(r)
+		if e != nil {
+			s.respond(w, r, nil, 0, e)
+			return
+		}
+		if e = s.authorize(r.Context(), a, r.Method, path); e != nil {
+			s.respond(w, r, nil, 0, e)
+			return
+		}
+		if strings.HasPrefix(path, "auth/") {
+			out, status, e := s.authAPI(w, r, path, a)
+			s.respond(w, r, out, status, e)
+			return
+		}
+		out, status, e := s.api(w, r, path, a)
+		s.respond(w, r, out, status, e)
+	})
+}
+func (s *Server) frontend(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" && r.Method != "HEAD" {
+		writeJSON(w, 405, Data{"detail": "method not allowed"})
+		return
+	}
+	root := s.Config.FrontendDir
+	path := filepath.Clean("/" + r.URL.Path)
+	if strings.HasPrefix(path, "/assets/") {
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	}
+	file := filepath.Join(root, path)
+	if info, e := os.Stat(file); e == nil && !info.IsDir() {
+		http.ServeFile(w, r, file)
+		return
+	}
+	if strings.Contains(filepath.Base(path), ".") {
+		http.NotFound(w, r)
+		return
+	}
+	if _, e := os.Stat(filepath.Join(root, "index.html")); e != nil {
+		writeJSON(w, 503, Data{"detail": "Frontend build is missing"})
+		return
+	}
+	http.ServeFile(w, r, filepath.Join(root, "index.html"))
+}
+func Serve(ctx context.Context, c Config) error {
+	store, e := OpenStore(ctx, c.DatabaseURL)
+	if e != nil {
+		return e
+	}
+	defer store.Pool.Close()
+	if e = store.Migrate(ctx); e != nil {
+		return e
+	}
+	s := &Server{Config: c, Store: store, Logger: slog.Default()}
+	go s.Worker(ctx)
+	server := &http.Server{Addr: c.Listen, Handler: s.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 20 * time.Second, WriteTimeout: 180 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16384}
+	go func() {
+		<-ctx.Done()
+		c, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		_ = server.Shutdown(c)
+	}()
+	s.Logger.Info("VeloRay started", "version", Version, "listen", c.Listen)
+	return server.ListenAndServe()
+}

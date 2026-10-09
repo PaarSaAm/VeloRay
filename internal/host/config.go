@@ -1,0 +1,114 @@
+package host
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net"
+	"net/url"
+	"os"
+	"os/exec"
+	"regexp"
+	"strings"
+)
+
+func SetEnv(path, key, value string) error {
+	if !regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`).MatchString(key) || strings.ContainsAny(value, "\r\n\x00") {
+		return errors.New("invalid environment setting")
+	}
+	raw, e := os.ReadFile(path)
+	if e != nil {
+		return e
+	}
+	lines := strings.Split(strings.TrimRight(string(raw), "\n"), "\n")
+	found := false
+	for i, line := range lines {
+		if strings.HasPrefix(line, key+"=") {
+			lines[i] = key + "=" + value
+			found = true
+		}
+	}
+	if !found {
+		lines = append(lines, key+"="+value)
+	}
+	return AtomicFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0640)
+}
+func RenderNginx(ctx context.Context, origin, path string) error {
+	u, e := url.Parse(origin)
+	if e != nil || u.Scheme != "https" || u.User != nil || u.Path != "" || u.Host == "" {
+		return errors.New("HTTPS origin is required")
+	}
+	host := u.Hostname()
+	if !regexp.MustCompile(`^[a-zA-Z0-9.:-]+$`).MatchString(host) {
+		return errors.New("invalid public host")
+	}
+	port := u.Port()
+	if port == "" {
+		port = "443"
+	}
+	if !regexp.MustCompile(`^[0-9]{1,5}$`).MatchString(port) {
+		return errors.New("invalid port")
+	}
+	cert, key := "/etc/veloray/tls/panel.crt", "/etc/veloray/tls/panel.key"
+	trusted := fmt.Sprintf("/etc/letsencrypt/live/%s", host)
+	if _, e = os.Stat(trusted + "/fullchain.pem"); e == nil {
+		cert, key = trusted+"/fullchain.pem", trusted+"/privkey.pem"
+	} else {
+		if e = os.MkdirAll("/etc/veloray/tls", 0700); e != nil {
+			return e
+		}
+		san := "DNS:" + host
+		if net.ParseIP(host) != nil {
+			san = "IP:" + host
+		}
+		cmd := exec.CommandContext(ctx, "openssl", "req", "-x509", "-newkey", "rsa:3072", "-sha256", "-nodes", "-days", "365", "-keyout", key, "-out", cert, "-subj", "/CN="+host, "-addext", "subjectAltName="+san)
+		cmd.Stdout = nil
+		cmd.Stderr = nil
+		if e = cmd.Run(); e != nil {
+			return e
+		}
+		if e = os.Chmod(key, 0600); e != nil {
+			return e
+		}
+	}
+	raw := []byte(fmt.Sprintf(`server {
+ listen %s ssl;
+ listen [::]:%s ssl;
+ server_name %s;
+ ssl_certificate %s;
+ ssl_certificate_key %s;
+ ssl_protocols TLSv1.2 TLSv1.3;
+ server_tokens off;
+ client_max_body_size 2m;
+ location / {
+  proxy_pass http://127.0.0.1:8610;
+  proxy_set_header Host $http_host;
+  proxy_set_header X-Real-IP $remote_addr;
+  proxy_set_header X-Forwarded-Proto https;
+  proxy_read_timeout 180s;
+ }
+ access_log off;
+}
+`, port, port, host, cert, key))
+	old, e := os.ReadFile(path)
+	exists := e == nil
+	if e = AtomicFile(path, raw, 0644); e != nil {
+		return e
+	}
+	link := "/etc/nginx/sites-enabled/veloray"
+	if _, e = os.Lstat(link); os.IsNotExist(e) {
+		if e = os.Symlink(path, link); e != nil {
+			return e
+		}
+	}
+	if out, e := exec.CommandContext(ctx, "nginx", "-t").CombinedOutput(); e != nil {
+		if exists {
+			_ = AtomicFile(path, old, 0644)
+		} else {
+			_ = os.Remove(path)
+			_ = os.Remove(link)
+		}
+		return fmt.Errorf("Nginx validation failed: %.1500s", out)
+	}
+	return exec.CommandContext(ctx, "systemctl", "reload", "nginx").Run()
+}

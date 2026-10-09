@@ -1,0 +1,714 @@
+package panel
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"github.com/jackc/pgx/v5"
+	"net/http"
+	"strconv"
+	"strings"
+	"time"
+)
+
+var editable = map[string]string{
+	"nodes":    "name public_host agent_url agent_token enabled verify_tls config_patch",
+	"inbounds": "name node listen port protocol transport security flow path host_header service_name tls_server_name tls_cert_file tls_key_file reality_dest reality_server_name reality_private_key reality_public_key reality_short_id protocol_settings enabled",
+	"clients":  "inbound name credential protocol_settings subscription_token enabled expires_at traffic_limit_bytes renewal_interval_days next_renewal_at note",
+	"users":    "username email is_active is_staff is_superuser password",
+	"api_keys": "name scope enabled expires_at user",
+}
+
+func (s *Server) view(ctx context.Context, q Query, kind string, d Data) (Data, error) {
+	out := public(d)
+	switch kind {
+	case "users":
+		out["two_factor_enabled"] = flag(d, "_totp_enabled")
+	case "api_keys":
+		u, e := get(ctx, q, "users", num(d, "user"))
+		if e != nil {
+			return nil, e
+		}
+		out["user_name"] = str(u, "username")
+	case "inbounds":
+		n, e := get(ctx, q, "nodes", num(d, "node"))
+		if e != nil {
+			return nil, e
+		}
+		out["node_name"] = str(n, "name")
+		var count int
+		if e = q.QueryRow(ctx, `SELECT count(*) FROM vr_clients WHERE inbound_id=$1`, num(d, "id")).Scan(&count); e != nil {
+			return nil, e
+		}
+		out["client_count"] = count
+		out["supports_clients"] = supportsClients(str(d, "protocol"))
+	case "clients":
+		i, e := get(ctx, q, "inbounds", num(d, "inbound"))
+		if e != nil {
+			return nil, e
+		}
+		n, e := get(ctx, q, "nodes", num(i, "node"))
+		if e != nil {
+			return nil, e
+		}
+		for _, k := range []string{"protocol", "transport", "security"} {
+			out[k] = i[k]
+		}
+		out["inbound_name"] = str(i, "name")
+		out["node_name"] = str(n, "name")
+		out["usage_metered"] = metered(str(i, "protocol"))
+		out["share_link"] = shareLink(d, i, n)
+		out["profile_text"] = profile(d, i, n)
+		out["subscription_url"] = strings.TrimRight(s.Config.PublicURL, "/") + "/sub/" + str(d, "subscription_token")
+		out["subscription_portal_url"] = out["subscription_url"]
+	}
+	return out, nil
+}
+func (s *Server) api(w http.ResponseWriter, r *http.Request, path string, a Actor) (any, int, error) {
+	ctx := r.Context()
+	parts := strings.Split(path, "/")
+	if path == "settings" {
+		return s.settingsAPI(w, r, a)
+	}
+	switch path {
+	case "overview":
+		if r.Method != "GET" {
+			return nil, 0, fail(405, "method not allowed")
+		}
+		out, e := s.overview(ctx)
+		return out, 200, e
+	case "system-info":
+		out, e := s.systemInfo(ctx)
+		return out, 200, e
+	case "traffic-history":
+		out, e := s.trafficHistory(ctx, r)
+		return out, 200, e
+	}
+	kind := parts[0]
+	if kind == "admin" && len(parts) >= 2 {
+		kind = map[string]string{"users": "users", "api-keys": "api_keys"}[parts[1]]
+		parts = parts[1:]
+	}
+	if _, ok := tables[kind]; !ok {
+		return nil, 0, fail(404, "endpoint not found")
+	}
+	var id int64
+	var e error
+	if len(parts) > 1 {
+		id, e = strconv.ParseInt(parts[1], 10, 64)
+		if e != nil || id < 1 {
+			return nil, 0, fail(404, "not found")
+		}
+	}
+	if len(parts) > 2 {
+		return s.action(w, r, kind, id, parts[2], a)
+	}
+	if r.Method == "GET" {
+		if id > 0 {
+			d, e := get(ctx, s.Store.Pool, kind, id)
+			if e != nil {
+				return nil, 0, e
+			}
+			v, e := s.view(ctx, s.Store.Pool, kind, d)
+			return v, 200, e
+		}
+		limit := 250
+		offset := 0
+		if v := r.URL.Query().Get("limit"); v != "" {
+			limit, e = strconv.Atoi(v)
+			if e != nil || limit < 1 || limit > 1000 {
+				return nil, 0, fail(400, "limit must be 1–1000")
+			}
+		}
+		if v := r.URL.Query().Get("offset"); v != "" {
+			offset, e = strconv.Atoi(v)
+			if e != nil || offset < 0 {
+				return nil, 0, fail(400, "offset must be nonnegative")
+			}
+		}
+		where := "ORDER BY id"
+		if kind == "audit" {
+			where = "ORDER BY id DESC"
+		}
+		rows, e := list(ctx, s.Store.Pool, kind, where+" LIMIT $1 OFFSET $2", limit, offset)
+		if e != nil {
+			return nil, 0, e
+		}
+		out := []Data{}
+		for _, d := range rows {
+			v, e := s.view(ctx, s.Store.Pool, kind, d)
+			if e != nil {
+				return nil, 0, e
+			}
+			out = append(out, v)
+		}
+		var total int64
+		e = s.Store.Pool.QueryRow(ctx, "SELECT count(*) FROM "+tables[kind]).Scan(&total)
+		if e != nil {
+			return nil, 0, e
+		}
+		w.Header().Set("X-Total-Count", strconv.FormatInt(total, 10))
+		w.Header().Set("X-Page-Limit", strconv.Itoa(limit))
+		return out, 200, nil
+	}
+	if kind == "audit" {
+		return nil, 0, fail(405, "audit events are read-only")
+	}
+	if !oneOf(r.Method, "POST", "PATCH", "PUT", "DELETE") || r.Method == "POST" && id > 0 || r.Method != "POST" && id == 0 {
+		return nil, 0, fail(405, "method not allowed")
+	}
+	input := Data{}
+	if r.Method != "DELETE" {
+		input, e = readBody(w, r)
+		if e != nil {
+			return nil, 0, e
+		}
+		if e = allowed(input, editable[kind]); e != nil {
+			return nil, 0, fail(400, e.Error())
+		}
+		if e = typed(input, defaults(kind)); e != nil {
+			return nil, 0, fail(400, e.Error())
+		}
+	}
+	old := defaults(kind)
+	if id > 0 {
+		old, e = get(ctx, s.Store.Pool, kind, id)
+		if e != nil {
+			return nil, 0, e
+		}
+	}
+	ids := []int64{}
+	if kind == "inbounds" {
+		ids = nodeIDs(num(old, "node"), num(input, "node"))
+	}
+	if kind == "clients" {
+		for _, in := range nodeIDs(num(old, "inbound"), num(input, "inbound")) {
+			n, e := inboundNode(ctx, s.Store.Pool, in)
+			if e != nil {
+				return nil, 0, fail(400, "inbound does not exist")
+			}
+			ids = nodeIDs(append(ids, n)...)
+		}
+	}
+	if kind == "nodes" && id > 0 && r.Method != "DELETE" {
+		ids = nodeIDs(id)
+	}
+	mutation := func(tx pgx.Tx) (any, error) {
+		d := defaults(kind)
+		if id > 0 {
+			var e error
+			d, e = get(ctx, tx, kind, id)
+			if e != nil {
+				return nil, e
+			}
+		}
+		if r.Method == "DELETE" {
+			if kind == "nodes" {
+				if flag(d, "is_local") {
+					return nil, fail(400, "The local node cannot be deleted")
+				}
+				var count int
+				if e := tx.QueryRow(ctx, `SELECT count(*) FROM vr_inbounds WHERE node_id=$1`, id).Scan(&count); e != nil {
+					return nil, e
+				}
+				if count > 0 {
+					return nil, fail(409, "Remove the node's inbounds before deleting it")
+				}
+			}
+			if kind == "users" {
+				if id == num(a.User, "id") {
+					return nil, fail(400, "You cannot delete your own account")
+				}
+				if e := ensureAdmin(ctx, tx, id, nil); e != nil {
+					return nil, e
+				}
+			}
+			return nil, remove(ctx, tx, kind, id)
+		}
+		prior := clone(d)
+		d = merge(d, input)
+		if kind == "clients" {
+			if num(d, "renewal_interval_days") != num(prior, "renewal_interval_days") {
+				d["next_renewal_at"] = nil
+			}
+			if flag(d, "enabled") {
+				d["disabled_reason"] = ""
+			}
+		}
+		switch kind {
+		case "nodes":
+			if token := str(input, "agent_token"); token != "" {
+				if len(token) < 32 {
+					return nil, fail(400, "agent_token must have at least 32 characters")
+				}
+				v, e := seal(s.Config.FieldKey, token)
+				if e != nil {
+					return nil, e
+				}
+				d["_agent_token"] = v
+			}
+			delete(d, "agent_token")
+			if e := validateNode(s.Config, d); e != nil {
+				return nil, fail(400, e.Error())
+			}
+			if flag(prior, "is_local") && (str(d, "agent_url") != str(prior, "agent_url") || !flag(d, "enabled")) {
+				return nil, fail(400, "The local agent address and enabled state are managed by the installer")
+			}
+		case "inbounds":
+			if num(d, "id") > 0 && str(d, "protocol") != str(prior, "protocol") {
+				var n int
+				if e := tx.QueryRow(ctx, `SELECT count(*) FROM vr_clients WHERE inbound_id=$1`, id).Scan(&n); e != nil {
+					return nil, e
+				}
+				if n > 0 {
+					return nil, fail(400, "Remove clients before changing the inbound protocol")
+				}
+			}
+			if e := validateInbound(ctx, tx, s.Config, d); e != nil {
+				return nil, fail(400, e.Error())
+			}
+		case "clients":
+			inbound, err := get(ctx, tx, "inbounds", num(d, "inbound"))
+			if err != nil {
+				return nil, fail(400, "inbound does not exist")
+			}
+			if str(inbound, "protocol") == "wireguard" {
+				ps := obj(d, "protocol_settings")
+				if str(ps, "private_key") == "" || str(ps, "public_key") == "" {
+					node, err := get(ctx, tx, "nodes", num(inbound, "node"))
+					if err != nil {
+						return nil, err
+					}
+					pair, err := s.nodeCall(ctx, node, "/xray/wg", Data{})
+					if err != nil {
+						return nil, fail(502, err.Error())
+					}
+					ps["private_key"] = pair["private_key"]
+					ps["public_key"] = pair["public_key"]
+				}
+				if str(ps, "address") == "" {
+					peers, err := list(ctx, tx, "clients", "WHERE inbound_id=$1", num(inbound, "id"))
+					if err != nil {
+						return nil, err
+					}
+					used := map[string]bool{}
+					for _, peer := range peers {
+						used[fallback(str(obj(peer, "protocol_settings"), "address"), wireguardAddress(num(peer, "id")))] = true
+					}
+					for slot := int64(1); slot <= 64009; slot++ {
+						address := wireguardAddress(slot)
+						if !used[address] {
+							ps["address"] = address
+							break
+						}
+					}
+					if str(ps, "address") == "" {
+						return nil, fail(400, "WireGuard address pool is full")
+					}
+				}
+				d["protocol_settings"] = ps
+			}
+			if e := validateClient(ctx, tx, d); e != nil {
+				return nil, fail(400, e.Error())
+			}
+		case "users":
+			if e := require(d, "username", 150); e != nil {
+				return nil, fail(400, e.Error())
+			}
+			if !flag(d, "is_staff") && flag(d, "is_superuser") {
+				return nil, fail(400, "Administrators must have staff access")
+			}
+			password := str(input, "password")
+			if id == 0 && password == "" {
+				return nil, fail(400, "password is required")
+			}
+			if password != "" {
+				if e := passwordPolicy(str(d, "username"), password); e != nil {
+					return nil, fail(400, e.Error())
+				}
+				h, e := hashPassword(password)
+				if e != nil {
+					return nil, e
+				}
+				d["_password"] = h
+				d["_auth_version"] = num(d, "_auth_version") + 1
+			}
+			delete(d, "password")
+			if id == num(a.User, "id") && (!flag(d, "is_active") || !flag(d, "is_superuser") || !flag(d, "is_staff")) {
+				return nil, fail(400, "You cannot remove your own administrator access")
+			}
+			if e := ensureAdmin(ctx, tx, id, d); e != nil {
+				return nil, e
+			}
+		case "api_keys":
+			if e := require(d, "name", 96); e != nil {
+				return nil, fail(400, e.Error())
+			}
+			if !oneOf(str(d, "scope"), "read", "write", "admin") {
+				return nil, fail(400, "invalid API key scope")
+			}
+			if id == 0 {
+				token := "vr_" + randomToken(32)
+				d["_token_hash"] = digest(token)
+				d["prefix"] = token[:15]
+				d["_new_token"] = token
+				if num(d, "user") == 0 {
+					d["user"] = num(a.User, "id")
+				}
+				if d["expires_at"] == nil {
+					cfg, e := settings(ctx, tx)
+					if e != nil {
+						return nil, e
+					}
+					d["expires_at"] = stamp(time.Now().Add(time.Duration(num(cfg, "api_key_default_days")) * 24 * time.Hour))
+				}
+			}
+			u, e := get(ctx, tx, "users", num(d, "user"))
+			if e != nil || !flag(u, "is_active") || !flag(u, "is_staff") {
+				return nil, fail(400, "API key owner must be an active staff user")
+			}
+			if d["expires_at"] != nil {
+				if _, e := timestamp(d, "expires_at"); e != nil {
+					return nil, fail(400, "invalid expiry")
+				}
+			}
+		}
+		token := str(d, "_new_token")
+		delete(d, "_new_token")
+		if e := save(ctx, tx, kind, d); e != nil {
+			return nil, fail(400, databaseError(e).Error())
+		}
+		out, e := s.view(ctx, tx, kind, d)
+		if e != nil {
+			return nil, e
+		}
+		if token != "" {
+			out["token"] = token
+		}
+		return out, nil
+	}
+	var out any
+	if len(ids) > 0 {
+		out, e = s.change(ctx, ids, a, kind+"."+strings.ToLower(r.Method), fmt.Sprint(id), mutation)
+	} else {
+		tx, te := s.Store.Pool.Begin(ctx)
+		if te != nil {
+			return nil, 0, te
+		}
+		defer tx.Rollback(ctx)
+		if _, e = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(842100,2)`); e == nil {
+			out, e = mutation(tx)
+		}
+		if e == nil {
+			e = audit(ctx, tx, num(a.User, "id"), kind+"."+strings.ToLower(r.Method), fmt.Sprint(id), Data{})
+		}
+		if e == nil {
+			e = tx.Commit(ctx)
+		}
+	}
+	status := 200
+	if r.Method == "POST" {
+		status = 201
+	}
+	if r.Method == "DELETE" {
+		status = 204
+	}
+	return out, status, e
+}
+func ensureAdmin(ctx context.Context, q Query, id int64, d Data) error {
+	if d != nil && flag(d, "is_active") && flag(d, "is_staff") && flag(d, "is_superuser") {
+		return nil
+	}
+	var count int
+	e := q.QueryRow(ctx, `SELECT count(*) FROM vr_users WHERE id<>$1 AND data->>'is_active'='true' AND data->>'is_staff'='true' AND data->>'is_superuser'='true'`, id).Scan(&count)
+	if e != nil {
+		return e
+	}
+	if count == 0 {
+		return fail(400, "At least one active administrator must remain")
+	}
+	return nil
+}
+func (s *Server) settingsAPI(w http.ResponseWriter, r *http.Request, a Actor) (any, int, error) {
+	ctx := r.Context()
+	if r.Method == "GET" {
+		d, e := settings(ctx, s.Store.Pool)
+		out := public(d)
+		out["telegram_configured"] = str(d, "_telegram_token") != ""
+		return out, 200, e
+	}
+	if r.Method != "PATCH" && r.Method != "PUT" {
+		return nil, 0, fail(405, "method not allowed")
+	}
+	in, e := readBody(w, r)
+	if e != nil {
+		return nil, 0, e
+	}
+	keys := []string{"telegram_bot_token", "telegram_clear_bot_token"}
+	for k := range defaultSettings() {
+		if !strings.HasPrefix(k, "_") {
+			keys = append(keys, k)
+		}
+	}
+	if e = allowed(in, strings.Join(keys, " ")); e != nil {
+		return nil, 0, fail(400, e.Error())
+	}
+	if e = typed(in, defaultSettings()); e != nil {
+		return nil, 0, fail(400, e.Error())
+	}
+	tx, e := s.Store.Pool.Begin(ctx)
+	if e != nil {
+		return nil, 0, e
+	}
+	defer tx.Rollback(ctx)
+	if _, e = tx.Exec(ctx, `SELECT id FROM vr_settings WHERE id=1 FOR UPDATE`); e != nil {
+		return nil, 0, e
+	}
+	d, e := settings(ctx, tx)
+	if e != nil {
+		return nil, 0, e
+	}
+	d = merge(d, in)
+	if token := str(in, "telegram_bot_token"); token != "" {
+		if len(token) > 256 || strings.ContainsAny(token, "\r\n /?") {
+			return nil, 0, fail(400, "invalid bot token")
+		}
+		d["_telegram_token"], e = seal(s.Config.FieldKey, token)
+		if e != nil {
+			return nil, 0, e
+		}
+	}
+	if flag(in, "telegram_clear_bot_token") {
+		d["_telegram_token"] = ""
+	}
+	delete(d, "telegram_bot_token")
+	delete(d, "telegram_clear_bot_token")
+	if e = validateSettings(d); e != nil {
+		return nil, 0, fail(400, e.Error())
+	}
+	if e = saveSettings(ctx, tx, d); e != nil {
+		return nil, 0, e
+	}
+	if e = audit(ctx, tx, num(a.User, "id"), "settings.update", "settings", Data{}); e != nil {
+		return nil, 0, e
+	}
+	if e = tx.Commit(ctx); e != nil {
+		return nil, 0, e
+	}
+	out := public(d)
+	out["telegram_configured"] = str(d, "_telegram_token") != ""
+	return out, 200, nil
+}
+func (s *Server) action(w http.ResponseWriter, r *http.Request, kind string, id int64, action string, a Actor) (any, int, error) {
+	ctx := r.Context()
+	d, e := get(ctx, s.Store.Pool, kind, id)
+	if e != nil {
+		return nil, 0, e
+	}
+	if kind == "nodes" {
+		switch action {
+		case "config-preview":
+			if r.Method != "GET" {
+				return nil, 0, fail(405, "method not allowed")
+			}
+			cfg, e := buildConfig(ctx, s.Store.Pool, d)
+			return Data{"node": str(d, "name"), "config": cfg}, 200, e
+		case "xray-status":
+			if r.Method != "GET" {
+				return nil, 0, fail(405, "method not allowed")
+			}
+			out, e := s.nodeCall(ctx, d, "/xray/status", nil)
+			if e != nil {
+				return nil, 0, fail(502, e.Error())
+			}
+			return out, 200, nil
+		}
+		if r.Method != "POST" {
+			return nil, 0, fail(405, "method not allowed")
+		}
+		switch action {
+		case "probe":
+			out, e := s.probe(ctx, id)
+			if e != nil {
+				return nil, 0, fail(502, e.Error())
+			}
+			_ = audit(ctx, s.Store.Pool, num(a.User, "id"), "node.probe", str(d, "name"), Data{})
+			return out, 200, nil
+		case "deploy":
+			out, e := s.change(ctx, []int64{id}, a, "node.deploy", str(d, "name"), func(pgx.Tx) (any, error) { return Data{"status": "applied"}, nil })
+			return out, 200, e
+		case "xray-restart":
+			tx, e := s.Store.Pool.Begin(ctx)
+			if e != nil {
+				return nil, 0, e
+			}
+			defer tx.Rollback(ctx)
+			if e = lockNodes(ctx, tx, id); e != nil {
+				return nil, 0, e
+			}
+			d, e = get(ctx, tx, "nodes", id)
+			if e != nil {
+				return nil, 0, e
+			}
+			if e = s.collect(ctx, tx, d); e != nil {
+				return nil, 0, fail(502, e.Error())
+			}
+			out, e := s.nodeCall(ctx, d, "/xray/restart", Data{})
+			if e != nil {
+				return nil, 0, fail(502, e.Error())
+			}
+			if e = audit(ctx, tx, num(a.User, "id"), "node.restart", str(d, "name"), Data{}); e != nil {
+				return nil, 0, e
+			}
+			return out, 200, tx.Commit(ctx)
+		case "reality-keypair", "wireguard-keypair":
+			path := "/xray/x25519"
+			if action == "wireguard-keypair" {
+				path = "/xray/wg"
+			}
+			out, e := s.nodeCall(ctx, d, path, Data{})
+			if e != nil {
+				return nil, 0, fail(502, e.Error())
+			}
+			return out, 200, nil
+		}
+	}
+	if kind == "clients" && oneOf(action, "reset-usage", "toggle") && r.Method == "POST" {
+		node, e := inboundNode(ctx, s.Store.Pool, num(d, "inbound"))
+		if e != nil {
+			return nil, 0, e
+		}
+		out, e := s.change(ctx, []int64{node}, a, "client."+action, str(d, "name"), func(tx pgx.Tx) (any, error) {
+			c, e := get(ctx, tx, "clients", id)
+			if e != nil {
+				return nil, e
+			}
+			if action == "reset-usage" {
+				c["used_traffic_bytes"] = 0
+				if str(c, "disabled_reason") == "quota" {
+					c["enabled"] = true
+					c["disabled_reason"] = ""
+				}
+			} else {
+				c["enabled"] = !flag(c, "enabled")
+				c["disabled_reason"] = ""
+				if !flag(c, "enabled") {
+					c["disabled_reason"] = "manual"
+				}
+			}
+			if e = save(ctx, tx, "clients", c); e != nil {
+				return nil, e
+			}
+			return s.view(ctx, tx, "clients", c)
+		})
+		return out, 200, e
+	}
+	if kind == "inbounds" && action == "clone" && r.Method == "POST" {
+		in, e := readBody(w, r)
+		if e != nil {
+			return nil, 0, e
+		}
+		copy := clone(d)
+		for _, k := range []string{"id", "created_at", "updated_at"} {
+			delete(copy, k)
+		}
+		for _, k := range []string{"node", "port", "name"} {
+			if v, ok := in[k]; ok {
+				copy[k] = v
+			}
+		}
+		if e = validateInbound(ctx, s.Store.Pool, s.Config, copy); e != nil {
+			return nil, 0, fail(400, e.Error())
+		}
+		out, e := s.change(ctx, []int64{num(copy, "node")}, a, "inbound.clone", str(copy, "name"), func(tx pgx.Tx) (any, error) {
+			if e := save(ctx, tx, "inbounds", copy); e != nil {
+				return nil, e
+			}
+			return s.view(ctx, tx, "inbounds", copy)
+		})
+		return out, 201, e
+	}
+	if kind == "users" && action == "reset-password" && r.Method == "POST" {
+		in, e := readBody(w, r)
+		if e != nil {
+			return nil, 0, e
+		}
+		e = s.Store.AdminReset(ctx, str(d, "username"), str(in, "password"))
+		if e != nil {
+			return nil, 0, fail(400, e.Error())
+		}
+		return Data{"status": "updated"}, 200, nil
+	}
+	return nil, 0, fail(404, "action not found")
+}
+func (s *Server) overview(ctx context.Context) (Data, error) {
+	nodes, e := list(ctx, s.Store.Pool, "nodes", "")
+	if e != nil {
+		return nil, e
+	}
+	clients, e := list(ctx, s.Store.Pool, "clients", "")
+	if e != nil {
+		return nil, e
+	}
+	inbounds, e := list(ctx, s.Store.Pool, "inbounds", "")
+	if e != nil {
+		return nil, e
+	}
+	out := Data{"nodes_total": len(nodes), "nodes_online": 0, "clients_total": len(clients), "clients_active": 0, "clients_expiring_7d": 0, "traffic_used_bytes": int64(0), "traffic_limit_bytes": int64(0), "inbounds_total": len(inbounds)}
+	for _, n := range nodes {
+		if flag(n, "enabled") && str(n, "status") == "ok" {
+			out["nodes_online"] = num(out, "nodes_online") + 1
+		}
+	}
+	for _, c := range clients {
+		if active(c, time.Now()) {
+			out["clients_active"] = num(out, "clients_active") + 1
+			if t, e := timestamp(c, "expires_at"); e == nil && time.Until(t) < 7*24*time.Hour {
+				out["clients_expiring_7d"] = num(out, "clients_expiring_7d") + 1
+			}
+		}
+		out["traffic_used_bytes"] = num(out, "traffic_used_bytes") + num(c, "used_traffic_bytes")
+		out["traffic_limit_bytes"] = num(out, "traffic_limit_bytes") + num(c, "traffic_limit_bytes")
+	}
+	counts := map[string]int{}
+	for _, i := range inbounds {
+		counts[str(i, "protocol")]++
+	}
+	protocols := []any{}
+	for p, n := range counts {
+		protocols = append(protocols, Data{"protocol": p, "count": n})
+	}
+	out["protocols"] = protocols
+	return out, nil
+}
+func (s *Server) trafficHistory(ctx context.Context, r *http.Request) ([]Data, error) {
+	hours := 24
+	if v := r.URL.Query().Get("hours"); v != "" {
+		n, e := strconv.Atoi(v)
+		if e != nil || n < 1 || n > 8760 {
+			return nil, fail(400, "hours must be 1–8760")
+		}
+		hours = n
+	}
+	rows, e := s.Store.Pool.Query(ctx, `SELECT at,sum(bytes)::bigint FROM vr_traffic_windows WHERE at>now()-$1*interval '1 hour' GROUP BY at ORDER BY at`, hours)
+	if e != nil {
+		return nil, e
+	}
+	defer rows.Close()
+	out := []Data{}
+	var cumulative int64
+	for rows.Next() {
+		var at time.Time
+		var b int64
+		if e = rows.Scan(&at, &b); e != nil {
+			return nil, e
+		}
+		cumulative += b
+		out = append(out, Data{"at": stamp(at), "bytes": b, "used_traffic_bytes": cumulative, "active_clients": 0, "online_nodes": 0})
+	}
+	return out, rows.Err()
+}
+
+var _ = json.Marshal
+var _ = errors.Is

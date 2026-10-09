@@ -1,0 +1,187 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	hostpkg "github.com/PaarSaAm/VeloRay/internal/host"
+	"github.com/PaarSaAm/VeloRay/internal/panel"
+	"log"
+	"net"
+	"net/http"
+	"os"
+	"os/signal"
+	"strconv"
+	"strings"
+	"syscall"
+)
+
+func loadEnv(path string) error {
+	raw, e := os.ReadFile(path)
+	if os.IsNotExist(e) {
+		return nil
+	}
+	if e != nil {
+		return e
+	}
+	for n, line := range strings.Split(string(raw), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			return fmt.Errorf("invalid environment line %d", n+1)
+		}
+		key := strings.TrimSpace(parts[0])
+		value := strings.TrimSpace(parts[1])
+		if len(value) > 1 && (value[0] == '"' && value[len(value)-1] == '"' || value[0] == '\'' && value[len(value)-1] == '\'') {
+			value = value[1 : len(value)-1]
+		}
+		if _, set := os.LookupEnv(key); !set {
+			if e = os.Setenv(key, value); e != nil {
+				return e
+			}
+		}
+	}
+	return nil
+}
+func main() {
+	if e := run(); e != nil {
+		log.Fatal(e)
+	}
+}
+func run() error {
+	args := os.Args[1:]
+	command := "serve"
+	if len(args) > 0 {
+		command = args[0]
+	}
+	if command == "version" {
+		fmt.Println(panel.Version)
+		return nil
+	}
+	if command == "help" || command == "--help" {
+		fmt.Println("veloray serve | migrate | import-legacy [--dry-run] | bootstrap | bootstrap-local | admin-reset | reconcile | version\nInstallation management: velorayctl help\nVELORAY_ENV_FILE selects the environment file. Bootstrap/reset password is read from VELORAY_ADMIN_PASSWORD or stdin.")
+		return nil
+	}
+	env := os.Getenv("VELORAY_ENV_FILE")
+	if env == "" {
+		env = "/etc/veloray/veloray.env"
+	}
+	if e := loadEnv(env); e != nil {
+		return e
+	}
+	c, e := panel.LoadConfig()
+	if e != nil {
+		return e
+	}
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+	if command == "serve" {
+		e = panel.Serve(ctx, c)
+		if errors.Is(e, http.ErrServerClosed) {
+			return nil
+		}
+		return e
+	}
+	switch command {
+	case "backup":
+		if len(args) != 2 {
+			return errors.New("usage: veloray backup FILE.tar.gz")
+		}
+		return hostpkg.Backup(ctx, "/", args[1], c.DatabaseURL, panel.Version)
+	case "backup-verify":
+		if len(args) != 2 {
+			return errors.New("usage: veloray backup-verify FILE.tar.gz")
+		}
+		tmp, m, e := hostpkg.Verify(args[1])
+		if e != nil {
+			return e
+		}
+		defer os.RemoveAll(tmp)
+		return json.NewEncoder(os.Stdout).Encode(m)
+	case "restore":
+		if len(args) != 2 {
+			return errors.New("usage: veloray restore FILE.tar.gz (stop services first)")
+		}
+		return hostpkg.Restore(ctx, "/", args[1], c.DatabaseURL)
+	case "set-env":
+		if len(args) != 3 {
+			return errors.New("usage: veloray set-env KEY VALUE")
+		}
+		return hostpkg.SetEnv(env, args[1], args[2])
+	case "render-nginx":
+		return hostpkg.RenderNginx(ctx, c.PublicURL, "/etc/nginx/sites-available/veloray")
+	}
+	store, e := panel.OpenStore(ctx, c.DatabaseURL)
+	if e != nil {
+		return e
+	}
+	defer store.Pool.Close()
+	if e = store.Migrate(ctx); e != nil {
+		return e
+	}
+	switch command {
+	case "configure-origin":
+		if len(args) != 3 {
+			return errors.New("usage: veloray configure-origin HOST PORT")
+		}
+		host, port := args[1], args[2]
+		if strings.ContainsAny(host, "/\\?#@\r\n ") || host == "" {
+			return errors.New("invalid host")
+		}
+		n, e := strconv.Atoi(port)
+		if e != nil || n < 1 || n > 65535 || n == 8610 || n == 9191 || n == 10085 {
+			return errors.New("invalid/reserved port")
+		}
+		var used bool
+		if e = store.Pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM vr_inbounds i JOIN vr_nodes n ON n.id=i.node_id WHERE n.data->>'is_local'='true' AND (i.data->>'port')::integer=$1)`, n).Scan(&used); e != nil {
+			return e
+		}
+		if used {
+			return errors.New("panel port is already used by a local inbound")
+		}
+		for k, v := range map[string]string{"VELORAY_PUBLIC_HOST": host, "VELORAY_PANEL_PORT": port, "VELORAY_PUBLIC_URL": "https://" + net.JoinHostPort(host, port)} {
+			if e = hostpkg.SetEnv(env, k, v); e != nil {
+				return e
+			}
+		}
+		return nil
+	case "migrate":
+		fmt.Println("Database schema is current")
+		return nil
+	case "import-legacy":
+		dry := len(args) > 1 && args[1] == "--dry-run"
+		out, e := store.ImportLegacy(ctx, c, dry)
+		if e != nil {
+			return e
+		}
+		return json.NewEncoder(os.Stdout).Encode(out)
+	case "bootstrap", "admin-reset":
+		username := os.Getenv("VELORAY_ADMIN_USERNAME")
+		if username == "" {
+			username = "admin"
+		}
+		password := os.Getenv("VELORAY_ADMIN_PASSWORD")
+		if password == "" {
+			raw, e := os.ReadFile("/dev/stdin")
+			if e != nil {
+				return e
+			}
+			password = strings.TrimRight(string(raw), "\r\n")
+		}
+		if command == "bootstrap" {
+			return store.Bootstrap(ctx, c, username, password)
+		}
+		return store.AdminReset(ctx, username, password)
+	case "bootstrap-local":
+		return store.BootstrapLocal(ctx, c, os.Getenv("VELORAY_PUBLIC_HOST"), os.Getenv("VELORAY_LOCAL_NODE_TOKEN"))
+	case "reconcile":
+		s := &panel.Server{Config: c, Store: store}
+		_ = s.Handler()
+		return s.Reconcile(ctx)
+	}
+	return fmt.Errorf("unknown command %q; run veloray help", command)
+}

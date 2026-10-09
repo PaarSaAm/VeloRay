@@ -1,0 +1,27 @@
+[Unit]
+Description=VeloRay panel
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+User=veloray
+Group=veloray
+EnvironmentFile=/etc/veloray/veloray.env
+WorkingDirectory=/opt/veloray/current
+ExecStart=/usr/local/bin/veloray serve
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+ProtectKernelModules=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+ReadWritePaths=/var/lib/veloray
+
+[Install]
+WantedBy=multi-user.target

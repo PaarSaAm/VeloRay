@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+[[ ${EUID:-$(id -u)} -eq 0 ]] || { echo 'Run with sudo.' >&2; exit 1; }
+ENV_FILE="${VELORAY_ENV_FILE:-/etc/veloray/veloray.env}"
+[[ -f "$ENV_FILE" ]] || { echo 'VeloRay is not installed.' >&2; exit 1; }
+set -a
+# Installer-owned configuration, readable only by root and the panel service.
+source "$ENV_FILE"
+set +a
+WEB=veloray-web.service
+AGENT=veloray-agent.service
+command="${1:-help}"; shift || true
+case "$command" in
+ help) cat <<'HELP'
+velorayctl status | doctor | start | stop | restart
+velorayctl logs [web|agent|xray]
+velorayctl backup [FILE.tar.gz] | restore FILE.tar.gz
+velorayctl admin-reset [USERNAME]
+velorayctl domain HOST | port PORT | ssl EMAIL
+velorayctl update RELEASE_DIRECTORY | node
+HELP
+ ;;
+ status) systemctl --no-pager status "$WEB" "$AGENT" xray.service; ;;
+ doctor) systemctl is-active --quiet "$WEB" "$AGENT" xray.service postgresql nginx
+ nginx -t
+ curl -fsS --max-time 5 http://127.0.0.1:8610/api/health
+ curl -fsS --max-time 5 -H "Authorization: Bearer $VELORAY_LOCAL_NODE_TOKEN" http://127.0.0.1:9191/health
+ ;;
+ start|stop|restart) systemctl "$command" "$WEB" "$AGENT"; ;;
+ logs) unit="$WEB"; case "${1:-web}" in agent) unit="$AGENT";; xray) unit=xray.service;; web) ;; *) exit 2;; esac; exec journalctl -u "$unit" -n 100 -f; ;;
+ backup) dir=/var/lib/veloray/backups;install -d -m 0700 "$dir"; file="${1:-$dir/veloray-$(date -u +%Y%m%dT%H%M%SZ).tar.gz}"; veloray backup "$file";echo "$file"; ;;
+ restore) [[ $# -eq 1 ]] || { echo 'Usage: velorayctl restore FILE.tar.gz' >&2;exit 2; }
+ veloray backup-verify "$1" >/dev/null
+ # Always create a recovery point before replacing data and secrets.
+ "$0" backup
+ systemctl stop "$WEB" "$AGENT" xray.service
+ trap 'echo "Restore stopped. Inspect the error and recovery backup before restarting services." >&2' ERR
+ veloray restore "$1"
+ chown root:veloray "$ENV_FILE";chmod 0640 "$ENV_FILE"
+ chown root:veloray "$(dirname "$ENV_FILE")";chmod 0750 "$(dirname "$ENV_FILE")"
+ # Discard old application keys before loading the restored environment.
+ while IFS='=' read -r key _;do [[ "$key" =~ ^(VELORAY_[A-Z0-9_]+|DATABASE_URL)$ ]]&&unset "$key"||true;done < "$ENV_FILE"
+ set -a;source "$ENV_FILE";set +a
+ if [[ -d /usr/local/etc/xray ]];then
+  find /usr/local/etc/xray -type d -exec chmod 0755 {} +
+  find /usr/local/etc/xray -type f -exec chown root:nogroup {} + -exec chmod 0640 {} +
+ fi
+ # Recreate ACME live links from the restored archive files if present.
+ if [[ -d /etc/letsencrypt/archive ]]; then
+  for d in /etc/letsencrypt/archive/*;do [[ -d "$d" ]]||continue;live="/etc/letsencrypt/live/$(basename "$d")";mkdir -p "$live";for part in cert chain fullchain privkey;do last="$(find "$d" -maxdepth 1 -name "${part}[0-9]*.pem" | sort -V | tail -1)";[[ -n "$last" ]]&&ln -sfn "$last" "$live/$part.pem";done;done
+ fi
+ veloray render-nginx
+ systemctl daemon-reload
+ systemctl start xray.service "$AGENT" "$WEB"
+ "$0" doctor
+ ;;
+ admin-reset) export VELORAY_ADMIN_USERNAME="${1:-admin}";read -rsp 'New password: ' VELORAY_ADMIN_PASSWORD;echo;export VELORAY_ADMIN_PASSWORD;veloray admin-reset;unset VELORAY_ADMIN_PASSWORD; ;;
+ domain|port) [[ $# -eq 1 ]]||exit 2
+ old_origin="$VELORAY_PUBLIC_URL";old_host="$VELORAY_PUBLIC_HOST";old_port="$VELORAY_PANEL_PORT"
+ if [[ "$command" == domain ]];then [[ "$1" =~ ^[a-zA-Z0-9.-]+$ ]]||exit 2;host="$1";port="$VELORAY_PANEL_PORT";else [[ "$1" =~ ^[0-9]+$ ]]&&(( $1>0&&$1<65536 ))||exit 2;host="$VELORAY_PUBLIC_HOST";port="$1";fi
+ # Reject reserved/listening inbound ports via the Go command before changing host files.
+ veloray configure-origin "$host" "$port"
+ set -a;source "$ENV_FILE";set +a
+ if ! veloray render-nginx;then veloray set-env VELORAY_PUBLIC_URL "$old_origin";veloray set-env VELORAY_PUBLIC_HOST "$old_host";veloray set-env VELORAY_PANEL_PORT "$old_port";echo 'Nginx rejected the change. Environment origin restored.' >&2;exit 1;fi
+ systemctl restart "$WEB"
+ ;;
+ ssl) [[ $# -eq 1 && -n "${VELORAY_PUBLIC_HOST:-}" ]]||exit 2
+ certbot certonly --standalone --preferred-challenges http --agree-tos --non-interactive --email "$1" -d "$VELORAY_PUBLIC_HOST"
+ veloray render-nginx
+ ;;
+ update) [[ $# -eq 1 && -f "$1/install.sh" ]]||{ echo 'Pass an extracted, verified release directory.' >&2;exit 2; };exec bash "$1/install.sh"; ;;
+ node) echo 'Extract the release on the remote server and run: sudo bash deploy/node/install.sh'; ;;
+ *) echo 'Unknown command. Run velorayctl help.' >&2;exit 2; ;;
+esac

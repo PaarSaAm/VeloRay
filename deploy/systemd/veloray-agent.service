@@ -1,0 +1,23 @@
+[Unit]
+Description=VeloRay node agent
+After=network-online.target xray.service
+Wants=network-online.target
+
+[Service]
+EnvironmentFile=/etc/veloray-node/agent.env
+ExecStart=/usr/local/bin/veloray-agent
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+ProtectKernelModules=true
+ReadWritePaths=/usr/local/etc/xray /var/lib/veloray-agent
+
+[Install]
+WantedBy=multi-user.target
