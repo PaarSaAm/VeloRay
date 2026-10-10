@@ -1,52 +1,67 @@
 @import "tailwindcss";
 
+@font-face {
+  font-family: "Inter";
+  src: url("/fonts/InterVariable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Vazirmatn";
+  src: url("/fonts/Vazirmatn-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root,
 .dark {
-  --bg: #09090b;
-  --sidebar: #09090b;
-  --card: #0c0c0f;
-  --surface-2: #111114;
-  --surface-3: #18181b;
-  --border: #27272a;
-  --border-subtle: #1f1f23;
-  --border-strong: #3f3f46;
+  --bg: #000000;
+  --sidebar: #050505;
+  --card: #0a0a0a;
+  --surface-2: #111111;
+  --surface-3: #1b1b1b;
+  --border: #292929;
+  --border-subtle: #1e1e1e;
+  --border-strong: #404040;
   --fg: #fafafa;
-  --muted: #71717a;
-  --muted-strong: #a1a1aa;
+  --muted: #a3a3a3;
+  --muted-strong: #d4d4d4;
   --primary: #fafafa;
-  --primary-fg: #09090b;
-  --brand: #00ed7b;
-  --brand-strong: #00c968;
+  --primary-fg: #090909;
+  --brand: #67e8a5;
+  --brand-strong: #4ed28b;
   --info: #60a5fa;
   --brand-tile: #050506;
   --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.22);
-  --ring: rgba(0, 237, 123, 0.22);
+  --ring: rgba(103, 232, 165, 0.25);
   --danger: #ef4444;
   --warning: #f59e0b;
-  --chart-grid: #1d1d21;
-  --chart-line: #00ed7b;
-  --chart-fill: rgba(0, 237, 123, 0.12);
+  --chart-grid: #242424;
+  --chart-line: #67e8a5;
+  --chart-fill: rgba(103, 232, 165, 0.12);
 }
 .light {
-  --bg: #fafafa;
+  --bg: #f3f6f8;
   --sidebar: #fff;
   --card: #fff;
-  --surface-2: #f4f4f5;
-  --surface-3: #e4e4e7;
-  --border: #e4e4e7;
-  --border-subtle: #eeeeef;
+  --surface-2: #edf2f5;
+  --surface-3: #dce5eb;
+  --border: #cbd6de;
+  --border-subtle: #e1e8ed;
   --border-strong: #d4d4d8;
   --fg: #18181b;
-  --muted: #71717a;
-  --muted-strong: #52525b;
+  --muted: #576b79;
+  --muted-strong: #354b59;
   --primary: #18181b;
   --primary-fg: #fafafa;
-  --brand: #00b85f;
-  --brand-strong: #009d51;
+  --brand: #177444;
+  --brand-strong: #105c35;
   --info: #2563eb;
   --brand-tile: #050506;
   --card-shadow: 0 1px 2px rgba(24, 24, 27, 0.04);
-  --ring: rgba(0, 184, 95, 0.16);
+  --ring: rgba(23, 116, 68, 0.2);
   --danger: #dc2626;
   --warning: #d97706;
   --chart-grid: #ececef;
@@ -100,6 +115,8 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--fg);
+  font-size: 14px;
+  line-height: 1.55;
   font-family:
     Inter,
     Vazirmatn,
@@ -111,8 +128,14 @@ body {
     BlinkMacSystemFont,
     sans-serif;
   font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  font-optical-sizing: auto;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
+}
+:lang(fa),
+[dir="rtl"] {
+  font-family: Vazirmatn, Inter, "Segoe UI", sans-serif;
+  letter-spacing: normal;
 }
 button,
 input,
@@ -133,7 +156,7 @@ a {
 
 /* shadcn-like form primitives */
 .input {
-  height: 2.5rem;
+  height: 2.65rem;
   width: 100%;
   min-width: 0;
   border-radius: 0.5rem;
@@ -141,7 +164,7 @@ a {
   background: var(--bg);
   padding: 0 0.75rem;
   color: var(--fg);
-  font-size: 12px;
+  font-size: 13px;
   outline: none;
   transition:
     border-color 0.15s,
@@ -164,7 +187,7 @@ select.input {
 .label {
   display: block;
   min-width: 0;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--fg);
 }
@@ -190,7 +213,7 @@ textarea.input {
   width: 100%;
   border-collapse: separate;
   border-spacing: 0;
-  font-size: 12px;
+  font-size: 13px;
 }
 .data-table th {
   position: sticky;
@@ -199,16 +222,16 @@ textarea.input {
   white-space: nowrap;
   border-bottom: 1px solid var(--border);
   background: var(--card);
-  padding: 10px 12px;
+  padding: 13px 16px;
   text-align: left;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   color: var(--muted);
 }
 .data-table td {
   max-width: 360px;
   border-bottom: 1px solid var(--border-subtle);
-  padding: 12px;
+  padding: 15px 16px;
   vertical-align: middle;
   color: var(--muted-strong);
 }
@@ -230,15 +253,7 @@ textarea.input {
   position: relative;
 }
 .veloray-grid:before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background: radial-gradient(
-    circle at 50% -12rem,
-    rgba(0, 237, 123, 0.055),
-    transparent 32rem
-  );
+  display: none;
 }
 .veloray-grid > * {
   position: relative;
@@ -290,9 +305,23 @@ textarea.input {
   font-size: 9px;
   color: var(--muted-strong);
 }
-.fa-fw {
-  width: 1.15em;
-  text-align: center;
+.vr-icon {
+  min-width: 18px;
+  min-height: 18px;
+  line-height: 1;
+}
+.vr-icon-fixed {
+  width: 20px;
+  height: 20px;
+}
+.vr-icon > svg {
+  display: block;
+  width: 18px;
+  height: 18px;
+  overflow: visible;
+}
+.lucide {
+  flex-shrink: 0;
 }
 .status-glow {
   box-shadow: 0 0 0 4px rgba(0, 237, 123, 0.08);
@@ -417,57 +446,6 @@ textarea.input {
 }
 
 /* Readable density, keyboard access and clear active navigation. */
-:root,
-.dark {
-  --bg: #101316;
-  --sidebar: #12171b;
-  --card: #171d22;
-  --surface-2: #1d252b;
-  --surface-3: #263139;
-  --border: #303c45;
-  --border-subtle: #263139;
-  --muted: #97a6b2;
-  --muted-strong: #c1ccd4;
-  --brand: #80dba4;
-  --brand-strong: #60c48a;
-  --ring: rgba(128, 219, 164, 0.25);
-  --chart-line: #80dba4;
-  --chart-fill: rgba(128, 219, 164, 0.13);
-}
-.light {
-  --bg: #f3f6f8;
-  --sidebar: #fff;
-  --card: #fff;
-  --surface-2: #edf2f5;
-  --surface-3: #dce5eb;
-  --border: #cbd6de;
-  --border-subtle: #e1e8ed;
-  --muted: #576b79;
-  --muted-strong: #354b59;
-  --brand: #177444;
-  --brand-strong: #105c35;
-  --ring: rgba(23, 116, 68, 0.2);
-}
-body {
-  font-size: 14px;
-}
-.input {
-  font-size: 13px;
-  height: 2.65rem;
-}
-.label {
-  font-size: 12px;
-}
-.data-table {
-  font-size: 13px;
-}
-.data-table th {
-  font-size: 11px;
-  padding: 13px 16px;
-}
-.data-table td {
-  padding: 15px 16px;
-}
 .text-\[9px\] {
   font-size: 11px;
 }
@@ -502,12 +480,6 @@ nav [aria-current="page"] {
 }
 .skip-link:focus {
   top: 12px;
-}
-.veloray-grid:before {
-  display: none;
-}
-.metric-value {
-  font-variant-numeric: tabular-nums;
 }
 pre {
   white-space: pre-wrap;

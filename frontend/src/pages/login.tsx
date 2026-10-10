@@ -119,6 +119,7 @@ export function LoginPage({ onSuccess }: { onSuccess: () => void }) {
   return (
     <main
       className="min-h-screen bg-[var(--bg)] text-[var(--fg)]"
+      lang={locale}
       dir={rtl ? "rtl" : "ltr"}
     >
       <div className="flex min-h-screen w-full flex-col justify-between p-5 sm:p-6">

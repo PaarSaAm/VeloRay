@@ -31,9 +31,11 @@ import {
   Rocket,
   Rss,
   Save,
+  Send,
   Server,
   Settings,
   Shield,
+  SlidersHorizontal,
   Terminal,
   Trash2,
   TriangleAlert,
@@ -59,6 +61,8 @@ const icons: Record<string, LucideIcon> = {
   "shield-halved": Shield,
   "user-shield": UserCog,
   gear: Settings,
+  sliders: SlidersHorizontal,
+  "paper-plane": Send,
   rss: Rss,
   code: Code,
   key: KeyRound,
@@ -104,13 +108,13 @@ export function FaIcon({
     <span
       aria-hidden="true"
       className={cn(
-        "inline-flex shrink-0 items-center justify-center",
-        fixed && "w-[1.15em]",
+        "vr-icon inline-flex shrink-0 items-center justify-center align-middle",
+        fixed && "vr-icon-fixed",
         className,
       )}
       {...props}
     >
-      <Icon width="1em" height="1em" strokeWidth={1.8} />
+      <Icon size={18} strokeWidth={2} aria-hidden="true" focusable="false" />
     </span>
   );
 }

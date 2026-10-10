@@ -1,0 +1,20 @@
+name: Bug report
+description: Report a reproducible problem without credentials.
+body:
+  - type: input
+    id: versions
+    attributes:
+      label: VeloRay and Xray versions
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps and expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Sanitized logs
+      description: Remove tokens, passwords, subscription URLs and private keys.

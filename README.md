@@ -31,6 +31,8 @@ HTTP and SOCKS do not provide per-account traffic accounting in this implementat
 
 ## Installation
 
+The dark interface uses a black background with neutral surfaces and readable text contrast. Inter and Vazirmatn variable fonts are served from the panel itself; fonts and SVG icons require no external CDN. Persian views use Vazirmatn, and navigation and action icons retain their size in compact and mobile layouts. Font licenses and upstream sources are included under `frontend/public/fonts`.
+
 Use a dedicated **Ubuntu 24.04** server with systemd and an amd64 or arm64 processor. The installation configures PostgreSQL, service units and an Nginx HTTPS endpoint.
 
 Run the installer directly from GitHub:
@@ -55,6 +57,8 @@ Review `install.sh` before running it. The installer shows concise progress step
 
 You can also install from an extracted source checkout with `sudo -E bash install.sh`. Use `--repo OWNER/REPOSITORY` and `--ref BRANCH_OR_TAG_OR_COMMIT` for a fork or a pinned version. Ref names must use letters, numbers, dots, underscores or hyphens.
 
+For a downloaded release ZIP, extract it and run `bash scripts/verify-runtime.sh` from the `VeloRay` directory before publishing or installing. This checks both architecture bundles against the files actually shipped in that directory. Python bytecode caches are excluded from source verification; the embedded Python source remains verified. Matching runtimes install without downloading Go or Node.js. Read an installation log with `sudo tail -n 80 /var/log/veloray/INSTALL_LOG_NAME.log`; a log path is a file to read, not a command to execute.
+
 To supply a local Xray archive, set `VELORAY_XRAY_ARCHIVE` and `VELORAY_XRAY_SHA256` before running the installer with `sudo -E`. An existing `/usr/local/bin/xray` is preserved.
 
 For unattended installation, provide `VELORAY_PUBLIC_HOST`, `VELORAY_PANEL_PORT`, `VELORAY_ADMIN_USERNAME` and `VELORAY_ADMIN_PASSWORD`. Application keys are generated locally.
@@ -77,6 +81,19 @@ sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/PaarSaAm/VeloRay/ma
 ```
 
 Keep the agent token private. Use a trusted agent certificate or configure `VELORAY_AGENT_CA_FILE` on the panel server. Add the HTTPS agent address and token in **Nodes**, then probe the connection. Restrict agent access to the panel server in your firewall.
+
+## Uploading the complete package to GitHub
+
+Extract the release ZIP and upload the **contents** of its `VeloRay` directory to the repository root, including `.github`, `frontend/public/fonts`, `runtime` and `runtime/SHA256SUMS`. Keep the runtime archives as files. The repository root must contain `install.sh`, `go.mod` and `VERSION`. Commit the supplied source and runtimes together.
+
+After editing a build input, rebuild both runtimes and regenerate the complete ZIP:
+
+```bash
+bash scripts/build-runtime.sh
+python3 scripts/package-release.py
+```
+
+The packager verifies the source, binary checksums and bundled public assets, then extracts the completed ZIP and checks both runtimes again before producing it. The manual **Build release archives** GitHub workflow uses the same process and produces one package for both architectures. Keep the generated ZIP outside the repository; the extracted source and `runtime` files belong in the repository root.
 
 ## Management
 

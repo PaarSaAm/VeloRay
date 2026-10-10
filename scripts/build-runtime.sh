@@ -4,7 +4,8 @@ cd "$(dirname -- "${BASH_SOURCE[0]}")/.."
 manifest() {
  {
   printf '%s\n' go.mod go.sum VERSION
-  find cmd internal -type f ! -name '*_test.go'
+  # Python bytecode is local build state, never an input to the Go binaries.
+  find cmd internal -type f ! -name '*_test.go' ! -name '*.pyc' ! -path '*/__pycache__/*'
   find frontend -maxdepth 1 -type f ! -name '*.tsbuildinfo'
   find frontend/src -type f
   [[ ! -d frontend/public ]]||find frontend/public -type f

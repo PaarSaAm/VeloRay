@@ -1,0 +1,26 @@
+name: Build release archives
+on: workflow_dispatch
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: bash scripts/build-runtime.sh
+      - run: bash scripts/verify-runtime.sh
+      - run: |
+          mkdir -p release
+          python3 scripts/package-release.py --output "$RUNNER_TEMP/VeloRay-GitHub.zip"
+          mv "$RUNNER_TEMP/VeloRay-GitHub.zip" release/
+          cd release && sha256sum *.zip > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: veloray-complete-amd64-arm64
+          path: release/*

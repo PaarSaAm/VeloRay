@@ -68,10 +68,10 @@ export function Sidebar({
   setMobileOpen: (v: boolean) => void;
   isSuperuser?: boolean;
 }) {
-  const body = (
+  const body = (compact: boolean) => (
     <>
       <div className="flex h-16 items-center justify-between px-4">
-        <VeloRayWordmark compact={collapsed} />
+        <VeloRayWordmark compact={compact} />
         <button
           aria-label="Close menu"
           className="grid h-8 w-8 place-items-center rounded-md text-[var(--muted)] hover:bg-[var(--surface-2)] lg:hidden"
@@ -84,7 +84,7 @@ export function Sidebar({
       <nav className="scrollbar-none flex-1 overflow-y-auto px-3 py-4">
         {groups.map((g) => (
           <div key={g.label} className="mb-5">
-            {!collapsed && (
+            {!compact && (
               <div className="mb-1.5 px-2 text-[9px] font-medium text-[var(--muted)]">
                 {g.label}
               </div>
@@ -102,14 +102,14 @@ export function Sidebar({
                       key={item.key}
                       aria-label={item.label}
                       aria-current={active ? "page" : undefined}
-                      title={collapsed ? item.label : undefined}
+                      title={compact ? item.label : undefined}
                       onClick={() => {
                         setRoute(item.key);
                         setMobileOpen(false);
                       }}
                       className={cn(
                         "group flex h-9 w-full min-w-0 items-center rounded-md text-[12px] font-medium transition",
-                        collapsed ? "justify-center px-0" : "gap-2.5 px-2.5",
+                        compact ? "justify-center px-0" : "gap-2.5 px-2.5",
                         active
                           ? "bg-[var(--surface-2)] text-[var(--fg)]"
                           : "text-[var(--muted-strong)] hover:bg-[var(--surface-2)] hover:text-[var(--fg)]",
@@ -121,10 +121,10 @@ export function Sidebar({
                           "text-[12px] transition-colors",
                           active
                             ? "text-[var(--brand)]"
-                            : "text-[var(--muted)] group-hover:text-[var(--muted-strong)]",
+                            : "text-[var(--muted-strong)] group-hover:text-[var(--fg)]",
                         )}
                       />
-                      {!collapsed && (
+                      {!compact && (
                         <span className="truncate">{item.label}</span>
                       )}
                     </button>
@@ -135,7 +135,7 @@ export function Sidebar({
         ))}
       </nav>
       <div className="border-t border-[var(--border-subtle)] p-3">
-        {!collapsed && (
+        {!compact && (
           <a
             href="https://github.com/PaarSaAm/VeloRay"
             target="_blank"
@@ -147,14 +147,14 @@ export function Sidebar({
           </a>
         )}
         <button
-          aria-label={collapsed ? "Expand navigation" : "Collapse navigation"}
+          aria-label={compact ? "Expand navigation" : "Collapse navigation"}
           onClick={() => setCollapsed(!collapsed)}
           className="hidden h-8 w-full items-center justify-center rounded-md text-[var(--muted)] hover:bg-[var(--surface-2)] lg:flex"
         >
           <ChevronLeft
             className={cn(
               "h-4 w-4 transition-transform",
-              collapsed && "rotate-180",
+              compact && "rotate-180",
             )}
           />
         </button>
@@ -169,7 +169,7 @@ export function Sidebar({
           collapsed ? "w-[68px]" : "w-[252px]",
         )}
       >
-        {body}
+        {body(collapsed)}
       </aside>
       {mobileOpen && (
         <div className="fixed inset-0 z-50 lg:hidden">
@@ -179,7 +179,7 @@ export function Sidebar({
             className="absolute inset-0 bg-black/55 backdrop-blur-[3px]"
           />
           <aside className="absolute inset-y-0 left-0 flex w-[286px] flex-col border-r border-[var(--border)] bg-[var(--sidebar)] shadow-2xl">
-            {body}
+            {body(false)}
           </aside>
         </div>
       )}

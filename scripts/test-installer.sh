@@ -16,6 +16,21 @@ sed -e 's|source /etc/os-release|source "$TEST_ROOT/os-release"|' \
  "$project/install.sh" >"$TEST_ROOT/bootstrap.sh"
 printf 'module test\ngo 1.26.0\n' >"$TEST_ROOT/fixture/go.mod"
 printf '{}\n' >"$TEST_ROOT/fixture/frontend/package-lock.json"
+manifest_root="$TEST_ROOT/manifest-fixture"
+mkdir -p "$manifest_root/scripts" "$manifest_root/cmd" "$manifest_root/internal/panel" "$manifest_root/frontend/src"
+cp "$project/scripts/build-runtime.sh" "$manifest_root/scripts/"
+printf 'module manifest-test\ngo 1.26.0\n' >"$manifest_root/go.mod"
+touch "$manifest_root/go.sum"
+printf '0.1.0\n' >"$manifest_root/VERSION"
+printf 'print("embedded source")\n' >"$manifest_root/internal/panel/import_reader.py"
+bash "$manifest_root/scripts/build-runtime.sh" --manifest >"$TEST_ROOT/manifest-before"
+mkdir -p "$manifest_root/internal/panel/__pycache__"
+printf 'local cache' >"$manifest_root/internal/panel/__pycache__/import_reader.cpython-312.pyc"
+bash "$manifest_root/scripts/build-runtime.sh" --manifest >"$TEST_ROOT/manifest-with-cache"
+cmp "$TEST_ROOT/manifest-before" "$TEST_ROOT/manifest-with-cache"
+printf '# embedded source changed\n' >>"$manifest_root/internal/panel/import_reader.py"
+bash "$manifest_root/scripts/build-runtime.sh" --manifest >"$TEST_ROOT/manifest-changed"
+if cmp -s "$TEST_ROOT/manifest-before" "$TEST_ROOT/manifest-changed";then echo 'Embedded Python source was not verified.' >&2;exit 1;fi
 cat >"$TEST_ROOT/fixture/scripts/build.sh" <<'BUILD'
 #!/usr/bin/env bash
 set -e
@@ -232,6 +247,7 @@ for machine in x86_64 aarch64;do
  done
 done
 unset TEST_OLD_TOOLS TEST_GO_ROUTE
+pass source-manifest-excludes-cache-and-tracks-embedded-python
 printf '# source changed\n' >>"$TEST_ROOT/fixture/go.mod"
 tar -czf "$TEST_ROOT/source.tar.gz" -C "$TEST_ROOT" fixture
 : >"$TEST_ROOT/calls"

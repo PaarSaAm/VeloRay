@@ -88,10 +88,128 @@ test("login is accessible in Persian", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Change login language" }).click();
   await expect(page.locator("main")).toHaveAttribute("dir", "rtl");
+  await expect(page.locator("main")).toHaveAttribute("lang", "fa");
+  await page.evaluate(() =>
+    document.fonts.load('500 14px "Vazirmatn"', "ورود"),
+  );
+  expect(
+    await page
+      .locator("main")
+      .evaluate((el) => getComputedStyle(el).fontFamily),
+  ).toMatch(/^Vazirmatn/);
   await expect(
     page.getByRole("button", { name: "ورود", exact: true }),
   ).toBeVisible();
   await page.screenshot({ path: "test-results/login-fa.png", fullPage: true });
+});
+
+test("bundled fonts, black surfaces and visible compact navigation icons", async ({
+  page,
+}) => {
+  // The panel must render when third-party font/CDN requests are unavailable.
+  await page.route("**/*", async (route) => {
+    const host = new URL(route.request().url()).hostname;
+    if (host === "127.0.0.1" || host === "localhost") await route.continue();
+    else await route.abort();
+  });
+  await page.goto("/");
+  const fonts = await page.evaluate(async () => {
+    const inter = await document.fonts.load('500 14px "Inter"', "Traffic 123");
+    const vazirmatn = await document.fonts.load(
+      '500 14px "Vazirmatn"',
+      "مصرف ۱۲۳",
+    );
+    return [...inter, ...vazirmatn].map((font) => ({
+      family: font.family,
+      status: font.status,
+    }));
+  });
+  expect(fonts).toEqual([
+    { family: "Inter", status: "loaded" },
+    { family: "Vazirmatn", status: "loaded" },
+  ]);
+  await expect(page.locator("body")).toHaveCSS(
+    "background-color",
+    "rgb(0, 0, 0)",
+  );
+  await page.getByLabel("Username", { exact: true }).fill("admin");
+  await page
+    .getByLabel("Password", { exact: true })
+    .fill(process.env.VELORAY_E2E_PASSWORD || "Test-password-very-long");
+  await page.getByRole("button", { name: "Login", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Dashboard", exact: true }),
+  ).toBeVisible();
+  await expect(page.locator("aside").first()).toHaveCSS(
+    "background-color",
+    "rgb(5, 5, 5)",
+  );
+  const dashboard = page
+    .getByRole("button", { name: "Dashboard", exact: true })
+    .first();
+  await expect(dashboard.locator("svg")).toHaveCSS("width", "18px");
+  await expect(dashboard.locator("svg")).toHaveAttribute("stroke-width", "2");
+  await page.getByRole("button", { name: "Collapse navigation" }).click();
+  await expect(dashboard).toBeVisible();
+  await expect(dashboard.locator("svg")).toBeVisible();
+  const icons = await page
+    .locator("aside nav .vr-icon svg")
+    .evaluateAll((elements) =>
+      elements.map((el) => {
+        const box = el.getBoundingClientRect();
+        const style = getComputedStyle(el);
+        return {
+          width: box.width,
+          height: box.height,
+          color: style.color,
+          opacity: style.opacity,
+        };
+      }),
+    );
+  expect(icons.length).toBeGreaterThanOrEqual(13);
+  for (const icon of icons) {
+    expect(icon.width).toBe(18);
+    expect(icon.height).toBe(18);
+    expect(icon.color).not.toBe("rgb(0, 0, 0)");
+    expect(icon.opacity).toBe("1");
+  }
+  await page.screenshot({
+    path: "test-results/navigation-compact.png",
+    fullPage: true,
+  });
+  await page.getByRole("button", { name: "Theme: dark" }).click();
+  await expect(page.locator("html")).toHaveClass("light");
+  await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute(
+    "content",
+    "#f3f6f8",
+  );
+  await page.screenshot({
+    path: "test-results/dashboard-light.png",
+    fullPage: true,
+  });
+  await page.reload();
+  await expect(page.locator("html")).toHaveClass("light");
+  await page.getByRole("button", { name: "Theme: light" }).click();
+  await page.getByRole("button", { name: "Theme: system" }).click();
+  await expect(page.locator("html")).toHaveClass("dark");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("button", { name: "Open navigation" }).click();
+  const mobileNav = page.locator("aside").last();
+  await expect(mobileNav.getByText("Dashboard", { exact: true })).toBeVisible();
+  await expect(
+    mobileNav
+      .getByRole("button", { name: "Dashboard", exact: true })
+      .locator("svg"),
+  ).toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+    )
+    .toBe(true);
+  await page.screenshot({
+    path: "test-results/navigation-mobile.png",
+    fullPage: true,
+  });
 });
 
 test("runtime validation and private configuration download", async ({

@@ -37,6 +37,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     document.documentElement.classList.toggle("dark", resolved === "dark");
     document.documentElement.classList.toggle("light", resolved === "light");
     document.documentElement.style.colorScheme = resolved;
+    document
+      .querySelector('meta[name="theme-color"]')
+      ?.setAttribute("content", resolved === "dark" ? "#000000" : "#f3f6f8");
   }, [resolved]);
   const setTheme = (value: Theme) => {
     localStorage.setItem("veloray-theme", value);

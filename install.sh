@@ -107,7 +107,7 @@ printf '\nVeloRay 0.1.0\n'
 vr_say 'Server installation' 'نصب روی سرور'
 vr_step 'Prepare system packages' 'آماده‌سازی بسته‌های سیستم'
 packages=(ca-certificates curl jq tar xz-utils unzip openssl iproute2)
-[[ "$action" != install ]]||packages+=(postgresql postgresql-client nginx certbot)
+[[ "$action" != install ]]||packages+=(postgresql postgresql-client nginx certbot python3)
 vr_run env DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l apt-get update
 vr_run env DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l apt-get install -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold "${packages[@]}"
 export VELORAY_DEPENDENCIES_READY=true
@@ -143,7 +143,10 @@ prepare_runtime() {
  [[ -f "$bundle/source.SHA256SUMS" && -x "$bundle/bin/linux-$arch/veloray" && -x "$bundle/bin/linux-$arch/veloray-agent" && -f "$bundle/frontend/dist/index.html" ]]||fail 'Runtime archive is incomplete.'
  bash "$source_directory/scripts/build-runtime.sh" --manifest >"$temporary/current-source.SHA256SUMS" || fail 'Cannot verify runtime source files.'
  if ! cmp -s "$temporary/current-source.SHA256SUMS" "$bundle/source.SHA256SUMS";then
+  printf 'Runtime source manifest mismatch:\n' >>"$VELORAY_INSTALL_LOG"
+  diff -u "$bundle/source.SHA256SUMS" "$temporary/current-source.SHA256SUMS" >>"$VELORAY_INSTALL_LOG" || true
   printf 'Source files changed; building the current source instead of using the bundled runtime.\n'
+  vr_say "Changed file details: sudo tail -n 80 $VELORAY_INSTALL_LOG" "فایل‌های ناهماهنگ: sudo tail -n 80 $VELORAY_INSTALL_LOG"
   return 1
  fi
  (cd "$bundle/bin/linux-$arch" && sha256sum -c SHA256SUMS) >>"$VELORAY_INSTALL_LOG" 2>&1 || fail 'Runtime binary checksum mismatch.'
