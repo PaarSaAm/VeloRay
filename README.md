@@ -10,11 +10,12 @@ Built with a Go backend, a Go node agent and a React interface, VeloRay keeps in
 
 ## Built for everyday operations
 
-- **Infrastructure management.** Manage local and remote nodes, check runtime status, validate and download configurations, deploy changes and recover stopped services. Remote agents support HTTPS, custom certificate authorities and optional mutual TLS.
-- **Client lifecycle.** Create individual credentials, traffic allowances, expiry dates and scheduled renewals. Enable or disable access and reset quota periods while retaining recorded traffic history.
+- **Infrastructure management.** Manage local and remote nodes, inspect TCP and UDP listener ownership, validate and download configurations, deploy changes and recover stopped services. Connection presets cover common VLESS, Trojan, WireGuard and Hysteria2 setups. Remote agents support HTTPS, custom certificate authorities and optional mutual TLS.
+- **Client lifecycle.** Create individual credentials, traffic allowances, expiry dates and scheduled renewals. Set a traffic multiplier or discount while retaining separate actual and billed counters. Provision up to 100 accounts in one atomic deployment, with distinct credentials and subscription addresses. Enable or disable access, export usage as CSV and reset quota periods while retaining recorded traffic history.
+- **Migration.** Preview a 3x-ui or PasarGuard database backup, select inbounds and change conflicting ports. Import accounts, available traffic counters, credentials and supported connection settings as disabled entries. Shared accounts retain one quota across their connections and one subscription feed.
 - **Subscription delivery.** Give each client a private subscription address and a browser portal with usage, expiry and a QR code. English and Persian portals support Base64, raw URI, JSON, Clash/Mihomo and WireGuard exports where supported.
 - **Administrative control.** Administrator roles, TOTP two-factor authentication, recovery codes, scoped API keys and audit records help control access and trace changes.
-- **Operational visibility.** Review host metrics, node health and client traffic. Telegram owner commands and resource alerts provide an additional management channel.
+- **Operational visibility.** Review host metrics, node health, socket conflicts and client traffic. Download a diagnostic report that excludes account credentials and agent tokens. Telegram owner commands and resource alerts provide an additional management channel.
 - **Recovery tools.** Persistent accounting, configuration journals, retries and rollback handling support recovery from node failures. An interactive host menu handles service management, certificates, scheduled backups and restore.
 
 ## Protocols
@@ -67,7 +68,7 @@ sudo veloray domain panel.example.com
 sudo veloray ssl owner@example.com
 ```
 
-Certificate issuance uses Nginx webroot challenges and keeps the panel running. The domain must resolve to this server and HTTP port `80` must be publicly reachable. Other Nginx sites retain their own server blocks. VPN certificates must be readable by Xray's `nobody:nogroup` service account. Place certificate copies in a traversable directory such as `/usr/local/etc/xray/tls`, with owner `root`, group `nogroup` and file mode `0640`.
+Certificate issuance uses Nginx webroot challenges and keeps the panel running. The domain must resolve to this server and HTTP port `80` must be publicly reachable. Other Nginx sites retain their own server blocks. Xray runs as the dedicated `veloray-xray` account with group `nogroup`, preserving access to existing certificate copies. Place VPN certificate copies in a traversable directory such as `/usr/local/etc/xray/tls`, with owner `root`, group `nogroup` and file mode `0640`.
 
 For a remote node, run:
 
@@ -86,6 +87,8 @@ sudo veloray
 sudo veloray status
 sudo veloray doctor
 sudo veloray repair
+sudo veloray ports
+sudo veloray inbounds
 sudo veloray logs xray
 sudo veloray logs install
 sudo veloray reset admin
@@ -109,6 +112,71 @@ Backups contain database data, application secrets, local certificates, configur
 | Xray statistics API | `127.0.0.1:10085` |
 
 Environment files live at `/etc/veloray/veloray.env` and `/etc/veloray-node/agent.env`. Preserve the application encryption keys and agent ledger when maintaining the installation.
+
+### Port conflicts and recovery
+
+If a web server or another application already uses a VPN port, VeloRay shows the listener address and process owner before deploying a change. It recognizes listeners belonging to its current Xray service, checks TCP and UDP separately and checks IPv6 wildcard listeners. Availability is a snapshot; final runtime and accounting health checks still run after deployment.
+
+On an interactive installation, you can select the saved inbound and a replacement port. If you leave the conflict unresolved, the panel starts for recovery and installation exits with an error. An existing failing Xray loop is stopped; the service occupying its port is preserved. Xray uses a bounded systemd restart policy.
+
+Use **Xray Core → Listener checks** to inspect socket owners, or **Inbounds → Check port** to check a proposed listener. From the server console:
+
+```bash
+sudo veloray inbounds
+sudo veloray ports
+# Substitute the actual inbound ID and an available port.
+sudo veloray inbound-port INBOUND_ID NEW_PORT
+sudo veloray repair
+```
+
+An inbound port change uses the same deployment journal and database transaction as the panel. Configuration, saved port and subscription output update together. Credentials, expiry and recorded usage are retained. Users must refresh their subscription feeds to receive the new port. The command changes a VPN listener; `veloray port` changes the panel HTTPS port.
+
+### Batch provisioning and reports
+
+In **Clients → Batch create**, enter a prefix, account count, inbound, expiry and traffic policy. Names use `prefix-001`, `prefix-002` and so on. A failed deployment rolls back the entire batch. Shadowsocks retains its one-account-per-inbound restriction and is excluded from batch creation. Selected-account actions support up to 200 clients per operation and deploy once per affected node. Expired or exhausted accounts must be renewed before enabling access.
+
+**Clients → Export usage** downloads the filtered directory without passwords or subscription tokens. **Xray Core → Diagnostics** downloads runtime state and listener ownership without the complete VPN configuration. Full configuration downloads contain credentials and should remain private.
+
+### Traffic multipliers and discounts
+
+**Clients → Add client / Batch create / Edit** accepts `traffic_multiplier` from `-1` to `3`, with at most three decimal places. The default is `1`. Positive values multiply actual traffic directly; negative values specify a discount, so the effective rate is `1 + traffic_multiplier`.
+
+| Entered value | Billed for 1 GB of actual traffic |
+| --- | --- |
+| `-0.5` | 0.5 GB (50% discount) |
+| `-0.25` | 0.75 GB (25% discount) |
+| `0` or `-1` | 0 GB |
+| `1` | 1 GB |
+| `2` | 2 GB |
+| `3` | 3 GB |
+
+Quota enforcement uses billed traffic. Actual traffic is recorded separately; fractional bytes carry forward across polling cycles. Changing a multiplier first collects available counters at the previous rate and applies the new rate to subsequent traffic. Previously recorded usage is retained. Resetting usage clears both current-period counters while preserving their lifetime totals. Imported shared accounts use one policy and one quota across all their connections; editing, resetting or disabling a member affects that shared account.
+
+### Import from 3x-ui or PasarGuard
+
+Administrators can open **Import data**, select a target node and upload a SQLite backup (`.db`, `.sqlite`, `.sqlite3`) or the PasarGuard JSON export described below. The limit is 64 MiB, 20,000 source records, 500 inbounds and 10,000 client connections. SQL dumps and compressed archives are not import formats.
+
+The preview shows supported entries, shared accounts, available used traffic, warnings and live port ownership when the node is reachable. Select entries, change saved-port collisions and review the warnings. **Import selected data** saves inbounds disabled without deploying to a running node. Repeating a completed request or importing the same source entries on the same node does not duplicate them. Preview tokens belong to the requesting administrator and expire after 30 minutes.
+
+The adapters handle 3x-ui inline clients and global client/inbound relations, plus PasarGuard Xray core configurations and user/group/inbound relations. Source credentials, available current usage, limits and expiry are retained. PasarGuard reset-history records contribute to lifetime usage when present. A 3x-ui subscription token is retained where its format is valid and it is unique; the base address changes to the VeloRay server. PasarGuard subscription tokens are regenerated. A shared account's feed contains all its enabled supported connections.
+
+PasarGuard PostgreSQL backups must first be exported from the source installation. The exporter requires `psql`, read access and the source connection URL in `SQLALCHEMY_DATABASE_URL` or `DATABASE_URL`. Load that variable privately from the source environment, then run:
+
+```bash
+python3 scripts/export-pasarguard.py --output /private/path/pasarguard-migration.json
+# Alternatively, export an offline PasarGuard SQLite backup:
+python3 scripts/export-pasarguard.py --sqlite /private/path/pasarguard.db --output /private/path/pasarguard-migration.json
+```
+
+The export contains VPN credentials and uses a private file; existing files are not overwritten. Upload it through **Import data**. Panel administrators, passwords, remote node credentials, host overrides, IP limits, fallback chains and calendar reset schedules are not migrated automatically. Review warnings, copy required TLS certificates to the target and inspect advanced stream settings before enabling each inbound. The adapter refuses unsupported protocols or settings rather than inventing replacement credentials. Stop the source listener or choose a new port before activation, then distribute the updated subscription addresses.
+
+### Telegram management
+
+In **Settings → Telegram bot**, save the bot token, allowed owner user IDs and language. Each owner must start a private chat with the bot. **Check bot connection** reports bot identity and polling state; **Send test to owners** sends to the configured owners; **Register owner commands** installs commands for those private owner chats. A bot with an existing webhook must be configured for polling before registration.
+
+Commands include `/status`, `/nodes`, `/clients [page]`, `/search name`, `/client ID` and `/link ID`. Inline buttons support client details and paging. Optional alerts cover node resources, runtime failure/recovery, quota thresholds and approaching expiry, with cooldowns.
+
+Changes are disabled by default. Enable bot management explicitly to use `/client ID enable|disable|reset` or `/node ID deploy|restart`. Every change requires an owner-bound confirmation valid for five minutes; a used or cancelled confirmation cannot execute again. The bot accepts only whitelisted senders in their own private chats. When administrator 2FA is mandatory, use the panel for changes. Failed reply delivery is retried from the saved reply without repeating the action. Owner operations appear in the audit log.
 
 Uninstall removes VeloRay services and program files after confirmation. It preserves configuration, application encryption keys, PostgreSQL data, certificates and the accounting ledger. Running the installer again reuses that state. If an older uninstall removed `/etc/veloray/veloray.env` while keeping PostgreSQL data, restore the environment file from a backup first; the installer stops rather than generate replacement keys for existing encrypted data. Interrupted first-time installs can resume without resetting an existing administrator.
 
@@ -157,6 +225,7 @@ export VELORAY_TEST_DATABASE_URL='postgres://veloray:password@127.0.0.1:5432/vel
 go test -race ./...
 go vet ./...
 (cd frontend && npm ci && npm run format:check && npm run build)
+python3 -m py_compile scripts/export-pasarguard.py internal/panel/import_reader.py
 for script in install.sh scripts/*.sh scripts/velorayctl deploy/node/install.sh; do bash -n "$script"; done
 bash scripts/test-installer.sh
 ```
