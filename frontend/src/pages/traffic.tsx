@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { BarChart3, RefreshCw } from "lucide-react";
-import { api, type ClientItem } from "@/lib/api";
+import { api, distinctAccounts, type ClientItem } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,7 +17,8 @@ const fmt = (b: number) => {
 export function TrafficPage() {
   const [items, setItems] = useState<ClientItem[]>([]),
     [msg, setMsg] = useState("");
-  const load = () => api<ClientItem[]>("/clients/").then(setItems);
+  const load = () =>
+    api<ClientItem[]>("/clients/").then((c) => setItems(distinctAccounts(c)));
   useEffect(() => {
     load().catch((e) => setMsg(e.message));
   }, []);
@@ -58,7 +59,7 @@ export function TrafficPage() {
         <Card>
           <CardContent className="p-4">
             <div className="text-[10px] uppercase tracking-wider text-[var(--muted)]">
-              Recorded traffic
+              Billed traffic
             </div>
             <div className="mt-2 text-2xl font-semibold tracking-tight">
               {fmt(total)}
@@ -68,7 +69,7 @@ export function TrafficPage() {
         <Card>
           <CardContent className="p-4">
             <div className="text-[10px] uppercase tracking-wider text-[var(--muted)]">
-              Tracked clients
+              Unique accounts
             </div>
             <div className="mt-2 text-2xl font-semibold tracking-tight">
               {items.length}
@@ -120,7 +121,16 @@ export function TrafficPage() {
                   </div>
                   <div className="min-w-0">
                     <div className="flex justify-between gap-3 text-[10px] text-[var(--muted-strong)]">
-                      <span>{fmt(c.used_traffic_bytes)}</span>
+                      <span>
+                        {fmt(c.used_traffic_bytes)} billed{" "}
+                        <small className="text-[var(--muted)]">
+                          ·{" "}
+                          {fmt(
+                            c.raw_used_traffic_bytes ?? c.used_traffic_bytes,
+                          )}{" "}
+                          actual · {c.effective_traffic_multiplier ?? 1}x
+                        </small>
+                      </span>
                       <span>
                         {c.traffic_limit_bytes
                           ? fmt(c.traffic_limit_bytes)

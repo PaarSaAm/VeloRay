@@ -4,6 +4,7 @@ import {
   currentSession,
   type AppSettings,
   type SystemInfo,
+  type TelegramStatus,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -50,6 +51,11 @@ const defaults: AppSettings = {
   audit_retention_days: 90,
   accent: "emerald",
   telegram_enabled: false,
+  telegram_locale: "en",
+  telegram_allow_changes: false,
+  telegram_client_alerts: true,
+  telegram_quota_warning_percent: 80,
+  telegram_expiry_warning_days: 3,
   telegram_configured: false,
   telegram_owner_ids: [],
   telegram_alert_cpu_percent: 90,
@@ -94,6 +100,28 @@ export function SettingsPage() {
   useEffect(() => {
     load();
   }, []);
+  const [botStatus, setBotStatus] = useState<TelegramStatus | null>(null);
+  async function checkBot(action: "status" | "test" | "setup") {
+    setBusy(true);
+    setMsg("");
+    try {
+      const result = await api<TelegramStatus>(`/telegram/${action}`, {
+        method: action === "status" ? "GET" : "POST",
+      });
+      setBotStatus(result);
+      setMsg(
+        action === "status"
+          ? "Bot connection checked."
+          : action === "test"
+            ? "Test delivered to configured owners."
+            : "Owner command menu registered.",
+      );
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Bot check failed");
+    } finally {
+      setBusy(false);
+    }
+  }
   const diskPct = useMemo(() => Math.round(sys?.disk_percent ?? 0), [sys]);
   async function save(e: FormEvent) {
     e.preventDefault();
@@ -485,6 +513,58 @@ export function SettingsPage() {
                     checked={cfg.telegram_enabled}
                     onChange={(v) => set("telegram_enabled", v)}
                   />
+                  <Toggle
+                    label="Allow bot management"
+                    text="Enable confirmed client and node changes. Required panel 2FA keeps bot management read-only."
+                    checked={cfg.telegram_allow_changes}
+                    onChange={(v) => set("telegram_allow_changes", v)}
+                  />
+                  <Toggle
+                    label="Quota and expiry alerts"
+                    text="Notify owners before quota exhaustion or account expiry."
+                    checked={cfg.telegram_client_alerts}
+                    onChange={(v) => set("telegram_client_alerts", v)}
+                  />
+                  <Field label="Bot language">
+                    <select
+                      className="input"
+                      value={cfg.telegram_locale}
+                      onChange={(e) => set("telegram_locale", e.target.value)}
+                    >
+                      <option value="en">English</option>
+                      <option value="fa">فارسی</option>
+                    </select>
+                  </Field>
+                  <Field label="Quota warning %">
+                    <input
+                      className="input"
+                      type="number"
+                      min="1"
+                      max="100"
+                      value={cfg.telegram_quota_warning_percent}
+                      onChange={(e) =>
+                        set(
+                          "telegram_quota_warning_percent",
+                          Number(e.target.value),
+                        )
+                      }
+                    />
+                  </Field>
+                  <Field label="Expiry warning (days)">
+                    <input
+                      className="input"
+                      type="number"
+                      min="1"
+                      max="30"
+                      value={cfg.telegram_expiry_warning_days}
+                      onChange={(e) =>
+                        set(
+                          "telegram_expiry_warning_days",
+                          Number(e.target.value),
+                        )
+                      }
+                    />
+                  </Field>
                   <Field label="Bot token">
                     <input
                       className="input"
@@ -585,12 +665,49 @@ export function SettingsPage() {
                   )}
                   <div className="sm:col-span-2 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-3 text-[10px] leading-5 text-[var(--muted)]">
                     Commands: <code>/status</code>, <code>/nodes</code>,{" "}
-                    <code>/clients</code>,{" "}
-                    <code>/client ID enable|disable</code>,{" "}
-                    <code>/node ID deploy|restart</code>. Login notifications
-                    include username, IP, time and result; passwords are never
-                    transmitted or stored.
+                    <code>/clients [page]</code>, <code>/search name</code>,{" "}
+                    <code>/client ID</code>, <code>/link ID</code>. Management
+                    actions require a confirmation button that expires after
+                    five minutes. Every owner must start the bot before testing.
+                    Save changed settings before checking the connection.
                   </div>
+                  <div className="sm:col-span-2 flex flex-wrap gap-2">
+                    <Button
+                      variant="outline"
+                      disabled={busy || !cfg.telegram_configured || !canEdit}
+                      onClick={() => checkBot("status")}
+                    >
+                      Check bot connection
+                    </Button>
+                    <Button
+                      variant="outline"
+                      disabled={busy || !cfg.telegram_configured || !canEdit}
+                      onClick={() => checkBot("test")}
+                    >
+                      Send test to owners
+                    </Button>
+                    <Button
+                      variant="outline"
+                      disabled={busy || !cfg.telegram_configured || !canEdit}
+                      onClick={() => checkBot("setup")}
+                    >
+                      Register owner commands
+                    </Button>
+                  </div>
+                  {botStatus && (
+                    <div className="sm:col-span-2 rounded-md border border-[var(--border)] p-3 text-[12px] leading-6">
+                      @{botStatus.username} · {botStatus.owner_count} owners ·{" "}
+                      {botStatus.webhook_configured
+                        ? "Existing webhook blocks polling"
+                        : "Polling available"}
+                      <br />
+                      Last successful poll:{" "}
+                      {botStatus.last_success || "Not yet"}
+                      {botStatus.last_error && (
+                        <p className="text-amber-500">{botStatus.last_error}</p>
+                      )}
+                    </div>
+                  )}
                   <Actions busy={busy} />
                 </CardContent>
               </Card>

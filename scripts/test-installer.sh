@@ -270,9 +270,20 @@ case "$1" in
  bootstrap) [[ "${TEST_BOOTSTRAP_FAIL:-}" != 1 ]]||exit 1;touch "$HOST_ROOT/admin";;
  backup) printf fixture-backup >"$2";;
  reset-password) [[ "${#VELORAY_ADMIN_PASSWORD}" -ge 12 ]]||exit 1;touch "$HOST_ROOT/password-reset";;
+ host-inbounds) printf '[{"id":1,"name":"main","listen":"0.0.0.0","port":443,"protocol":"vless","enabled":true}]\n';;
+ host-inbound-port) [[ "$2" == 1 && "$3" == 2053 ]]||exit 2;touch "$HOST_ROOT/ports-resolved";;
 esac
 APP
-printf '#!/usr/bin/env bash\nexit 0\n' >"$host_project/bin/linux-amd64/veloray-agent"
+cat >"$host_project/bin/linux-amd64/veloray-agent" <<'AGENT'
+#!/usr/bin/env bash
+if [[ "${1:-}" == check-ports ]];then
+ if [[ "${TEST_PORTS_CONFLICT:-}" == 1 && ! -f "$HOST_ROOT/ports-resolved" ]];then
+  printf '%s\n' '{"ports":[{"tag":"in-1-main","listen":"0.0.0.0","port":443,"network":"tcp","state":"conflict","owner":"nginx pid=456"}]}'
+  exit 1
+ fi
+ printf '%s\n' '{"ports":[]}'
+fi
+AGENT
 chmod +x "$host_project/bin/linux-amd64/"*
 (cd "$host_project/bin/linux-amd64" && sha256sum veloray veloray-agent >SHA256SUMS)
 cat >"$TEST_ROOT/host-tools/psql" <<'PG'
@@ -438,5 +449,27 @@ export VELORAY_PANEL_PORT=8610
 if host_install;then echo 'Reserved panel port accepted' >&2;exit 1;fi
 grep -Fq 'Invalid or reserved panel port' "$TEST_ROOT/host-result";pass reserved-panel-port
 unset VELORAY_PANEL_PORT
+reset_host
+export TEST_PORTS_CONFLICT=1 TEST_FAILED_UNIT=xray.service
+if host_install;then echo 'Occupied Xray port accepted' >&2;exit 1;fi
+grep -Fq 'nginx pid=456' "$TEST_ROOT/host-result"
+grep -Fq 'The panel is available' "$TEST_ROOT/host-result"
+grep -Fq 'inbound-port ID PORT' "$TEST_ROOT/host-result"
+grep -Fq 'restart veloray-web.service' "$HOST_ROOT/service-calls"
+if grep -Eq '(restart xray|stop nginx)' "$HOST_ROOT/service-calls";then echo 'Port preflight disrupted a runtime or another service' >&2;exit 1;fi
+pass occupied-port-keeps-panel-and-other-services
+if bash "$HOST_ROOT/usr/local/bin/velorayctl" ports >"$TEST_ROOT/host-result" 2>&1;then echo 'Occupied port inspection returned success' >&2;exit 1;fi
+grep -Fq 'nginx pid=456' "$TEST_ROOT/host-result";pass port-command-shows-owner
+if bash "$HOST_ROOT/usr/local/bin/velorayctl" repair >"$TEST_ROOT/host-result" 2>&1;then echo 'Repair restarted into an occupied port' >&2;exit 1;fi
+pass repair-refuses-occupied-port
+bash "$HOST_ROOT/usr/local/bin/velorayctl" inbound-port 1 2053 >"$TEST_ROOT/host-result" 2>&1
+test -f "$HOST_ROOT/ports-resolved";pass inbound-port-command
+unset TEST_FAILED_UNIT
+bash "$HOST_ROOT/usr/local/bin/velorayctl" repair >"$TEST_ROOT/host-result" 2>&1
+grep -Fq 'reset-failed xray.service' "$HOST_ROOT/service-calls"
+pass recovery-after-port-change
+grep -Fq 'User=veloray-xray' "$HOST_ROOT/etc/systemd/system/xray.service"
+grep -Fq 'StartLimitBurst=3' "$HOST_ROOT/etc/systemd/system/xray.service";pass dedicated-runtime-account-and-restart-limit
+unset TEST_PORTS_CONFLICT
 export PATH="$bootstrap_test_path"
 printf '%s installer checks passed.\n' "$passed"

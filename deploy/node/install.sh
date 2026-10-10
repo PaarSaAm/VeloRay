@@ -10,7 +10,7 @@ vr_step 'Prepare node services' 'آماده‌سازی سرویس‌های نو�
 arch="$(uname -m)";case "$arch" in x86_64) arch=amd64;;aarch64|arm64) arch=arm64;;*) exit 1;;esac
 [[ -x "bin/linux-$arch/veloray-agent" ]]||{ echo 'Build the agent first or use a release archive.' >&2;exit 1; }
 (cd "bin/linux-$arch" && sha256sum -c SHA256SUMS) >>"$VELORAY_INSTALL_LOG" 2>&1
-vr_packages openssl curl jq unzip ca-certificates
+vr_packages openssl curl jq unzip ca-certificates iproute2
 [[ -x /usr/local/bin/xray ]]||vr_run bash scripts/xray-install.sh
 install -d -m 0750 /etc/veloray-node
 install -d -m 0700 /var/lib/veloray-agent
@@ -57,6 +57,8 @@ install -m 0644 deploy/systemd/{veloray-agent,xray}.service /etc/systemd/system/
 vr_step 'Start and verify the node' 'راه‌اندازی و بررسی سلامت نود'
 vr_run systemctl daemon-reload
 vr_run systemctl enable xray.service veloray-agent.service
+vr_ports_check
+vr_run systemctl reset-failed xray.service
 vr_run systemctl restart xray.service veloray-agent.service
 for unit in veloray-agent.service xray.service;do vr_run systemctl is-active --quiet "$unit";done
 set -a;source /etc/veloray-node/agent.env;set +a

@@ -103,7 +103,7 @@ func (s *Server) reconcileNode(ctx context.Context, id int64) error {
 			interval := time.Duration(num(c, "renewal_interval_days")) * 24 * time.Hour
 			steps := now.Sub(next)/interval + 1
 			c["next_renewal_at"] = stamp(next.Add(steps * interval))
-			c["used_traffic_bytes"] = 0
+			resetTraffic(c)
 			if str(c, "disabled_reason") == "quota" {
 				c["enabled"] = true
 				c["disabled_reason"] = ""
@@ -244,7 +244,7 @@ func (s *Server) Reconcile(ctx context.Context) error {
 	if e != nil {
 		return e
 	}
-	_, e = s.Store.Pool.Exec(ctx, `DELETE FROM vr_sessions WHERE expires_at<now(); DELETE FROM vr_rate_limits WHERE start_at<now()-interval '1 day'; DELETE FROM vr_telegram_updates WHERE processed_at<now()-interval '7 days'`)
+	_, e = s.Store.Pool.Exec(ctx, `DELETE FROM vr_sessions WHERE expires_at<now(); DELETE FROM vr_rate_limits WHERE start_at<now()-interval '1 day'; DELETE FROM vr_telegram_updates WHERE processed_at<now()-interval '7 days'; DELETE FROM vr_telegram_actions WHERE expires_at<now(); DELETE FROM vr_import_jobs WHERE expires_at<now()`)
 	if e != nil {
 		return e
 	}
@@ -259,6 +259,7 @@ func (s *Server) Reconcile(ctx context.Context) error {
 	if flag(cfg, "telegram_enabled") {
 		if e = s.telegram(ctx, cfg); e != nil {
 			s.Logger.Warn("Telegram unavailable", "error", fmt.Sprintf("%T", e))
+			_, _ = s.Store.Pool.Exec(ctx, `UPDATE vr_settings SET data=jsonb_set(data,'{_telegram_error}','"Telegram polling failed; test the token and check for an existing webhook"') WHERE id=1`)
 		}
 	}
 	return nil

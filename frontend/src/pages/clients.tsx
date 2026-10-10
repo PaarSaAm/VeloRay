@@ -17,6 +17,8 @@ import {
 } from "lucide-react";
 import {
   api,
+  distinctAccounts,
+  effectiveMultiplier,
   type AppSettings,
   type ClientItem,
   type InboundItem,
@@ -53,15 +55,25 @@ const expiry = (value: string | null) => {
   if (days === 1) return "1 day";
   return `${days} days`;
 };
+const clientState = (client: ClientItem) =>
+  client.enabled
+    ? "Active"
+    : client.disabled_reason === "quota"
+      ? "Quota reached"
+      : client.disabled_reason === "expired"
+        ? "Expired"
+        : "Disabled";
 
 type Editor = {
   id?: number;
+  count?: string;
   name: string;
   inbound: string;
   limit: string;
   days: string;
   expiry: string;
   renewal: string;
+  multiplier: string;
   note: string;
 };
 const blank = (
@@ -76,6 +88,7 @@ const blank = (
   days,
   expiry: "",
   renewal,
+  multiplier: "1",
   note: "",
 });
 
@@ -123,7 +136,8 @@ export function ClientsPage() {
     [items, query, status, inboundFilter],
   );
   const total = useMemo(
-      () => items.reduce((a, c) => a + c.used_traffic_bytes, 0),
+      () =>
+        distinctAccounts(items).reduce((a, c) => a + c.used_traffic_bytes, 0),
       [items],
     ),
     active = items.filter((c) => c.enabled).length,
@@ -168,6 +182,53 @@ export function ClientsPage() {
       ),
     );
   }
+  function openBatch() {
+    const first = inbounds.find((i) => i.protocol !== "shadowsocks");
+    setEditor({
+      ...blank(
+        String(first?.id || ""),
+        String(cfg?.default_client_days ?? 30),
+        String(cfg?.default_traffic_gb ?? 0),
+        String(cfg?.default_renewal_days ?? 0),
+      ),
+      count: "10",
+    });
+  }
+  function exportUsage() {
+    const fields = [
+      "id",
+      "name",
+      "node_name",
+      "inbound_name",
+      "enabled",
+      "used_traffic_bytes",
+      "raw_used_traffic_bytes",
+      "traffic_multiplier",
+      "account_id",
+      "traffic_limit_bytes",
+      "expires_at",
+      "note",
+    ] as const;
+    const quote = (value: unknown) => {
+      let text = String(value ?? "");
+      if (/^\s*[=+\-@]/.test(text)) text = "'" + text;
+      return '"' + text.replaceAll('"', '""') + '"';
+    };
+    const lines = [
+      fields.join(","),
+      ...filtered.map((c) => fields.map((k) => quote((c as any)[k])).join(",")),
+    ];
+    const url = URL.createObjectURL(
+      new Blob(["\uFEFF" + lines.join("\r\n")], {
+        type: "text/csv;charset=utf-8",
+      }),
+    );
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "veloray-client-usage.csv";
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
   function openEdit(c: ClientItem) {
     setEditor({
       id: c.id,
@@ -179,6 +240,7 @@ export function ClientsPage() {
       days: "0",
       expiry: toLocalInput(c.expires_at),
       renewal: String(c.renewal_interval_days || 0),
+      multiplier: String(c.traffic_multiplier ?? 1),
       note: (c as any).note || "",
     });
   }
@@ -194,6 +256,14 @@ export function ClientsPage() {
       const usageMetered =
         !selectedInbound ||
         !["http", "socks", "tunnel", "tun"].includes(selectedInbound.protocol);
+      const multiplier = Number(editor.multiplier);
+      if (
+        !Number.isFinite(multiplier) ||
+        multiplier < -1 ||
+        multiplier > 3 ||
+        editor.multiplier.trim() === ""
+      )
+        throw new Error("Traffic multiplier must be between -1 and 3.");
       const body: any = {
         name: editor.name,
         inbound: Number(editor.inbound),
@@ -203,6 +273,7 @@ export function ClientsPage() {
         renewal_interval_days: usageMetered
           ? Math.max(0, Number(editor.renewal) || 0)
           : 0,
+        traffic_multiplier: Number(editor.multiplier),
         note: editor.note,
       };
       if (editor.id) {
@@ -219,11 +290,28 @@ export function ClientsPage() {
         body.expires_at =
           d > 0 ? new Date(Date.now() + d * 86400000).toISOString() : null;
         body.enabled = true;
-        await api("/clients/", { method: "POST", body: JSON.stringify(body) });
-        setMsg("Client created and Xray redeployed.");
+        if (editor.count !== undefined) {
+          delete body.enabled;
+          body.count = Number(editor.count);
+          await api("/clients/batch", {
+            method: "POST",
+            body: JSON.stringify(body),
+          });
+        } else
+          await api("/clients/", {
+            method: "POST",
+            body: JSON.stringify(body),
+          });
       }
       setEditor(null);
       await refresh();
+      setMsg(
+        editor.count !== undefined
+          ? `${editor.count} clients created in one deployment.`
+          : editor.id
+            ? "Client updated and Xray redeployed."
+            : "Client created and Xray redeployed.",
+      );
     } catch (e: any) {
       setMsg(e.message);
     } finally {
@@ -265,20 +353,15 @@ export function ClientsPage() {
       return;
     setBusy(true);
     try {
-      for (const c of targets) {
-        if (action === "reset")
-          await api(`/clients/${c.id}/reset-usage/`, { method: "POST" });
-        else if (action === "delete")
-          await api(`/clients/${c.id}/`, { method: "DELETE" });
-        else if (
-          (action === "enable" && !c.enabled) ||
-          (action === "disable" && c.enabled)
-        )
-          await api(`/clients/${c.id}/toggle/`, { method: "POST" });
-      }
+      if (targets.length > 200)
+        throw new Error("Select up to 200 clients per operation.");
+      await api("/clients/bulk", {
+        method: "POST",
+        body: JSON.stringify({ ids: targets.map((c) => c.id), action }),
+      });
       setSelected(new Set());
-      setMsg(`${targets.length} clients updated.`);
       await refresh();
+      setMsg(`${targets.length} clients updated in one deployment per node.`);
     } catch (e: any) {
       setMsg(e.message);
     } finally {
@@ -291,10 +374,26 @@ export function ClientsPage() {
         title="Clients"
         description="Manage credentials, quotas, expiry, renewals and subscriptions."
         actions={
-          <Button onClick={openCreate} disabled={!inbounds.length}>
-            <Plus className="h-3.5 w-3.5" />
-            Add client
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              onClick={exportUsage}
+              disabled={!filtered.length}
+            >
+              <FaIcon icon="download" /> Export usage
+            </Button>
+            <Button
+              variant="outline"
+              onClick={openBatch}
+              disabled={!inbounds.some((i) => i.protocol !== "shadowsocks")}
+            >
+              <Users className="h-3.5 w-3.5" /> Batch create
+            </Button>
+            <Button onClick={openCreate} disabled={!inbounds.length}>
+              <Plus className="h-3.5 w-3.5" />
+              Add client
+            </Button>
+          </div>
         }
       />
       {msg && (
@@ -316,7 +415,7 @@ export function ClientsPage() {
         <Mini
           title="Recorded traffic"
           value={fmt(total)}
-          detail="Across all clients"
+          detail={`${distinctAccounts(items).length} accounts · ${fmt(distinctAccounts(items).reduce((sum, c) => sum + (c.raw_used_traffic_bytes ?? c.used_traffic_bytes), 0))} actual`}
           icon="chart-area"
         />
         <Mini
@@ -426,6 +525,7 @@ export function ClientsPage() {
                   <th className="w-10">
                     <input
                       type="checkbox"
+                      aria-label="Select all visible clients"
                       checked={allVisible}
                       onChange={toggleAll}
                     />
@@ -452,6 +552,7 @@ export function ClientsPage() {
                       <td>
                         <input
                           type="checkbox"
+                          aria-label={`Select ${c.name}`}
                           checked={selected.has(c.id)}
                           onChange={() => toggleSelect(c.id)}
                         />
@@ -486,13 +587,23 @@ export function ClientsPage() {
                           <div className="min-w-[150px]">
                             <div className="flex justify-between gap-3 text-[10px]">
                               <span className="font-medium text-[var(--fg)]">
-                                {fmt(c.used_traffic_bytes)}
+                                {fmt(c.used_traffic_bytes)} billed
                               </span>
                               <span>
                                 {c.traffic_limit_bytes
                                   ? fmt(c.traffic_limit_bytes)
                                   : "Unlimited"}
                               </span>
+                            </div>
+                            <div className="mt-1 text-[9px] text-[var(--muted)]">
+                              {fmt(
+                                c.raw_used_traffic_bytes ??
+                                  c.used_traffic_bytes,
+                              )}{" "}
+                              actual · {c.effective_traffic_multiplier ?? 1}x
+                              {c.account_id
+                                ? ` · Shared across ${c.account_connections} connections`
+                                : ""}
                             </div>
                             {c.traffic_limit_bytes > 0 ? (
                               <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[var(--surface-3)]">
@@ -523,9 +634,7 @@ export function ClientsPage() {
                       </td>
                       <td>
                         <Badge tone={c.enabled ? "green" : "amber"}>
-                          {c.enabled
-                            ? "Active"
-                            : c.disabled_reason || "Disabled"}
+                          {clientState(c)}
                         </Badge>
                       </td>
                       <td>
@@ -562,6 +671,7 @@ export function ClientsPage() {
                         <Button
                           variant="ghost"
                           size="icon"
+                          aria-label={`Actions for ${c.name}`}
                           onClick={() => setMenu(menu === c.id ? null : c.id)}
                         >
                           <MoreHorizontal className="h-4 w-4" />
@@ -631,7 +741,7 @@ export function ClientsPage() {
                       </div>
                     </div>
                     <Badge tone={c.enabled ? "green" : "amber"}>
-                      {c.enabled ? "Active" : c.disabled_reason || "Disabled"}
+                      {clientState(c)}
                     </Badge>
                   </div>
                   <div className="mt-4">
@@ -644,6 +754,13 @@ export function ClientsPage() {
                               ? fmt(c.traffic_limit_bytes)
                               : "Unlimited"}
                           </span>
+                        </div>
+                        <div className="mt-1 text-[10px] text-[var(--muted)]">
+                          Actual:{" "}
+                          {fmt(
+                            c.raw_used_traffic_bytes ?? c.used_traffic_bytes,
+                          )}{" "}
+                          · {c.effective_traffic_multiplier ?? 1}x
                         </div>
                         <div className="mt-2 h-1.5 rounded-full bg-[var(--surface-3)]">
                           <div
@@ -778,7 +895,13 @@ function ClientModal({
     !ib || !["http", "socks", "tunnel", "tun"].includes(ib.protocol);
   return (
     <Dialog
-      label={editor.id ? "Edit client" : "Add client"}
+      label={
+        editor.count !== undefined
+          ? "Batch create clients"
+          : editor.id
+            ? "Edit client"
+            : "Add client"
+      }
       onClose={() => {
         if (!busy) setEditor(null);
       }}
@@ -786,7 +909,11 @@ function ClientModal({
       <div className="flex items-start justify-between border-b border-[var(--border)] px-5 py-4">
         <div>
           <div className="text-[14px] font-semibold">
-            {editor.id ? "Edit client" : "Add client"}
+            {editor.count !== undefined
+              ? "Batch create clients"
+              : editor.id
+                ? "Edit client"
+                : "Add client"}
           </div>
           <div className="mt-1 text-[10px] text-[var(--muted)]">
             Changes are validated and deployed to Xray automatically.
@@ -799,7 +926,7 @@ function ClientModal({
       <form onSubmit={onSubmit}>
         <div className="grid gap-4 p-5 sm:grid-cols-2">
           <label className="label sm:col-span-2">
-            Client name
+            {editor.count !== undefined ? "Name prefix" : "Client name"}
             <input
               className="input"
               value={editor.name}
@@ -808,20 +935,45 @@ function ClientModal({
               required
             />
           </label>
+          {editor.count !== undefined && (
+            <label className="label sm:col-span-2">
+              Number of clients
+              <input
+                className="input"
+                type="number"
+                min="1"
+                max="100"
+                value={editor.count}
+                onChange={(e) => set("count", e.target.value)}
+                required
+              />
+              <span className="mt-1 text-[10px] font-normal text-[var(--muted)]">
+                Names use prefix-001, prefix-002… Each account gets separate
+                credentials and a subscription address.
+              </span>
+            </label>
+          )}
           <label className="label sm:col-span-2">
             Inbound
             <select
               className="input"
+              aria-label="Inbound"
               value={editor.inbound}
               onChange={(e) => set("inbound", e.target.value)}
               required
             >
               <option value="">Select inbound</option>
-              {inbounds.map((i) => (
-                <option key={i.id} value={i.id}>
-                  {i.node_name} · {i.name} · {i.protocol.toUpperCase()}:{i.port}
-                </option>
-              ))}
+              {inbounds
+                .filter(
+                  (i) =>
+                    editor.count === undefined || i.protocol !== "shadowsocks",
+                )
+                .map((i) => (
+                  <option key={i.id} value={i.id}>
+                    {i.node_name} · {i.name} · {i.protocol.toUpperCase()}:
+                    {i.port}
+                  </option>
+                ))}
             </select>
           </label>
           {!usageMetered && (
@@ -889,6 +1041,36 @@ function ClientModal({
             </span>
           </label>
           <label className="label sm:col-span-2">
+            Traffic multiplier / ضریب مصرف
+            <input
+              className="input"
+              type="number"
+              min="-1"
+              max="3"
+              step="0.001"
+              value={editor.multiplier}
+              onChange={(e) => set("multiplier", e.target.value)}
+              required
+              disabled={!usageMetered}
+              aria-describedby="multiplier-help"
+              aria-label="Traffic multiplier / ضریب مصرف"
+            />
+            <span
+              id="multiplier-help"
+              className="mt-1 block text-[11px] font-normal leading-6 text-[var(--muted)]"
+            >
+              {Number.isFinite(Number(editor.multiplier))
+                ? `1 GB actual → ${Math.max(0, effectiveMultiplier(Number(editor.multiplier))).toFixed(3)} GB billed.`
+                : "Enter a number."}{" "}
+              Maximum 3. Negative values are discounts: -0.5 = 50% billed, -0.25
+              = 75% billed. Changes apply to future traffic.
+              <span className="block" dir="rtl">
+                ضریب ۱ مصرف عادی؛ ۳ سه‌برابر؛ ‎-۰٫۵ نصف مصرف؛ ‎-۰٫۲۵ یعنی ۲۵٪
+                تخفیف. مصرف واقعی جدا ثبت می‌شود.
+              </span>
+            </span>
+          </label>
+          <label className="label sm:col-span-2">
             Note
             <textarea
               className="input"
@@ -906,7 +1088,13 @@ function ClientModal({
             type="submit"
             disabled={busy || !editor.name || !editor.inbound}
           >
-            {busy ? "Saving…" : editor.id ? "Save changes" : "Create client"}
+            {busy
+              ? "Saving…"
+              : editor.count !== undefined
+                ? "Create clients"
+                : editor.id
+                  ? "Save changes"
+                  : "Create client"}
           </Button>
         </div>
       </form>

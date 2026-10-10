@@ -25,7 +25,7 @@ arch="$(uname -m)";case "$arch" in x86_64) arch=amd64;;aarch64|arm64) arch=arm64
 [[ -f go.mod && -f frontend/package-lock.json ]]||{ echo 'Extract a complete VeloRay release first.' >&2;exit 1; }
 if [[ ! -x "bin/linux-$arch/veloray" || ! -f frontend/dist/index.html ]];then vr_run bash scripts/build.sh "$arch";fi
 (cd "bin/linux-$arch" && sha256sum -c SHA256SUMS) >>"$VELORAY_INSTALL_LOG" 2>&1
-vr_packages postgresql postgresql-client nginx openssl curl jq unzip certbot ca-certificates
+vr_packages postgresql postgresql-client nginx openssl curl jq unzip certbot ca-certificates iproute2 python3
 id veloray >/dev/null 2>&1||useradd --system --home /var/lib/veloray --shell /usr/sbin/nologin veloray
 install -d -o veloray -g veloray -m 0750 /var/lib/veloray
 install -d -m 0750 /etc/veloray /etc/veloray-node
@@ -157,9 +157,20 @@ systemctl disable --now veloray-reconcile.timer 2>/dev/null||true
 vr_step 'Start HTTPS and panel services' 'راه‌اندازی HTTPS و سرویس‌های پنل'
 vr_run systemctl daemon-reload
 vr_run systemctl enable xray.service veloray-agent.service veloray-web.service
-vr_run systemctl restart xray.service veloray-agent.service
+vr_run systemctl restart veloray-agent.service
 vr_run veloray render-nginx
 vr_run systemctl restart veloray-web.service
+vr_wait http://127.0.0.1:8610/api/health
+vr_step 'Check VPN ports and resolve conflicts' 'بررسی پورت‌های VPN و رفع تداخل'
+if ! vr_resolve_ports;then
+ # Stop an already failing Xray loop; never stop the process occupying its port.
+ if ! systemctl is-active --quiet xray.service;then systemctl stop xray.service >>"$VELORAY_INSTALL_LOG" 2>&1||true;fi
+ vr_say "The panel is available at $VELORAY_PUBLIC_URL; VPN runtime needs a free port." "پنل در $VELORAY_PUBLIC_URL در دسترس است؛ سرویس VPN به پورت آزاد نیاز دارد." >&2
+ vr_say 'After changing the inbound port, run sudo veloray repair.' 'پس از تغییر پورت اتصال، sudo veloray repair را اجرا کنید.' >&2
+ vr_error "$LINENO" 1
+fi
+vr_run systemctl reset-failed xray.service
+vr_run systemctl restart xray.service
 install -d -m 0755 /etc/letsencrypt/renewal-hooks/deploy
 cat >/etc/letsencrypt/renewal-hooks/deploy/veloray-nginx <<'HOOK'
 #!/usr/bin/env bash

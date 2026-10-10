@@ -1,5 +1,17 @@
 const API_BASE = import.meta.env.VITE_API_URL || "/api";
 
+export type PortReport = {
+  ports: {
+    tag: string;
+    listen: string;
+    port: number;
+    network: string;
+    state: "free" | "xray" | "conflict";
+    owner?: string;
+  }[];
+  error?: string;
+};
+
 function cookie(name: string) {
   return (
     document.cookie
@@ -41,7 +53,11 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const method = (init.method || "GET").toUpperCase();
   const headers = new Headers(init.headers || {});
   headers.set("Accept", "application/json");
-  if (init.body && !headers.has("Content-Type"))
+  if (
+    init.body &&
+    !(init.body instanceof FormData) &&
+    !headers.has("Content-Type")
+  )
     headers.set("Content-Type", "application/json");
   if (!["GET", "HEAD", "OPTIONS"].includes(method)) {
     if (!cookie("csrftoken"))
@@ -164,6 +180,7 @@ export type InboundItem = {
   reality_public_key: string;
   reality_short_id: string;
   protocol_settings: Record<string, any>;
+  stream_settings: Record<string, unknown>;
   enabled: boolean;
   client_count: number;
   supports_clients: boolean;
@@ -179,6 +196,12 @@ export type ClientItem = {
   expires_at: string | null;
   traffic_limit_bytes: number;
   used_traffic_bytes: number;
+  raw_used_traffic_bytes: number;
+  raw_lifetime_traffic_bytes: number;
+  traffic_multiplier: number;
+  effective_traffic_multiplier: number;
+  account_id: number;
+  account_connections?: number;
   last_traffic_at: string | null;
   disabled_reason: string;
   transport: string;
@@ -218,6 +241,11 @@ export type AppSettings = {
   audit_retention_days: number;
   accent: string;
   telegram_enabled: boolean;
+  telegram_locale: "en" | "fa";
+  telegram_allow_changes: boolean;
+  telegram_client_alerts: boolean;
+  telegram_quota_warning_percent: number;
+  telegram_expiry_warning_days: number;
   telegram_configured: boolean;
   telegram_owner_ids: string[];
   telegram_alert_cpu_percent: number;
@@ -273,4 +301,57 @@ export type AdminAPIKey = {
   created_at: string;
   updated_at: string;
   token?: string;
+};
+
+export function distinctAccounts(clients: ClientItem[]): ClientItem[] {
+  const seen = new Set<string>();
+  return clients.filter((c) => {
+    const key = c.account_id ? `account:${c.account_id}` : `client:${c.id}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+export function effectiveMultiplier(value: number): number {
+  return value < 0 ? 1 + value : value;
+}
+export type ImportPreview = {
+  token: string;
+  source: string;
+  node: number;
+  node_name: string;
+  accounts: number;
+  client_links: number;
+  used_traffic_bytes: number;
+  warnings: string[];
+  inbounds: {
+    source_id: string;
+    name: string;
+    port: number;
+    protocol: string;
+    transport?: string;
+    security?: string;
+    supported: boolean;
+    client_count: number;
+    warnings: string[];
+    existing_id: number;
+    conflict_id: number;
+    port_state?: string;
+    port_owner?: string;
+  }[];
+};
+export type ImportResult = {
+  status: string;
+  inbounds_created: number;
+  client_links_created: number;
+  shared_accounts: number;
+  inbounds_skipped: number;
+  inbound_ids: number[];
+};
+export type TelegramStatus = {
+  username: string;
+  webhook_configured: boolean;
+  owner_count: number;
+  last_success: string;
+  last_error: string;
 };

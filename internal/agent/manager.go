@@ -8,10 +8,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"os/user"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -35,6 +37,207 @@ type Status struct {
 	Version   string `json:"version"`
 	State     string `json:"state"`
 }
+
+// PortCheck is a read-only snapshot of a configured listener and its current owner.
+type PortCheck struct {
+	Tag     string `json:"tag"`
+	Listen  string `json:"listen"`
+	Port    int    `json:"port"`
+	Network string `json:"network"`
+	State   string `json:"state"`
+	Owner   string `json:"owner,omitempty"`
+}
+
+var socketPID = regexp.MustCompile(`pid=([0-9]+)`)
+
+func InspectConfigPorts(ctx context.Context, run Runtime, service string, raw []byte) ([]PortCheck, error) {
+	var cfg struct {
+		Inbounds []struct {
+			Tag, Listen, Protocol string
+			Port                  json.RawMessage
+			Settings              struct {
+				Network string
+				UDP     bool
+			}
+			StreamSettings struct{ Network string }
+		}
+	}
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		return nil, err
+	}
+	checks := []PortCheck{}
+	for _, in := range cfg.Inbounds {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if in.Protocol == "tun" || strings.HasPrefix(in.Listen, "/") {
+			continue
+		}
+		portText := strings.Trim(string(in.Port), `"`)
+		if portText == "" || portText == "null" || portText == "0" {
+			continue
+		}
+		bounds := strings.Split(portText, "-")
+		first, err := strconv.Atoi(bounds[0])
+		if err != nil {
+			return nil, fmt.Errorf("%s: invalid port", in.Tag)
+		}
+		last := first
+		if len(bounds) == 2 {
+			last, err = strconv.Atoi(bounds[1])
+		}
+		if err != nil || len(bounds) > 2 || first < 1 || last > 65535 || last < first {
+			return nil, fmt.Errorf("%s: invalid port range", in.Tag)
+		}
+		listen := in.Listen
+		if listen == "" {
+			listen = "0.0.0.0"
+		}
+		if net.ParseIP(listen) == nil {
+			return nil, fmt.Errorf("%s: port checks require an IP listen address", in.Tag)
+		}
+		networks := []string{"tcp"}
+		switch {
+		case in.Protocol == "wireguard" || in.Protocol == "hysteria" || in.StreamSettings.Network == "kcp" || in.StreamSettings.Network == "mkcp" || in.StreamSettings.Network == "quic" || in.StreamSettings.Network == "hysteria":
+			networks = []string{"udp"}
+		case in.Protocol == "shadowsocks":
+			networks = []string{"tcp", "udp"}
+		case in.Protocol == "dokodemo-door":
+			if in.Settings.Network != "" {
+				networks = strings.Split(in.Settings.Network, ",")
+			}
+		case in.Protocol == "socks" && in.Settings.UDP:
+			networks = []string{"tcp", "udp"}
+		}
+		for port := first; port <= last; port++ {
+			for _, network := range networks {
+				if network != "tcp" && network != "udp" {
+					return nil, fmt.Errorf("%s: unsupported listen network", in.Tag)
+				}
+				checks = append(checks, PortCheck{Tag: in.Tag, Listen: listen, Port: port, Network: network, State: "free"})
+			}
+		}
+	}
+	if len(checks) == 0 {
+		return checks, nil
+	}
+	var mainPID string
+	if pid, err := run.Run(ctx, "systemctl", "show", service, "--property=MainPID", "--value"); err == nil {
+		mainPID = strings.TrimSpace(string(pid))
+		if strings.HasPrefix(mainPID, "MainPID=") {
+			mainPID = strings.Split(strings.TrimPrefix(mainPID, "MainPID="), "\n")[0]
+		}
+		if mainPID == "0" {
+			mainPID = ""
+		}
+	}
+	output, err := run.Run(ctx, "ss", "-H", "-l", "-n", "-t", "-u", "-p", "-O")
+	if err != nil {
+		return nil, fmt.Errorf("cannot inspect listening ports; install iproute2: %w", err)
+	}
+	for _, line := range strings.Split(string(output), "\n") {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		f := strings.Fields(line)
+		if len(f) < 6 {
+			continue
+		}
+		host, portText, err := net.SplitHostPort(f[4])
+		if err != nil {
+			continue
+		}
+		port, err := strconv.Atoi(portText)
+		if err != nil {
+			continue
+		}
+		owner := "owner unavailable"
+		if len(f) > 6 {
+			owner = strings.Join(f[6:], " ")
+		}
+		pids := socketPID.FindAllStringSubmatch(owner, -1)
+		ours := len(pids) > 0 && mainPID != ""
+		for _, pid := range pids {
+			if pid[1] != mainPID {
+				ours = false
+			}
+		}
+		for i := range checks {
+			c := &checks[i]
+			if c.Port != port || c.Network != f[0] || !listenOverlap(c.Listen, host) {
+				continue
+			}
+			state := "conflict"
+			if ours {
+				state = "xray"
+			}
+			if c.State != "conflict" {
+				c.State = state
+				c.Owner = owner
+			}
+		}
+	}
+	// Detect overlap inside the proposed configuration before touching the runtime.
+	seen := map[string][]int{}
+	for i := range checks {
+		key := checks[i].Network + ":" + strconv.Itoa(checks[i].Port)
+		for _, j := range seen[key] {
+			if checks[i].Port == checks[j].Port && checks[i].Network == checks[j].Network && listenOverlap(checks[i].Listen, checks[j].Listen) {
+				checks[i].State = "conflict"
+				checks[i].Owner = "configured listener " + checks[j].Tag
+				break
+			}
+		}
+		seen[key] = append(seen[key], i)
+	}
+	return checks, nil
+}
+
+func listenOverlap(a, b string) bool {
+	a = strings.Split(a, "%")[0]
+	b = strings.Split(b, "%")[0]
+	if a == "*" || b == "*" {
+		return true
+	}
+	x, y := net.ParseIP(a), net.ParseIP(b)
+	if x == nil || y == nil {
+		return false
+	}
+	if x.Equal(y) {
+		return true
+	}
+	if x.IsUnspecified() || y.IsUnspecified() {
+		// IPv6 wildcard listeners may also accept IPv4 connections.
+		if x.IsUnspecified() && x.To4() == nil || y.IsUnspecified() && y.To4() == nil {
+			return true
+		}
+		return (x.To4() == nil) == (y.To4() == nil)
+	}
+	return false
+}
+
+func RequireFreePorts(checks []PortCheck) error {
+	for _, c := range checks {
+		if c.State == "conflict" {
+			return fmt.Errorf("port conflict: %s %s:%d (%s), %s; choose another inbound port", c.Network, c.Listen, c.Port, c.Tag, c.Owner)
+		}
+	}
+	return nil
+}
+
+func (m *Manager) Ports(ctx context.Context, raw []byte) ([]PortCheck, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if len(raw) == 0 {
+		var err error
+		raw, err = os.ReadFile(m.ConfigPath)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return InspectConfigPorts(ctx, m.Runtime, m.ServiceName, raw)
+}
+
 type Counter struct {
 	Name  string `json:"name"`
 	Value int64  `json:"value"`
@@ -238,6 +441,13 @@ func (m *Manager) validate(ctx context.Context, raw []byte) error {
 	if err := json.Unmarshal(raw, &value); err != nil || value == nil {
 		return errors.New("config must be a JSON object")
 	}
+	checks, err := InspectConfigPorts(ctx, m.Runtime, m.ServiceName, raw)
+	if err != nil {
+		return err
+	}
+	if err = RequireFreePorts(checks); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Dir(m.ConfigPath), 0700); err != nil {
 		return err
 	}
@@ -264,6 +474,17 @@ func (m *Manager) validate(ctx context.Context, raw []byte) error {
 }
 func hash(raw []byte) string { v := sha256.Sum256(raw); return hex.EncodeToString(v[:]) }
 func (m *Manager) restart(ctx context.Context) error {
+	if raw, err := os.ReadFile(m.ConfigPath); err == nil {
+		checks, err := InspectConfigPorts(ctx, m.Runtime, m.ServiceName, raw)
+		if err != nil {
+			return err
+		}
+		if err = RequireFreePorts(checks); err != nil {
+			return err
+		}
+	} else {
+		return err
+	}
 	if _, real := m.Runtime.(Commands); real && os.Geteuid() == 0 {
 		name := "nogroup"
 		if value, err := m.Runtime.Run(ctx, "systemctl", "show", m.ServiceName, "--property=Group", "--value"); err == nil && strings.TrimSpace(string(value)) != "" {
@@ -282,6 +503,7 @@ func (m *Manager) restart(ctx context.Context) error {
 		}
 	}
 
+	_, _ = m.Runtime.Run(ctx, "systemctl", "reset-failed", m.ServiceName)
 	out, e := m.Runtime.Run(ctx, "systemctl", "restart", m.ServiceName)
 	if e != nil {
 		return fmt.Errorf("Xray restart failed: %.2000s", out)

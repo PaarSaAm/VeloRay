@@ -66,7 +66,7 @@ func run() error {
 		return nil
 	}
 	switch command {
-	case "menu", "status", "doctor", "start", "stop", "restart", "logs", "url", "reset", "admin-reset", "domain", "port", "ssl", "update", "uninstall", "repair", "backup-schedule", "language", "node":
+	case "menu", "status", "doctor", "start", "stop", "restart", "logs", "url", "reset", "admin-reset", "domain", "port", "ssl", "update", "uninstall", "repair", "ports", "inbounds", "inbound-port", "backup-schedule", "language", "node":
 		controller, err := exec.LookPath("velorayctl")
 		if err != nil {
 			return errors.New("management is available after installation; run veloray help for development commands")
@@ -96,6 +96,8 @@ func run() error {
   veloray domain HOST | port PORT  Configure the panel address
   veloray ssl EMAIL                Issue a trusted HTTPS certificate
   veloray repair                  Check and recover the Xray service
+  veloray ports | inbounds         Inspect local listeners and saved inbounds
+  veloray inbound-port ID PORT     Change an inbound port and update its links
   veloray update [DIRECTORY]       Install an update with a recovery backup
   veloray uninstall                Remove services and program files
 
@@ -161,6 +163,37 @@ Run veloray serve explicitly to start the application in the foreground.`)
 		return e
 	}
 	switch command {
+	case "host-inbounds":
+		if os.Geteuid() != 0 {
+			return errors.New("run with sudo")
+		}
+		s := &panel.Server{Config: c, Store: store}
+		out, err := s.LocalInbounds(ctx)
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(out)
+	case "host-inbound-port":
+		if os.Geteuid() != 0 {
+			return errors.New("run with sudo")
+		}
+		if len(args) != 3 {
+			return errors.New("usage: veloray inbound-port ID PORT")
+		}
+		id, err := strconv.ParseInt(args[1], 10, 64)
+		if err != nil || id < 1 {
+			return errors.New("invalid inbound ID")
+		}
+		port, err := strconv.Atoi(args[2])
+		if err != nil || port < 1 || port > 65535 {
+			return errors.New("port must be 1–65535")
+		}
+		s := &panel.Server{Config: c, Store: store}
+		out, err := s.ChangeLocalInboundPort(ctx, id, port)
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(out)
 	case "configure-origin":
 		if len(args) != 3 {
 			return errors.New("usage: veloray configure-origin HOST PORT")

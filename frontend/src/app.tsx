@@ -10,6 +10,9 @@ const NodesPage = lazy(() =>
 const InboundsPage = lazy(() =>
   import("@/pages/inbounds").then((m) => ({ default: m.InboundsPage })),
 );
+const ImportsPage = lazy(() =>
+  import("@/pages/imports").then((m) => ({ default: m.ImportsPage })),
+);
 const ClientsPage = lazy(() =>
   import("@/pages/clients").then((m) => ({ default: m.ClientsPage })),
 );
@@ -51,6 +54,7 @@ import { VeloRayMark } from "@/components/brand/veloray-mark";
 
 const meta: Record<RouteKey, [string, string]> = {
   dashboard: ["Dashboard", "Traffic and server status"],
+  imports: ["Import data", "Review and migrate panel backups"],
   clients: ["Clients", "Credentials, quotas, expiry and subscription access"],
   inbounds: ["Inbounds", "Ports, protocols and connection security"],
   nodes: ["Nodes", "Local server and remote VeloRay agents"],
@@ -67,6 +71,7 @@ const routes: Record<string, RouteKey> = {
   "/": "dashboard",
   "/dashboard": "dashboard",
   "/clients": "clients",
+  "/imports": "imports",
   "/inbounds": "inbounds",
   "/nodes": "nodes",
   "/subscriptions": "subscriptions",
@@ -81,6 +86,7 @@ const routes: Record<string, RouteKey> = {
 const paths: Record<RouteKey, string> = {
   dashboard: "/dashboard",
   clients: "/clients",
+  imports: "/imports",
   inbounds: "/inbounds",
   nodes: "/nodes",
   subscriptions: "/subscriptions",
@@ -152,6 +158,8 @@ export default function App() {
         return <NodesPage />;
       case "inbounds":
         return <InboundsPage />;
+      case "imports":
+        return user?.is_superuser ? <ImportsPage /> : <SettingsPage />;
       case "clients":
         return <ClientsPage />;
       case "subscriptions":

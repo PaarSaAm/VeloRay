@@ -123,6 +123,7 @@ func (s *Server) collect(ctx context.Context, q Query, node Data) error {
 		}
 	}
 	var totalDelta int64
+	chargedClients := map[string]Data{}
 	for _, entry := range array(stats, "stat") {
 		b, _ := json.Marshal(entry)
 		v, e := decode(b)
@@ -173,15 +174,19 @@ func (s *Server) collect(ctx context.Context, q Query, node Data) error {
 		if client == nil {
 			continue
 		}
-		if delta > int64(^uint64(0)>>1)-num(client, "used_traffic_bytes") || delta > int64(^uint64(0)>>1)-num(client, "lifetime_traffic_bytes") {
-			return errors.New("client traffic overflow")
+		key := accountKey(client)
+		if chargedClients[key] == nil {
+			chargedClients[key] = client
 		}
-		client["used_traffic_bytes"] = num(client, "used_traffic_bytes") + delta
-		client["lifetime_traffic_bytes"] = num(client, "lifetime_traffic_bytes") + delta
-		client["last_traffic_at"] = stamp()
+		if e = applyTrafficDelta(chargedClients[key], delta); e != nil {
+			return e
+		}
+		if delta > int64(^uint64(0)>>1)-totalDelta {
+			return errors.New("node traffic overflow")
+		}
 		totalDelta += delta
 	}
-	for _, c := range clients {
+	for _, c := range chargedClients {
 		if e = save(ctx, q, "clients", c); e != nil {
 			return e
 		}

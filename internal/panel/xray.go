@@ -18,18 +18,22 @@ func streamSettings(i, node Data) Data {
 		return nil
 	}
 	method := map[string]string{"raw": "raw", "ws": "websocket", "grpc": "grpc", "xhttp": "xhttp", "httpupgrade": "httpupgrade", "mkcp": "mkcp", "hysteria": "hysteria"}[t]
-	v := Data{"method": method, "security": s}
+	v := clone(obj(i, "stream_settings"))
+	v["method"], v["security"] = method, s
 	switch t {
 	case "ws":
-		v["wsSettings"] = Data{"path": fallback(str(i, "path"), "/"), "host": str(i, "host_header")}
+		v["wsSettings"] = merge(obj(v, "wsSettings"), Data{"path": fallback(str(i, "path"), "/"), "host": str(i, "host_header")})
 	case "grpc":
-		v["grpcSettings"] = Data{"serviceName": fallback(str(i, "service_name"), str(i, "name"))}
+		v["grpcSettings"] = merge(obj(v, "grpcSettings"), Data{"serviceName": fallback(str(i, "service_name"), str(i, "name"))})
 	case "xhttp":
-		v["xhttpSettings"] = Data{"path": fallback(str(i, "path"), "/"), "mode": "auto"}
+		v["xhttpSettings"] = merge(Data{"mode": "auto"}, obj(v, "xhttpSettings"))
+		obj(v, "xhttpSettings")["path"] = fallback(str(i, "path"), "/")
 	case "httpupgrade":
-		v["httpupgradeSettings"] = Data{"path": fallback(str(i, "path"), "/"), "host": str(i, "host_header")}
+		v["httpupgradeSettings"] = merge(obj(v, "httpupgradeSettings"), Data{"path": fallback(str(i, "path"), "/"), "host": str(i, "host_header")})
 	case "mkcp":
-		v["kcpSettings"] = Data{}
+		if len(obj(v, "kcpSettings")) == 0 {
+			v["kcpSettings"] = Data{}
+		}
 	case "hysteria":
 		h := Data{"version": 2, "udpIdleTimeout": 60}
 		ps := obj(i, "protocol_settings")
@@ -42,13 +46,21 @@ func streamSettings(i, node Data) Data {
 		v["hysteriaSettings"] = h
 	}
 	if s == "tls" {
-		v["tlsSettings"] = Data{"serverName": fallback(str(i, "tls_server_name"), str(node, "public_host")), "certificates": []any{Data{"certificateFile": str(i, "tls_cert_file"), "keyFile": str(i, "tls_key_file")}}}
+		v["tlsSettings"] = merge(obj(v, "tlsSettings"), Data{"serverName": fallback(str(i, "tls_server_name"), str(node, "public_host")), "certificates": []any{Data{"certificateFile": str(i, "tls_cert_file"), "keyFile": str(i, "tls_key_file")}}})
 	}
 	if s == "reality" {
-		v["realitySettings"] = Data{"show": false, "target": str(i, "reality_dest"), "serverNames": []any{str(i, "reality_server_name")}, "privateKey": str(i, "reality_private_key"), "shortIds": []any{str(i, "reality_short_id")}}
+		v["realitySettings"] = merge(obj(v, "realitySettings"), Data{"show": false, "target": str(i, "reality_dest"), "serverNames": []any{str(i, "reality_server_name")}, "privateKey": str(i, "reality_private_key"), "shortIds": []any{str(i, "reality_short_id")}})
 	}
 	return v
 }
+func clientFlow(c, i Data) string {
+	settings := obj(c, "protocol_settings")
+	if _, exists := settings["flow"]; exists {
+		return str(settings, "flow")
+	}
+	return str(i, "flow")
+}
+
 func inboundSettings(i, node Data, clients []Data) (Data, error) {
 	p := str(i, "protocol")
 	ps := obj(i, "protocol_settings")
@@ -62,8 +74,10 @@ func inboundSettings(i, node Data, clients []Data) (Data, error) {
 			if p == "vmess" {
 				v["alterId"] = 0
 			}
-			if p == "vless" && str(i, "flow") != "" {
-				v["flow"] = str(i, "flow")
+			if p == "vless" {
+				if flow := clientFlow(c, i); flow != "" {
+					v["flow"] = flow
+				}
 			}
 		case "trojan":
 			v["password"] = str(c, "credential")
@@ -255,8 +269,8 @@ func shareLink(c, i, node Data) string {
 	case "vless", "trojan":
 		if p == "vless" {
 			params.Set("encryption", "none")
-			if str(i, "flow") != "" {
-				params.Set("flow", str(i, "flow"))
+			if flow := clientFlow(c, i); flow != "" {
+				params.Set("flow", flow)
 			}
 		}
 		return p + "://" + url.PathEscape(credential) + "@" + addr + "?" + params.Encode() + "#" + fragment

@@ -50,3 +50,19 @@ CREATE TABLE IF NOT EXISTS vr_telegram_updates (id bigint PRIMARY KEY, processed
 INSERT INTO vr_schema(version) VALUES(1) ON CONFLICT DO NOTHING;
 CREATE TABLE IF NOT EXISTS vr_operations (id text PRIMARY KEY, nodes jsonb NOT NULL, status text NOT NULL DEFAULT 'prepared', created_at timestamptz NOT NULL DEFAULT now());
 CREATE INDEX IF NOT EXISTS vr_operations_pending ON vr_operations(created_at) WHERE status='prepared';
+CREATE TABLE IF NOT EXISTS vr_accounts (id bigserial PRIMARY KEY, data jsonb NOT NULL,
+ node_id bigint GENERATED ALWAYS AS ((data->>'_node')::bigint) STORED NOT NULL REFERENCES vr_nodes(id) ON DELETE CASCADE);
+ALTER TABLE vr_clients ADD COLUMN IF NOT EXISTS account_id bigint GENERATED ALWAYS AS ((data->>'_account')::bigint) STORED REFERENCES vr_accounts(id);
+CREATE INDEX IF NOT EXISTS vr_clients_account ON vr_clients(account_id) WHERE account_id IS NOT NULL;
+CREATE TABLE IF NOT EXISTS vr_import_jobs (
+ id text PRIMARY KEY, actor_id bigint NOT NULL REFERENCES vr_users(id) ON DELETE CASCADE,
+ node_id bigint NOT NULL REFERENCES vr_nodes(id) ON DELETE CASCADE, digest text NOT NULL,
+ payload text NOT NULL, preview jsonb NOT NULL, result jsonb,
+ expires_at timestamptz NOT NULL DEFAULT now()+interval '30 minutes', created_at timestamptz NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS vr_import_expiry ON vr_import_jobs(expires_at);
+INSERT INTO vr_schema(version) VALUES(2) ON CONFLICT DO NOTHING;
+CREATE TABLE IF NOT EXISTS vr_telegram_actions (
+ id text PRIMARY KEY, owner_id text NOT NULL, kind text NOT NULL, target_id bigint NOT NULL, action text NOT NULL,
+ expires_at timestamptz NOT NULL DEFAULT now()+interval '5 minutes', used boolean NOT NULL DEFAULT false);
+ALTER TABLE vr_telegram_updates ADD COLUMN IF NOT EXISTS reply jsonb;
+ALTER TABLE vr_telegram_updates ADD COLUMN IF NOT EXISTS sent_at timestamptz;

@@ -15,5 +15,8 @@ Test deployments on a separate server before enabling production traffic.
 - Remote agents require HTTPS. Disabling TLS verification is an explicit per-node exception and should be replaced with a trusted certificate or CA bundle.
 - The agent refuses remote plaintext listeners and supports optional client-certificate authentication.
 - Configuration patches are privileged input. They can alter routing and listeners; they cannot disable the panel's local stats API or required counters.
+- External backup imports require an administrator session or administrator-scoped API key, including the configured 2FA policy. SQLite files are opened read-only with bounded parsing; SQL dumps are never executed. Preview payloads are encrypted, expire after 30 minutes and are cleared after commit. Imported inbounds remain disabled for review.
+- Telegram commands require a whitelisted sender in that sender's private chat. Bot changes are opt-in, require expiring owner-bound confirmations and are unavailable when administrator 2FA is mandatory. Cancellation and execution consume the confirmation. Bot tokens are encrypted; audit entries record the owner ID without recording credentials.
+- Traffic policy affects billed usage while retaining actual counters. Quota and access policy for imported shared accounts applies across their connections. Passwords and subscription tokens are excluded from usage CSV exports and import previews.
 
 Backups are not encrypted by the archive format. Their files and directory are private, but copy them only to access-controlled, encrypted storage. The manifest detects corruption; it is not a signature against an attacker who can rewrite the archive and manifest together.

@@ -21,6 +21,8 @@ type nodeMock struct {
 	applies, rollbacks   int
 	config               Data
 	statsCalls, restarts int
+	portConflict         bool
+	stats                []any
 }
 
 func (m *nodeMock) handler(w http.ResponseWriter, r *http.Request) {
@@ -35,9 +37,33 @@ func (m *nodeMock) handler(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, 503, Data{"detail": "Xray is stopped"})
 			return
 		}
-		writeJSON(w, 200, Data{"accounting": "durable-v1", "ledger_id": "stable-ledger", "stat": []any{Data{"name": "user>>>veloray:1:alice>>>traffic>>>uplink", "value": m.value}}})
+		entries := m.stats
+		if entries == nil {
+			entries = []any{Data{"name": "user>>>veloray:1:alice>>>traffic>>>uplink", "value": m.value}}
+		}
+		writeJSON(w, 200, Data{"accounting": "durable-v1", "ledger_id": "stable-ledger", "stat": entries})
 	case "/xray/validate":
+		if m.portConflict {
+			var input Data
+			_ = json.NewDecoder(r.Body).Decode(&input)
+			for _, v := range array(obj(input, "config"), "inbounds") {
+				if in, ok := v.(map[string]any); ok && num(in, "port") == 443 {
+					writeJSON(w, 503, Data{"detail": "port conflict: nginx on 443"})
+					return
+				}
+			}
+		}
 		writeJSON(w, 200, Data{"status": "valid"})
+	case "/xray/ports":
+		var input Data
+		_ = json.NewDecoder(r.Body).Decode(&input)
+		checks := []any{}
+		for _, v := range array(obj(input, "config"), "inbounds") {
+			if in, ok := v.(map[string]any); ok {
+				checks = append(checks, Data{"tag": in["tag"], "listen": in["listen"], "port": in["port"], "network": "tcp", "state": "free"})
+			}
+		}
+		writeJSON(w, 200, Data{"ports": checks})
 	case "/xray/apply":
 		m.applies++
 		if m.failApply {
@@ -57,6 +83,125 @@ func (m *nodeMock) handler(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, Data{"status": "restarted"})
 	default:
 		http.NotFound(w, r)
+	}
+}
+func TestIntegrationPortRecoveryKeepsLinksAndDataConsistent(t *testing.T) {
+	s, ctx := integration(t)
+	m := &nodeMock{running: false, portConflict: true}
+	n, i, c := fixture(t, s, ctx, m)
+	n["is_local"] = true
+	if err := save(ctx, s.Store.Pool, "nodes", n); err != nil {
+		t.Fatal(err)
+	}
+	c["used_traffic_bytes"] = int64(1234)
+	if err := save(ctx, s.Store.Pool, "clients", c); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ChangeLocalInboundPort(ctx, num(i, "id"), 2053); err != nil {
+		t.Fatal(err)
+	}
+	updated, err := get(ctx, s.Store.Pool, "inbounds", num(i, "id"))
+	if err != nil || num(updated, "port") != 2053 {
+		t.Fatal(updated, err)
+	}
+	view, err := s.view(ctx, s.Store.Pool, "clients", c)
+	if err != nil || !strings.Contains(str(view, "share_link"), ":2053") {
+		t.Fatal("client link stayed on the old port", view, err)
+	}
+	fresh, err := get(ctx, s.Store.Pool, "clients", num(c, "id"))
+	if err != nil || str(fresh, "credential") != str(c, "credential") || num(fresh, "used_traffic_bytes") != 1234 {
+		t.Fatal("client data changed", fresh, err)
+	}
+	if m.applies != 1 {
+		t.Fatal("port recovery did not deploy", m.applies)
+	}
+	if _, err = s.ChangeLocalInboundPort(ctx, num(i, "id"), 443); err == nil {
+		t.Fatal("occupied port accepted")
+	}
+	updated, _ = get(ctx, s.Store.Pool, "inbounds", num(i, "id"))
+	if num(updated, "port") != 2053 || m.applies != 1 {
+		t.Fatal("failed change modified the database or runtime", updated, m.applies)
+	}
+}
+func TestIntegrationBatchClientsDeploysOnceAndRollsBack(t *testing.T) {
+	s, ctx := integration(t)
+	m := &nodeMock{running: true}
+	_, i, _ := fixture(t, s, ctx, m)
+	create := func(prefix string, count int) (any, error) {
+		req := httptest.NewRequest("POST", "/", strings.NewReader(fmt.Sprintf(`{"name":%q,"inbound":%d,"count":%d,"traffic_limit_bytes":1048576}`, prefix, num(i, "id"), count))).WithContext(ctx)
+		out, _, err := s.api(httptest.NewRecorder(), req, "clients/batch", Actor{})
+		return out, err
+	}
+	if _, err := create("batch", 3); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := list(ctx, s.Store.Pool, "clients", "ORDER BY id")
+	if err != nil || len(rows) != 4 || m.applies != 1 {
+		t.Fatal("batch did not use one deployment", len(rows), m.applies, err)
+	}
+	seen := map[string]bool{}
+	for _, row := range rows {
+		if seen[str(row, "credential")] || seen[str(row, "subscription_token")] {
+			t.Fatal("reused credential or token")
+		}
+		seen[str(row, "credential")] = true
+		seen[str(row, "subscription_token")] = true
+	}
+	if _, err = create("invalid", 101); err == nil {
+		t.Fatal("unbounded batch accepted")
+	}
+	m.failApply = true
+	if _, err = create("failed", 2); err == nil {
+		t.Fatal("failed deployment reported success")
+	}
+	rows, _ = list(ctx, s.Store.Pool, "clients", "")
+	if len(rows) != 4 {
+		t.Fatal("partial batch survived rollback", len(rows))
+	}
+}
+func TestIntegrationBulkActionsAreAtomicAndRespectExpiry(t *testing.T) {
+	s, ctx := integration(t)
+	m := &nodeMock{running: true}
+	_, i, c := fixture(t, s, ctx, m)
+	second := defaults("clients")
+	second["name"] = "bob"
+	second["inbound"] = num(i, "id")
+	second["credential"] = uuid()
+	second["subscription_token"] = randomToken(32)
+	if err := save(ctx, s.Store.Pool, "clients", second); err != nil {
+		t.Fatal(err)
+	}
+	call := func(action string) error {
+		req := httptest.NewRequest("POST", "/", strings.NewReader(fmt.Sprintf(`{"ids":[%d,%d],"action":%q}`, num(c, "id"), num(second, "id"), action))).WithContext(ctx)
+		_, _, err := s.api(httptest.NewRecorder(), req, "clients/bulk", Actor{})
+		return err
+	}
+	if err := call("disable"); err != nil || m.applies != 1 {
+		t.Fatal("bulk disable did not deploy once", err, m.applies)
+	}
+	m.failApply = true
+	if err := call("enable"); err == nil {
+		t.Fatal("failed bulk deployment accepted")
+	}
+	rows, _ := list(ctx, s.Store.Pool, "clients", "")
+	for _, row := range rows {
+		if flag(row, "enabled") {
+			t.Fatal("partial enable committed")
+		}
+	}
+	m.failApply = false
+	if err := call("enable"); err != nil {
+		t.Fatal(err)
+	}
+	fresh, _ := get(ctx, s.Store.Pool, "clients", num(c, "id"))
+	fresh["enabled"] = false
+	fresh["expires_at"] = stamp(time.Now().Add(-time.Hour))
+	if err := save(ctx, s.Store.Pool, "clients", fresh); err != nil {
+		t.Fatal(err)
+	}
+	before := m.applies
+	if err := call("enable"); err == nil || m.applies != before {
+		t.Fatal("expired account was enabled or changed runtime", err, m.applies)
 	}
 }
 
@@ -106,7 +251,7 @@ func integration(t *testing.T) (*Server, context.Context) {
 	if e = store.Migrate(ctx); e != nil {
 		t.Fatal(e)
 	}
-	_, e = store.Pool.Exec(ctx, `TRUNCATE vr_nodes,vr_inbounds,vr_clients,vr_users,vr_api_keys,vr_audit,vr_sessions,vr_stats_cursors,vr_traffic_windows,vr_jobs,vr_operations,vr_rate_limits,vr_telegram_updates RESTART IDENTITY CASCADE`)
+	_, e = store.Pool.Exec(ctx, `TRUNCATE vr_nodes,vr_inbounds,vr_clients,vr_users,vr_api_keys,vr_audit,vr_sessions,vr_stats_cursors,vr_traffic_windows,vr_jobs,vr_operations,vr_rate_limits,vr_telegram_updates,vr_telegram_actions RESTART IDENTITY CASCADE`)
 	if e != nil {
 		t.Fatal(e)
 	}

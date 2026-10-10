@@ -5,8 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -18,11 +21,15 @@ type fakeRuntime struct {
 	running             bool
 	reject, restartFail bool
 	restarts            int
+	sockets             string
 }
 
 func (f *fakeRuntime) Run(_ context.Context, name string, args ...string) ([]byte, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if name == "ss" {
+		return []byte(f.sockets), nil
+	}
 	if name == "xray" {
 		switch args[0] {
 		case "version":
@@ -65,6 +72,60 @@ func (f *fakeRuntime) Run(_ context.Context, name string, args ...string) ([]byt
 		}
 	}
 	return nil, nil
+}
+func TestPortConflictPreservesConfigAndRunningService(t *testing.T) {
+	m, f := testManager(t)
+	f.sockets = `tcp LISTEN 0 511 0.0.0.0:443 0.0.0.0:* users:(("nginx",pid=456,fd=8))`
+	raw := []byte(`{"inbounds":[{"tag":"vpn","listen":"0.0.0.0","port":443,"protocol":"vless"}]}`)
+	for _, check := range []func() error{func() error { return m.Validate(context.Background(), raw) }, func() error { return m.Apply(context.Background(), "occupied-port-operation", raw) }} {
+		err := check()
+		if err == nil || !strings.Contains(err.Error(), "nginx") || !strings.Contains(err.Error(), "443") {
+			t.Fatal("foreign listener not identified", err)
+		}
+	}
+	unchanged, _ := os.ReadFile(m.ConfigPath)
+	if string(unchanged) != `{"old":true}` || f.restarts != 0 || !f.running || len(m.state.Operations) != 0 {
+		t.Fatal("preflight changed the runtime", string(unchanged), f.restarts)
+	}
+}
+func TestPortInspectionRecognizesXrayUDPAndAddressScope(t *testing.T) {
+	f := &fakeRuntime{running: true, sockets: `tcp LISTEN 0 511 0.0.0.0:443 0.0.0.0:* users:(("xray",pid=123,fd=8))
+udp UNCONN 0 0 127.0.0.1:8443 0.0.0.0:* users:(("foreign",pid=456,fd=9))
+tcp LISTEN 0 511 [::]:2083 [::]:* users:(("nginx",pid=456,fd=10))`}
+	raw := []byte(`{"inbounds":[{"tag":"own","listen":"0.0.0.0","port":443,"protocol":"vless"},{"tag":"udp","listen":"127.0.0.1","port":8443,"protocol":"vless","streamSettings":{"network":"kcp"}},{"tag":"v6","listen":"0.0.0.0","port":2083,"protocol":"vless"},{"tag":"tcp-free","listen":"127.0.0.1","port":8443,"protocol":"vless"}]}`)
+	checks, err := InspectConfigPorts(context.Background(), f, "xray", raw)
+	if err != nil || len(checks) != 4 {
+		t.Fatal(checks, err)
+	}
+	for i, want := range []string{"xray", "conflict", "conflict", "free"} {
+		if checks[i].State != want {
+			t.Fatal(i, checks)
+		}
+	}
+	if listenOverlap("0.0.0.0", "::1") || listenOverlap("127.0.0.1", "127.0.0.2") {
+		t.Fatal("distinct addresses overlap")
+	}
+	if !listenOverlap("0.0.0.0", "127.0.0.2") {
+		t.Fatal("wildcard missed")
+	}
+}
+func TestPortInspectionDetectsActualSocket(t *testing.T) {
+	if _, err := exec.LookPath("ss"); err != nil {
+		t.Skip("iproute2 is required")
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	raw := []byte(fmt.Sprintf(`{"inbounds":[{"tag":"occupied","listen":"127.0.0.1","port":%d,"protocol":"vless"}]}`, listener.Addr().(*net.TCPAddr).Port))
+	checks, err := InspectConfigPorts(context.Background(), Commands{}, "veloray-test-nonexistent.service", raw)
+	if err != nil || len(checks) != 1 || checks[0].State != "conflict" {
+		t.Fatal("real socket missed", checks, err)
+	}
+	if RequireFreePorts(checks) == nil {
+		t.Fatal("occupied port accepted")
+	}
 }
 func testManager(t *testing.T) (*Manager, *fakeRuntime) {
 	t.Helper()

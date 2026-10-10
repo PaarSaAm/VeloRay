@@ -4,6 +4,7 @@ vr_text() { if [[ "${VELORAY_INSTALL_LANG:-${VELORAY_LANGUAGE:-en}}" == fa ]];th
 vr_say() { vr_text "$1" "$2";printf '\n'; }
 vr_step() { VR_STEP="$(vr_text "$1" "$2")";printf '\n  • %s\n' "$VR_STEP"; }
 vr_log_init() {
+ VR_OPERATION_STARTED="$(date --iso-8601=seconds)"
  local previous_mask="$(umask)"
  umask 077
  if [[ -z "${VELORAY_INSTALL_LOG:-}" ]];then
@@ -36,9 +37,10 @@ vr_packages() {
 }
 vr_xray_prepare() {
  # The service can traverse its config and write its standard logs under systemd protection.
+ id veloray-xray >/dev/null 2>&1||useradd --system --gid nogroup --home /var/log/xray --shell /usr/sbin/nologin veloray-xray
  chmod 0755 /usr/local/etc/xray
- install -d -o nobody -g nogroup -m 0750 /var/log/xray
- find /var/log/xray -maxdepth 1 -type f -exec chown nobody:nogroup {} + -exec chmod 0640 {} +
+ install -d -o veloray-xray -g nogroup -m 0750 /var/log/xray
+ find /var/log/xray -maxdepth 1 -type f -exec chown veloray-xray:nogroup {} + -exec chmod 0640 {} +
  if [[ -n "${VELORAY_XRAY_DIRECTORY:-}" && ( ! -f /usr/local/share/xray/geoip.dat || ! -f /usr/local/share/xray/geosite.dat ) ]];then
   (cd "$VELORAY_XRAY_DIRECTORY" && sha256sum -c SHA256SUMS) >>"$VELORAY_INSTALL_LOG" 2>&1
   install -d -m 0755 /usr/local/share/xray
@@ -52,13 +54,42 @@ vr_xray_check() {
  if jq -e 'any(.inbounds[]?; .protocol == "tun")' "$config" >/dev/null 2>>"$VELORAY_INSTALL_LOG";then
   vr_run env XRAY_LOCATION_ASSET=/usr/local/share/xray /usr/local/bin/xray run -test -config "$config"
  else
-  vr_run runuser -u nobody -- env XRAY_LOCATION_ASSET=/usr/local/share/xray /usr/local/bin/xray run -test -config "$config"
+  vr_run runuser -u veloray-xray -- env XRAY_LOCATION_ASSET=/usr/local/share/xray /usr/local/bin/xray run -test -config "$config"
  fi
+}
+vr_ports_check() {
+ local status=0 report
+ report="$(/usr/local/bin/veloray-agent check-ports /usr/local/etc/xray/config.json 2>>"$VELORAY_INSTALL_LOG")"||status=$?
+ if ! jq -e '.ports|type=="array"' <<<"$report" >/dev/null 2>&1;then
+  vr_say 'Could not inspect ports. Check the operation log and iproute2 installation.' 'بررسی پورت‌ها ناموفق بود؛ گزارش عملیات و نصب iproute2 را بررسی کنید.' >&2
+  return 1
+ fi
+ VR_PORTS_REPORT="$report"
+ if ((status!=0));then
+  vr_say 'Xray port conflict:' 'تداخل پورت Xray:' >&2
+  jq -r '.ports[]|select(.state=="conflict")|"  \(.network) \(.listen):\(.port) [\(.tag)] — \(.owner)"' <<<"$report" >&2
+  return "$status"
+ fi
+}
+vr_resolve_ports() {
+ local inbound port
+ while ! vr_ports_check;do
+  vr_say 'Keep the existing service running. Choose another VPN port; client links will update together.' 'سرویس فعلی حفظ می‌شود؛ پورت دیگری برای VPN انتخاب کنید تا لینک کاربران هم‌زمان به‌روزرسانی شود.' >&2
+  vr_say 'Commands: sudo veloray inbounds / sudo veloray inbound-port ID PORT' 'دستورها: sudo veloray inbounds / sudo veloray inbound-port ID PORT' >&2
+  [[ -t 0 ]]||return 1
+  veloray host-inbounds | jq -r '.[]|"  ID=\(.id)  \(.name)  \(.listen):\(.port)  \(.protocol)"'
+  read -rp "$(vr_text 'Inbound ID to move (Enter to leave): ' 'شناسه اتصال برای تغییر پورت (Enter برای خروج): ')" inbound||return 1
+  [[ -n "$inbound" ]]||return 1
+  [[ "$inbound" =~ ^[1-9][0-9]*$ ]]||{ vr_say 'Enter a numeric inbound ID.' 'شناسهٔ عددی اتصال را وارد کنید.';continue; }
+  read -rp "$(vr_text 'New VPN port: ' 'پورت جدید VPN: ')" port||return 1
+  [[ "$port" =~ ^[0-9]+$ ]]&&((port>0&&port<65536))||{ vr_say 'Port must be 1–65535.' 'پورت باید بین ۱ و ۶۵۵۳۵ باشد.';continue; }
+  if ! veloray host-inbound-port "$inbound" "$port";then vr_say 'Port change failed; review the error before retrying.' 'تغییر پورت ناموفق بود؛ خطا را بررسی کنید.' >&2;return 1;fi
+ done
 }
 vr_diagnostics() {
  for unit in veloray-web.service veloray-agent.service xray.service;do
   systemctl --no-pager --full status "$unit" >>"$VELORAY_INSTALL_LOG" 2>&1||true
-  journalctl -u "$unit" -n 40 --no-pager >>"$VELORAY_INSTALL_LOG" 2>&1||true
+  journalctl -u "$unit" -b --since "${VR_OPERATION_STARTED:-10 minutes ago}" -n 40 --no-pager >>"$VELORAY_INSTALL_LOG" 2>&1||true
  done
 }
 vr_wait() {

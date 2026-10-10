@@ -14,7 +14,8 @@ export type RouteKey =
   | "security"
   | "settings"
   | "api"
-  | "admin";
+  | "admin"
+  | "imports";
 const groups = [
   {
     label: "Overview",
@@ -29,6 +30,7 @@ const groups = [
       { key: "clients", label: "Clients", icon: "users" },
       { key: "inbounds", label: "Inbounds", icon: "diagram-project" },
       { key: "subscriptions", label: "Subscriptions", icon: "rss" },
+      { key: "imports", label: "Import data", icon: "download" },
     ],
   },
   {
@@ -89,7 +91,10 @@ export function Sidebar({
             )}
             <div className="space-y-1">
               {g.items
-                .filter((item) => item.key !== "admin" || isSuperuser)
+                .filter(
+                  (item) =>
+                    !["admin", "imports"].includes(item.key) || isSuperuser,
+                )
                 .map((item) => {
                   const active = route === item.key;
                   return (

@@ -61,6 +61,10 @@ func typed(input, template Data) error {
 			if _, ok := v.(string); !ok {
 				return fmt.Errorf("%s must be text", k)
 			}
+		case float64:
+			if _, ok := v.(json.Number); !ok {
+				return fmt.Errorf("%s must be a number", k)
+			}
 		case int, int64:
 			if _, ok := v.(json.Number); !ok {
 				return fmt.Errorf("%s must be an integer", k)
@@ -126,6 +130,22 @@ func validateNode(c Config, d Data) error {
 	return nil
 }
 func validateInbound(ctx context.Context, q Query, c Config, d Data) error {
+	stream := obj(d, "stream_settings")
+	if err := allowed(stream, "rawSettings tcpSettings wsSettings grpcSettings xhttpSettings httpupgradeSettings kcpSettings hysteriaSettings tlsSettings realitySettings sockopt"); err != nil {
+		return err
+	}
+	if raw, _ := json.Marshal(stream); len(raw) > 65536 {
+		return errors.New("advanced stream settings exceed 64 KiB")
+	}
+	if minTLS := str(obj(stream, "tlsSettings"), "minVersion"); minTLS != "" && !oneOf(minTLS, "1.2", "1.3") {
+		return errors.New("TLS minimum version must be 1.2 or 1.3")
+	}
+	for _, key := range []string{"path", "host_header", "service_name", "tls_server_name", "flow"} {
+		if strings.ContainsAny(str(d, key), "\r\n") {
+			return fmt.Errorf("invalid %s", key)
+		}
+	}
+
 	if e := require(d, "name", 96); e != nil {
 		return e
 	}
@@ -143,7 +163,7 @@ func validateInbound(ctx context.Context, q Query, c Config, d Data) error {
 	} else if port < 1 || port > 65535 {
 		return errors.New("port must be between 1 and 65535")
 	}
-	if port == 10085 || port == 9191 || flag(node, "is_local") && port == int64(c.PanelPort) {
+	if port == 10085 || port == 9191 || flag(node, "is_local") && (port == 8610 || port == int64(c.PanelPort)) {
 		return errors.New("port is reserved by the panel, agent or Xray API")
 	}
 	if net.ParseIP(str(d, "listen")) == nil {
@@ -202,6 +222,9 @@ func validateInbound(ctx context.Context, q Query, c Config, d Data) error {
 	return nil
 }
 func validateClient(ctx context.Context, q Query, d Data) error {
+	if _, err := multiplierMilli(d); err != nil {
+		return err
+	}
 	if e := require(d, "name", 96); e != nil {
 		return e
 	}
@@ -308,7 +331,7 @@ func validateSettings(d Data) error {
 	if e := require(d, "site_name", 64); e != nil {
 		return e
 	}
-	for k, bounds := range map[string][2]int64{"dashboard_refresh_seconds": {5, 3600}, "traffic_history_days": {1, 365}, "default_client_days": {0, 3650}, "default_traffic_gb": {0, 1000000}, "default_renewal_days": {0, 3650}, "api_key_default_days": {1, 3650}, "audit_retention_days": {1, 3650}, "telegram_alert_cpu_percent": {1, 100}, "telegram_alert_memory_percent": {1, 100}, "telegram_alert_disk_percent": {1, 100}, "telegram_alert_cooldown_minutes": {1, 1440}} {
+	for k, bounds := range map[string][2]int64{"dashboard_refresh_seconds": {5, 3600}, "traffic_history_days": {1, 365}, "default_client_days": {0, 3650}, "default_traffic_gb": {0, 1000000}, "default_renewal_days": {0, 3650}, "api_key_default_days": {1, 3650}, "audit_retention_days": {1, 3650}, "telegram_alert_cpu_percent": {1, 100}, "telegram_alert_memory_percent": {1, 100}, "telegram_alert_disk_percent": {1, 100}, "telegram_alert_cooldown_minutes": {1, 1440}, "telegram_quota_warning_percent": {1, 100}, "telegram_expiry_warning_days": {1, 30}} {
 		if num(d, k) < bounds[0] || num(d, k) > bounds[1] {
 			return fmt.Errorf("invalid %s", k)
 		}
@@ -326,6 +349,9 @@ func validateSettings(d Data) error {
 	}
 	if len(str(d, "announcement")) > 1120 || len(str(d, "subscription_footer")) > 720 {
 		return errors.New("announcement or footer is too long")
+	}
+	if !oneOf(str(d, "telegram_locale"), "en", "fa") {
+		return errors.New("Telegram language must be en or fa")
 	}
 	ids := array(d, "telegram_owner_ids")
 	if len(ids) > 20 {

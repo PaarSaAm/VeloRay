@@ -12,6 +12,21 @@ const groups = [
       ["POST", "/api/nodes/:id/probe/", "Probe Agent and Xray"],
       ["POST", "/api/nodes/:id/deploy/", "Validate and apply generated config"],
       ["GET", "/api/nodes/:id/config-preview/", "Preview generated Xray JSON"],
+      [
+        "GET",
+        "/api/nodes/:id/ports/",
+        "Check listeners and current socket owners",
+      ],
+      [
+        "POST",
+        "/api/nodes/:id/check-listener/",
+        "Check a proposed inbound port",
+      ],
+      [
+        "POST",
+        "/api/nodes/:id/config-validate/",
+        "Validate configuration and listener availability",
+      ],
       ["POST", "/api/nodes/:id/xray-restart/", "Restart Xray service"],
     ],
   },
@@ -22,8 +37,41 @@ const groups = [
       ["PATCH / DELETE", "/api/inbounds/:id/", "Update or remove inbound"],
       ["POST", "/api/inbounds/:id/clone/", "Clone an inbound to a node"],
       ["GET / POST", "/api/clients/", "List or create clients"],
+      [
+        "PATCH",
+        "/api/clients/:id/",
+        "Update policy, including traffic_multiplier (-1 to 3)",
+      ],
+      ["POST", "/api/clients/batch", "Create 1–100 clients in one deployment"],
+      [
+        "POST",
+        "/api/clients/bulk",
+        "Apply an action to 1–200 clients atomically",
+      ],
       ["POST", "/api/clients/:id/toggle/", "Enable or disable client"],
       ["POST", "/api/clients/:id/reset-usage/", "Reset persisted quota usage"],
+    ],
+  },
+  {
+    name: "Imports and Telegram (administrators)",
+    rows: [
+      [
+        "POST",
+        "/api/imports/preview",
+        "Multipart file + node; private preview valid for 30 minutes",
+      ],
+      [
+        "POST",
+        "/api/imports/commit",
+        "token, selected source IDs and optional port_overrides; save disabled",
+      ],
+      ["GET", "/api/telegram/status", "Bot identity and polling status"],
+      ["POST", "/api/telegram/test", "Send a test to configured owners"],
+      [
+        "POST",
+        "/api/telegram/setup",
+        "Register commands for private owner chats",
+      ],
     ],
   },
   {
@@ -49,6 +97,13 @@ export function ApiDocsPage() {
         Browser API uses secure sessions and CSRF protection. Public
         subscription routes are token-scoped and do not expose panel
         administration.
+        <p className="mt-2">
+          Client traffic_multiplier defaults to 1, accepts three decimal places
+          and has a maximum of 3. Negative values are discounts: -0.5 bills half
+          the actual traffic. Changes apply to subsequent traffic. Shared
+          account policy applies to every connection; account_id identifies the
+          shared quota, and raw_used_traffic_bytes reports actual usage.
+        </p>
       </div>
       {groups.map((g) => (
         <Card key={g.name}>

@@ -15,6 +15,7 @@ VeloRay 0.1.0 · Server management
   veloray backup [FILE] | restore FILE
   veloray backup-schedule daily|off
   veloray repair | update [DIRECTORY] | uninstall
+  veloray ports | inbounds | inbound-port ID PORT
   veloray language en|fa
 HELP
  exit 0
@@ -49,6 +50,7 @@ doctor() {
  if body="$(curl -fsS --max-time 5 http://127.0.0.1:8610/api/health 2>>"$VELORAY_INSTALL_LOG")" && jq -e '.status=="ok"' <<<"$body" >/dev/null 2>&1;then vr_say '  ✓ Panel and database' '  ✓ پنل و پایگاه داده';else vr_say '  ✗ Panel or database is unavailable' '  ✗ پنل یا پایگاه داده در دسترس نیست';failed=1;fi
  if body="$(curl -fsS --max-time 10 -H "Authorization: Bearer $VELORAY_LOCAL_NODE_TOKEN" http://127.0.0.1:9191/health 2>>"$VELORAY_INSTALL_LOG")" && jq -e '.status=="ok" and .xray.installed==true and .xray.running==true' <<<"$body" >/dev/null 2>&1;then vr_say '  ✓ Agent and Xray runtime' '  ✓ نود و سرویس Xray';else vr_say '  ✗ Xray is stopped or the agent is unavailable; run veloray repair' '  ✗ سرویس Xray خاموش است یا نود پاسخ نمی‌دهد؛ دستور veloray repair را اجرا کنید';failed=1;fi
  if body="$(curl -fsS --max-time 15 -H "Authorization: Bearer $VELORAY_LOCAL_NODE_TOKEN" http://127.0.0.1:9191/xray/stats 2>>"$VELORAY_INSTALL_LOG")" && jq -e '.accounting=="durable-v1" and (.ledger_id|type=="string" and length>0)' <<<"$body" >/dev/null 2>&1;then vr_say '  ✓ Persistent traffic accounting' '  ✓ ثبت پایدار مصرف ترافیک';else vr_say '  ✗ Traffic accounting API is unavailable' '  ✗ رابط ثبت ترافیک در دسترس نیست';failed=1;fi
+ if vr_ports_check;then vr_say '  ✓ VPN listener ports' '  ✓ پورت‌های اتصال VPN';else failed=1;fi
  if ((failed));then vr_diagnostics;vr_say "Inspect: $VELORAY_INSTALL_LOG" "گزارش عیب‌یابی: $VELORAY_INSTALL_LOG";return 1;fi
  vr_say 'All checks passed.' 'همهٔ بررسی‌ها موفق بود.'
 }
@@ -68,6 +70,8 @@ menu() {
   13  پشتیبان‌گیری روزانه     14  بررسی سلامت
   15  عیب‌یابی و بازیابی Xray 16  به‌روزرسانی
   17  حذف برنامه              18  زبان / Language
+  19  بررسی پورت‌های VPN      20  تغییر پورت اتصال
+  21  فهرست اتصال‌ها
    0  خروج
 MENU
   else
@@ -82,11 +86,13 @@ MENU
   13  Daily backups            14  Health check
   15  Recover Xray             16  Update
   17  Uninstall                18  Language / زبان
+  19  VPN port inspection      20  Move inbound port
+  21  List inbounds
    0  Exit
 MENU
   fi
   [[ -t 0 ]]||return 0
-  read -rp "$(vr_text 'Select [0–18]: ' 'انتخاب [۰ تا ۱۸]: ')" selection||return 0
+  read -rp "$(vr_text 'Select [0–21]: ' 'انتخاب [۰ تا ۲۱]: ')" selection||return 0
   local -a operation=()
   case "$selection" in
    0) return 0;;1) operation=(status);;2) operation=(url);;3) operation=(restart);;4) operation=(start);;5) operation=(stop);;
@@ -100,6 +106,9 @@ MENU
    13) read -rp "$(vr_text 'Daily backups [daily/off]: ' 'پشتیبان روزانه [daily/off]: ')" value;operation=(backup-schedule "$value");;
    14) operation=(doctor);;15) operation=(repair);;16) operation=(update);;17) operation=(uninstall);;
    18) read -rp 'Language [en/fa]: ' value;operation=(language "$value");;
+   19) operation=(ports);;
+   20) veloray host-inbounds|jq -r '.[]|"ID=\(.id)  \(.name)  :\(.port)"';read -rp "$(vr_text 'Inbound ID: ' 'شناسه اتصال: ')" value;read -rp "$(vr_text 'New VPN port: ' 'پورت جدید VPN: ')" port;operation=(inbound-port "$value" "$port");;
+   21) operation=(inbounds);;
    *) vr_say 'Choose a listed number.' 'یکی از شماره‌های منو را وارد کنید.';continue;;
   esac
   "$0" "${operation[@]}"||true
@@ -112,10 +121,15 @@ case "$command" in
  menu) menu;;
  status) summary;;
  url) printf '%s\n' "$VELORAY_PUBLIC_URL";;
+ ports) status=0;vr_ports_check||status=$?;if [[ -n "${VR_PORTS_REPORT:-}" ]];then jq -r '.ports[]|"\(.network) \(.listen):\(.port)  \(.tag)  \(.state)  \(.owner // "")"' <<<"$VR_PORTS_REPORT";fi;exit "$status";;
+ inbounds) veloray host-inbounds|jq -r '.[]|"ID=\(.id)  \(.name)  \(.listen):\(.port)  \(.protocol)  enabled=\(.enabled)"';;
+ inbound-port) [[ $# -eq 2 ]]||{ echo 'Usage: sudo veloray inbound-port ID PORT' >&2;exit 2; };veloray host-inbound-port "$1" "$2";vr_say 'Inbound port deployed. Refresh client subscriptions to receive the new port.' 'پورت اتصال اعمال شد؛ اشتراک کاربران را برای دریافت پورت جدید به‌روزرسانی کنید.';;
  doctor) doctor;;
  start|stop|restart)
  vr_step "${command^} services" 'مدیریت سرویس‌های پنل و Xray'
  if [[ "$command" == stop ]];then vr_run systemctl stop "$WEB" "$AGENT" xray.service;else
+  vr_ports_check
+  vr_run systemctl reset-failed xray.service
   vr_run systemctl "$command" xray.service "$AGENT" "$WEB"
   vr_wait http://127.0.0.1:8610/api/health
   vr_wait http://127.0.0.1:9191/health "$VELORAY_LOCAL_NODE_TOKEN"
@@ -185,6 +199,9 @@ case "$command" in
  vr_step 'Validate and recover Xray' 'بررسی و بازیابی سرویس Xray'
  vr_xray_prepare
  if ! vr_xray_check;then vr_say 'Xray config was rejected. Check certificate access and veloray logs xray.' 'پیکربندی Xray رد شد؛ دسترسی گواهی‌ها و veloray logs xray را بررسی کنید.' >&2;vr_error "$LINENO" 1;fi
+ vr_run systemctl restart "$AGENT"
+ vr_resolve_ports
+ vr_run systemctl reset-failed xray.service
  vr_run systemctl restart xray.service "$AGENT"
  vr_wait http://127.0.0.1:9191/health "$VELORAY_LOCAL_NODE_TOKEN"
  doctor;;

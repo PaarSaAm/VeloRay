@@ -69,6 +69,10 @@ func (s Server) Handler() http.Handler {
 	}, "GET"))
 	mux.HandleFunc("/xray/status", wrap(func(c context.Context, _ map[string]json.RawMessage) (any, error) { return s.Manager.Status(c), nil }, "GET"))
 	mux.HandleFunc("/xray/stats", wrap(func(c context.Context, _ map[string]json.RawMessage) (any, error) { return s.Manager.Stats(c) }, "GET"))
+	mux.HandleFunc("/xray/ports", wrap(func(c context.Context, v map[string]json.RawMessage) (any, error) {
+		checks, err := s.Manager.Ports(c, v["config"])
+		return map[string]any{"ports": checks}, err
+	}, "POST"))
 	mux.HandleFunc("/xray/validate", wrap(func(c context.Context, v map[string]json.RawMessage) (any, error) {
 		return map[string]string{"status": "valid"}, s.Manager.Validate(c, v["config"])
 	}, "POST"))

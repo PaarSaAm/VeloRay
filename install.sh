@@ -106,7 +106,7 @@ trap 'vr_error "$LINENO" "$?"' ERR
 printf '\nVeloRay 0.1.0\n'
 vr_say 'Server installation' 'نصب روی سرور'
 vr_step 'Prepare system packages' 'آماده‌سازی بسته‌های سیستم'
-packages=(ca-certificates curl jq tar xz-utils unzip openssl)
+packages=(ca-certificates curl jq tar xz-utils unzip openssl iproute2)
 [[ "$action" != install ]]||packages+=(postgresql postgresql-client nginx certbot)
 vr_run env DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l apt-get update
 vr_run env DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l apt-get install -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold "${packages[@]}"

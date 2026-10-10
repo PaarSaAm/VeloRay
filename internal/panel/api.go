@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/jackc/pgx/v5"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -14,8 +15,8 @@ import (
 
 var editable = map[string]string{
 	"nodes":    "name public_host agent_url agent_token enabled verify_tls config_patch",
-	"inbounds": "name node listen port protocol transport security flow path host_header service_name tls_server_name tls_cert_file tls_key_file reality_dest reality_server_name reality_private_key reality_public_key reality_short_id protocol_settings enabled",
-	"clients":  "inbound name credential protocol_settings subscription_token enabled expires_at traffic_limit_bytes renewal_interval_days next_renewal_at note",
+	"inbounds": "name node listen port protocol transport security flow path host_header service_name tls_server_name tls_cert_file tls_key_file reality_dest reality_server_name reality_private_key reality_public_key reality_short_id protocol_settings stream_settings enabled",
+	"clients":  "inbound name credential protocol_settings subscription_token enabled expires_at traffic_limit_bytes renewal_interval_days next_renewal_at traffic_multiplier note",
 	"users":    "username email is_active is_staff is_superuser password",
 	"api_keys": "name scope enabled expires_at user",
 }
@@ -58,16 +59,42 @@ func (s *Server) view(ctx context.Context, q Query, kind string, d Data) (Data, 
 		out["inbound_name"] = str(i, "name")
 		out["node_name"] = str(n, "name")
 		out["usage_metered"] = metered(str(i, "protocol"))
+		out["account_id"] = num(d, "_account")
+		if num(d, "_account") > 0 {
+			var token string
+			var count int
+			if e = q.QueryRow(ctx, `SELECT data->>'subscription_token' FROM vr_clients WHERE account_id=$1 ORDER BY id LIMIT 1`, num(d, "_account")).Scan(&token); e != nil {
+				return nil, e
+			}
+			if e = q.QueryRow(ctx, `SELECT count(*) FROM vr_clients WHERE account_id=$1`, num(d, "_account")).Scan(&count); e != nil {
+				return nil, e
+			}
+			out["subscription_token"], out["account_connections"] = token, count
+		}
+		rate, _ := multiplierMilli(d)
+		out["effective_traffic_multiplier"] = float64(rate) / 1000
 		out["share_link"] = shareLink(d, i, n)
 		out["profile_text"] = profile(d, i, n)
-		out["subscription_url"] = strings.TrimRight(s.Config.PublicURL, "/") + "/sub/" + str(d, "subscription_token")
+		out["subscription_url"] = strings.TrimRight(s.Config.PublicURL, "/") + "/sub/" + str(out, "subscription_token")
 		out["subscription_portal_url"] = out["subscription_url"]
 	}
 	return out, nil
 }
 func (s *Server) api(w http.ResponseWriter, r *http.Request, path string, a Actor) (any, int, error) {
 	ctx := r.Context()
+	if strings.HasPrefix(path, "imports/") {
+		return s.importsAPI(w, r, path, a)
+	}
+	if strings.HasPrefix(path, "telegram/") {
+		return s.telegramAPI(w, r, path, a)
+	}
 	parts := strings.Split(path, "/")
+	if path == "clients/batch" {
+		return s.batchClients(w, r, a)
+	}
+	if path == "clients/bulk" {
+		return s.bulkClients(w, r, a)
+	}
 	if path == "settings" {
 		return s.settingsAPI(w, r, a)
 	}
@@ -508,6 +535,19 @@ func (s *Server) action(w http.ResponseWriter, r *http.Request, kind string, id 
 	}
 	if kind == "nodes" {
 		switch action {
+		case "ports":
+			if r.Method != "GET" {
+				return nil, 0, fail(405, "method not allowed")
+			}
+			cfg, err := buildConfig(ctx, s.Store.Pool, d)
+			if err != nil {
+				return nil, 0, err
+			}
+			out, err := s.nodeCall(ctx, d, "/xray/ports", Data{"config": cfg})
+			if err != nil {
+				return nil, 0, fail(502, err.Error())
+			}
+			return out, 200, nil
 		case "config-preview":
 			if r.Method != "GET" {
 				return nil, 0, fail(405, "method not allowed")
@@ -528,6 +568,57 @@ func (s *Server) action(w http.ResponseWriter, r *http.Request, kind string, id 
 			return nil, 0, fail(405, "method not allowed")
 		}
 		switch action {
+		case "check-listener":
+			input, err := readBody(w, r)
+			if err != nil {
+				return nil, 0, err
+			}
+			if err = allowed(input, editable["inbounds"]+" id"); err != nil {
+				return nil, 0, fail(400, err.Error())
+			}
+			if err = typed(input, defaults("inbounds")); err != nil {
+				return nil, 0, fail(400, err.Error())
+			}
+			candidate := defaults("inbounds")
+			for k, v := range input {
+				candidate[k] = v
+			}
+			candidate["node"] = id
+			port := num(candidate, "port")
+			if port < 1 || port > 65535 || net.ParseIP(str(candidate, "listen")) == nil || !oneOf(str(candidate, "protocol"), "vless", "vmess", "trojan", "shadowsocks", "hysteria", "wireguard", "http", "socks", "tunnel", "tun") || !oneOf(str(candidate, "transport"), "raw", "ws", "grpc", "xhttp", "httpupgrade", "mkcp", "hysteria") {
+				return nil, 0, fail(400, "valid protocol, transport, IP listen address and port are required")
+			}
+			if port == 10085 || port == 9191 || flag(d, "is_local") && (port == 8610 || port == int64(s.Config.PanelPort)) {
+				return nil, 0, fail(400, "port is reserved by VeloRay")
+			}
+			stream := streamSettings(candidate, d)
+			protocol := str(candidate, "protocol")
+			if protocol == "tunnel" {
+				protocol = "dokodemo-door"
+			}
+			cfg := Data{"inbounds": []any{Data{"tag": "candidate", "listen": candidate["listen"], "port": candidate["port"], "protocol": protocol, "settings": obj(candidate, "protocol_settings"), "streamSettings": stream}}}
+			out, err := s.nodeCall(ctx, d, "/xray/ports", Data{"config": cfg})
+			if err != nil {
+				return nil, 0, fail(502, err.Error())
+			}
+			// A running Xray may own the port, but another saved inbound still reserves it.
+			others, err := list(ctx, s.Store.Pool, "inbounds", "WHERE node_id=$1", id)
+			if err != nil {
+				return nil, 0, err
+			}
+			for _, entry := range array(out, "ports") {
+				check, ok := entry.(map[string]any)
+				if !ok {
+					continue
+				}
+				for _, other := range others {
+					if num(other, "id") != num(input, "id") && flag(other, "enabled") && num(other, "port") == num(candidate, "port") {
+						check["state"] = "conflict"
+						check["owner"] = "saved inbound " + str(other, "name")
+					}
+				}
+			}
+			return out, 200, nil
 		case "probe":
 			out, e := s.probe(ctx, id)
 			if e != nil {
@@ -600,18 +691,15 @@ func (s *Server) action(w http.ResponseWriter, r *http.Request, kind string, id 
 			if e != nil {
 				return nil, e
 			}
-			if action == "reset-usage" {
-				c["used_traffic_bytes"] = 0
-				if str(c, "disabled_reason") == "quota" {
-					c["enabled"] = true
-					c["disabled_reason"] = ""
+			operation := action
+			if action == "toggle" {
+				operation = "enable"
+				if flag(c, "enabled") {
+					operation = "disable"
 				}
-			} else {
-				c["enabled"] = !flag(c, "enabled")
-				c["disabled_reason"] = ""
-				if !flag(c, "enabled") {
-					c["disabled_reason"] = "manual"
-				}
+			}
+			if e = applyClientAction(c, operation); e != nil {
+				return nil, e
 			}
 			if e = save(ctx, tx, "clients", c); e != nil {
 				return nil, e
@@ -677,6 +765,7 @@ func (s *Server) overview(ctx context.Context) (Data, error) {
 			out["nodes_online"] = num(out, "nodes_online") + 1
 		}
 	}
+	seenAccounts := map[string]bool{}
 	for _, c := range clients {
 		if active(c, time.Now()) {
 			out["clients_active"] = num(out, "clients_active") + 1
@@ -684,7 +773,12 @@ func (s *Server) overview(ctx context.Context) (Data, error) {
 				out["clients_expiring_7d"] = num(out, "clients_expiring_7d") + 1
 			}
 		}
+		if seenAccounts[accountKey(c)] {
+			continue
+		}
+		seenAccounts[accountKey(c)] = true
 		out["traffic_used_bytes"] = num(out, "traffic_used_bytes") + num(c, "used_traffic_bytes")
+		out["traffic_raw_bytes"] = num(out, "traffic_raw_bytes") + num(c, "raw_used_traffic_bytes")
 		out["traffic_limit_bytes"] = num(out, "traffic_limit_bytes") + num(c, "traffic_limit_bytes")
 	}
 	counts := map[string]int{}
@@ -724,6 +818,221 @@ func (s *Server) trafficHistory(ctx context.Context, r *http.Request) ([]Data, e
 		out = append(out, Data{"at": stamp(at), "bytes": b, "used_traffic_bytes": cumulative, "active_clients": 0, "online_nodes": 0})
 	}
 	return out, rows.Err()
+}
+
+func (s *Server) batchClients(w http.ResponseWriter, r *http.Request, a Actor) (any, int, error) {
+	if r.Method != "POST" {
+		return nil, 0, fail(405, "method not allowed")
+	}
+	input, err := readBody(w, r)
+	if err != nil {
+		return nil, 0, err
+	}
+	if err = allowed(input, "name inbound count expires_at traffic_limit_bytes traffic_multiplier renewal_interval_days note"); err != nil {
+		return nil, 0, fail(400, err.Error())
+	}
+	template := defaults("clients")
+	template["count"] = 0
+	if err = typed(input, template); err != nil {
+		return nil, 0, fail(400, err.Error())
+	}
+	count := num(input, "count")
+	if count < 1 || count > 100 || len(strings.TrimSpace(str(input, "name"))) == 0 || len(str(input, "name")) > 72 {
+		return nil, 0, fail(400, "provide a name prefix (1–72 bytes) and a count between 1 and 100")
+	}
+	ctx := r.Context()
+	in, err := get(ctx, s.Store.Pool, "inbounds", num(input, "inbound"))
+	if err != nil {
+		return nil, 0, err
+	}
+	if !supportsClients(str(in, "protocol")) || str(in, "protocol") == "shadowsocks" {
+		return nil, 0, fail(400, "this protocol does not support batch client creation")
+	}
+	out, err := s.change(ctx, []int64{num(in, "node")}, a, "clients.batch-create", str(input, "name"), func(tx pgx.Tx) (any, error) {
+		created := []Data{}
+		for index := int64(1); index <= count; index++ {
+			d := defaults("clients")
+			for k, v := range input {
+				if k != "count" {
+					d[k] = v
+				}
+			}
+			d["name"] = fmt.Sprintf("%s-%03d", strings.TrimSpace(str(input, "name")), index)
+			if err := validateClient(ctx, tx, d); err != nil {
+				return nil, fail(400, err.Error())
+			}
+			if err := save(ctx, tx, "clients", d); err != nil {
+				return nil, err
+			}
+			v, err := s.view(ctx, tx, "clients", d)
+			if err != nil {
+				return nil, err
+			}
+			created = append(created, v)
+		}
+		return Data{"clients": created, "count": count}, nil
+	})
+	return out, 201, err
+}
+
+func applyClientAction(c Data, action string) error {
+	switch action {
+	case "enable":
+		c["enabled"] = true
+		if !active(c, time.Now()) {
+			return fail(400, "renew expiry and reset exhausted usage before enabling "+str(c, "name"))
+		}
+		c["disabled_reason"] = ""
+	case "disable":
+		c["enabled"] = false
+		c["disabled_reason"] = "manual"
+	case "reset", "reset-usage":
+		resetTraffic(c)
+		if str(c, "disabled_reason") == "quota" {
+			c["enabled"] = true
+			c["disabled_reason"] = ""
+			if !active(c, time.Now()) {
+				c["enabled"] = false
+				c["disabled_reason"] = "expired"
+			}
+		}
+	}
+	return nil
+}
+
+func (s *Server) bulkClients(w http.ResponseWriter, r *http.Request, a Actor) (any, int, error) {
+	if r.Method != "POST" {
+		return nil, 0, fail(405, "method not allowed")
+	}
+	input, err := readBody(w, r)
+	if err != nil {
+		return nil, 0, err
+	}
+	if err = allowed(input, "ids action"); err != nil {
+		return nil, 0, fail(400, err.Error())
+	}
+	action := str(input, "action")
+	values := array(input, "ids")
+	if !oneOf(action, "enable", "disable", "reset", "delete") || len(values) < 1 || len(values) > 200 {
+		return nil, 0, fail(400, "choose enable, disable, reset or delete and 1–200 client IDs")
+	}
+	ctx := r.Context()
+	ids := []int64{}
+	nodes := []int64{}
+	seen := map[int64]bool{}
+	for _, value := range values {
+		number, ok := value.(json.Number)
+		if !ok {
+			return nil, 0, fail(400, "client IDs must be integers")
+		}
+		id, err := number.Int64()
+		if err != nil || id < 1 || seen[id] {
+			return nil, 0, fail(400, "client IDs must be positive and unique")
+		}
+		seen[id] = true
+		client, err := get(ctx, s.Store.Pool, "clients", id)
+		if err != nil {
+			return nil, 0, err
+		}
+		node, err := inboundNode(ctx, s.Store.Pool, num(client, "inbound"))
+		if err != nil {
+			return nil, 0, err
+		}
+		ids = append(ids, id)
+		nodes = append(nodes, node)
+	}
+	nodes = nodeIDs(nodes...)
+	out, err := s.change(ctx, nodes, a, "clients.bulk-"+action, fmt.Sprintf("%d accounts", len(ids)), func(tx pgx.Tx) (any, error) {
+		for _, id := range ids {
+			client, err := get(ctx, tx, "clients", id)
+			if err != nil {
+				return nil, err
+			}
+			node, err := inboundNode(ctx, tx, num(client, "inbound"))
+			if err != nil {
+				return nil, err
+			}
+			found := false
+			for _, locked := range nodes {
+				if locked == node {
+					found = true
+				}
+			}
+			if !found {
+				return nil, fail(409, "client moved to another node; refresh and retry")
+			}
+			if action == "delete" {
+				if _, err = tx.Exec(ctx, `DELETE FROM vr_clients WHERE id=$1`, id); err != nil {
+					return nil, err
+				}
+			} else {
+				if err = applyClientAction(client, action); err != nil {
+					return nil, err
+				}
+				if err = save(ctx, tx, "clients", client); err != nil {
+					return nil, err
+				}
+			}
+		}
+		return Data{"count": len(ids), "status": "applied"}, nil
+	})
+	return out, 200, err
+}
+
+// LocalInbounds lists only operational fields for the root management console.
+func (s *Server) LocalInbounds(ctx context.Context) ([]Data, error) {
+	rows, err := list(ctx, s.Store.Pool, "inbounds", "ORDER BY id")
+	if err != nil {
+		return nil, err
+	}
+	out := []Data{}
+	for _, row := range rows {
+		node, err := get(ctx, s.Store.Pool, "nodes", num(row, "node"))
+		if err != nil {
+			return nil, err
+		}
+		if !flag(node, "is_local") {
+			continue
+		}
+		view := Data{}
+		for _, key := range []string{"id", "name", "listen", "port", "protocol", "enabled"} {
+			view[key] = row[key]
+		}
+		out = append(out, view)
+	}
+	return out, nil
+}
+
+// ChangeLocalInboundPort keeps the database, runtime and subscription output in one deployment.
+func (s *Server) ChangeLocalInboundPort(ctx context.Context, id int64, port int) (any, error) {
+	row, err := get(ctx, s.Store.Pool, "inbounds", id)
+	if err != nil {
+		return nil, err
+	}
+	node, err := get(ctx, s.Store.Pool, "nodes", num(row, "node"))
+	if err != nil {
+		return nil, err
+	}
+	if !flag(node, "is_local") {
+		return nil, errors.New("use the web panel to change a remote inbound")
+	}
+	return s.change(ctx, []int64{num(node, "id")}, Actor{}, "host.inbound-port", str(row, "name"), func(tx pgx.Tx) (any, error) {
+		current, err := get(ctx, tx, "inbounds", id)
+		if err != nil {
+			return nil, err
+		}
+		if num(current, "node") != num(node, "id") {
+			return nil, errors.New("inbound moved; retry")
+		}
+		current["port"] = port
+		if err = validateInbound(ctx, tx, s.Config, current); err != nil {
+			return nil, err
+		}
+		if err = save(ctx, tx, "inbounds", current); err != nil {
+			return nil, err
+		}
+		return Data{"id": id, "name": current["name"], "port": port, "status": "applied"}, nil
+	})
 }
 
 var _ = json.Marshal

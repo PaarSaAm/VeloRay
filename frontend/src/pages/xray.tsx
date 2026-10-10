@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api, type NodeItem } from "@/lib/api";
+import { api, type NodeItem, type PortReport } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -19,6 +19,7 @@ export function XrayPage() {
   const [nodeId, setNodeId] = useState("");
   const [preview, setPreview] = useState<Preview | null>(null);
   const [status, setStatus] = useState<XrayStatus | null>(null);
+  const [ports, setPorts] = useState<PortReport | null>(null);
   const [patch, setPatch] = useState("{}");
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
@@ -35,15 +36,21 @@ export function XrayPage() {
     const sequence = ++refreshSequence.current;
     setStatus(null);
     setPreview(null);
+    setPorts(null);
     setBusy(true);
     try {
-      const [p, s] = await Promise.all([
+      const [p, s, listeners] = await Promise.all([
         api<Preview>(`/nodes/${id}/config-preview/`),
         api<XrayStatus>(`/nodes/${id}/xray-status/`),
+        api<PortReport>(`/nodes/${id}/ports/`).catch((e: Error) => ({
+          ports: [],
+          error: e.message,
+        })),
       ]);
       if (sequence !== refreshSequence.current) return;
       setPreview(p);
       setStatus(s);
+      setPorts(listeners);
       const n = nodes.find((x) => String(x.id) === id);
       if (n) setPatch(JSON.stringify(n.config_patch || {}, null, 2));
       setMsg("");
@@ -163,6 +170,24 @@ export function XrayPage() {
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
+  function downloadDiagnostics() {
+    if (!selected) return;
+    const data = {
+      version: "0.1.0",
+      at: new Date().toISOString(),
+      node: { id: selected.id, name: selected.name },
+      runtime: status,
+      listeners: ports,
+    };
+    const url = URL.createObjectURL(
+      new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }),
+    );
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `veloray-diagnostics-${selected.id}.json`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
 
   return (
     <div className="space-y-6">
@@ -191,6 +216,13 @@ export function XrayPage() {
               <FaIcon icon="rocket" />
               Deploy
             </Button>
+            <Button
+              variant="outline"
+              onClick={downloadDiagnostics}
+              disabled={busy || !status}
+            >
+              <FaIcon icon="download" /> Diagnostics
+            </Button>
           </div>
         }
       />
@@ -213,11 +245,92 @@ export function XrayPage() {
             {selected?.name}.
           </div>
           <p className="text-[var(--muted-strong)]">
-            Validate the configuration, then restart Xray. If it still fails,
-            inspect the service log on this node.
+            Review the listener checks below. Resolve conflicting ports in
+            Inbounds, then deploy or restart Xray.
           </p>
         </div>
       )}
+      <Card>
+        <CardHeader>
+          <div>
+            <CardTitle>Listener checks</CardTitle>
+            <p className="mt-1 text-[11px] text-[var(--muted)]">
+              Current socket owners for this configuration. Refresh after
+              changing a port.
+            </p>
+          </div>
+          <a
+            href="/inbounds"
+            className="text-[11px] font-semibold text-[var(--brand)]"
+          >
+            Manage inbounds →
+          </a>
+        </CardHeader>
+        <CardContent>
+          {ports?.error ? (
+            <p role="alert" className="text-[12px] text-red-500">
+              {ports.error}
+            </p>
+          ) : !ports ? (
+            <p className="text-[12px] text-[var(--muted)]">
+              Checking listeners…
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-[11px]">
+                <thead className="text-[var(--muted)]">
+                  <tr>
+                    <th className="pb-3">Inbound</th>
+                    <th className="pb-3">Listener</th>
+                    <th className="pb-3">Status</th>
+                    <th className="pb-3">Owner</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ports.ports.map((p, index) => (
+                    <tr
+                      key={`${p.tag}-${p.network}-${p.port}-${index}`}
+                      className="border-t border-[var(--border)]"
+                    >
+                      <td className="py-3 pr-4">{p.tag}</td>
+                      <td className="py-3 pr-4 font-mono whitespace-nowrap">
+                        {p.network.toUpperCase()}{" "}
+                        {p.listen.includes(":") ? `[${p.listen}]` : p.listen}:
+                        {p.port}
+                      </td>
+                      <td className="py-3 pr-4">
+                        <span
+                          className={
+                            p.state === "conflict"
+                              ? "text-red-500"
+                              : p.state === "xray"
+                                ? "text-[var(--brand)]"
+                                : "text-[var(--muted-strong)]"
+                          }
+                        >
+                          {p.state === "conflict"
+                            ? "Conflict"
+                            : p.state === "xray"
+                              ? "In use by Xray"
+                              : "Available"}
+                        </span>
+                      </td>
+                      <td className="py-3 break-all text-[var(--muted)]">
+                        {p.owner || "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {ports.ports.length === 0 && (
+                <p className="text-[12px] text-[var(--muted)]">
+                  No configured IP listeners.
+                </p>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
       <div className="grid gap-4 xl:grid-cols-[360px_1fr]">
         <div className="space-y-4">
           <Card>

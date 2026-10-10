@@ -76,7 +76,11 @@ func get(ctx context.Context, q Query, kind string, id int64) (Data, error) {
 	if err != nil {
 		return nil, err
 	}
-	return decode(raw)
+	d, err := decode(raw)
+	if err == nil && kind == "clients" {
+		err = hydrateClient(ctx, q, d, nil)
+	}
+	return d, err
 }
 func list(ctx context.Context, q Query, kind, where string, args ...any) ([]Data, error) {
 	table, ok := tables[kind]
@@ -100,7 +104,17 @@ func list(ctx context.Context, q Query, kind, where string, args ...any) ([]Data
 		}
 		out = append(out, d)
 	}
-	return out, rows.Err()
+	err = rows.Err()
+	rows.Close()
+	if err == nil && kind == "clients" {
+		cache := map[int64]Data{}
+		for _, d := range out {
+			if err = hydrateClient(ctx, q, d, cache); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return out, err
 }
 func save(ctx context.Context, q Query, kind string, d Data) error {
 	table, ok := tables[kind]
@@ -110,6 +124,25 @@ func save(ctx context.Context, q Query, kind string, d Data) error {
 	now := stamp()
 	d["updated_at"] = now
 	id := num(d, "id")
+	if kind == "clients" && num(d, "_account") > 0 {
+		shared := Data{}
+		for _, k := range accountFields {
+			if v, ok := d[k]; ok {
+				shared[k] = v
+			}
+		}
+		b, e := json.Marshal(shared)
+		if e != nil {
+			return e
+		}
+		tag, e := q.Exec(ctx, `UPDATE vr_accounts SET data=data || $1::jsonb WHERE id=$2`, string(b), num(d, "_account"))
+		if e != nil {
+			return e
+		}
+		if tag.RowsAffected() != 1 {
+			return errors.New("shared account no longer exists")
+		}
+	}
 	if id == 0 {
 		d["created_at"] = now
 	}
@@ -132,6 +165,33 @@ func save(ctx context.Context, q Query, kind string, d Data) error {
 			return pgx.ErrNoRows
 		}
 	}
+	return nil
+}
+
+func hydrateClient(ctx context.Context, q Query, d Data, cache map[int64]Data) error {
+	if id := num(d, "_account"); id > 0 {
+		shared := cache[id]
+		if shared == nil {
+			var raw []byte
+			if err := q.QueryRow(ctx, `SELECT data FROM vr_accounts WHERE id=$1`, id).Scan(&raw); err != nil {
+				return err
+			}
+			var err error
+			shared, err = decode(raw)
+			if err != nil {
+				return err
+			}
+			if cache != nil {
+				cache[id] = shared
+			}
+		}
+		for _, k := range accountFields {
+			if v, ok := shared[k]; ok {
+				d[k] = v
+			}
+		}
+	}
+	trafficDefaults(d)
 	return nil
 }
 func remove(ctx context.Context, q Query, kind string, id int64) error {

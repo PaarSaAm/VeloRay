@@ -134,7 +134,7 @@ func nginxConfiguration(host, port, cert, key string) []byte {
  ssl_certificate_key %s;
  ssl_protocols TLSv1.2 TLSv1.3;
  server_tokens off;
- client_max_body_size 2m;
+ client_max_body_size 65m;
  location / {
   proxy_pass http://127.0.0.1:8610;
   proxy_set_header Host $http_host;

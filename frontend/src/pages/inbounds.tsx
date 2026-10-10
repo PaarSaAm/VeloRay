@@ -11,7 +11,12 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { api, type InboundItem, type NodeItem } from "@/lib/api";
+import {
+  api,
+  type InboundItem,
+  type NodeItem,
+  type PortReport,
+} from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,6 +27,7 @@ import { cn } from "@/lib/cn";
 type FormState = {
   node: string;
   name: string;
+  listen: string;
   port: string;
   protocol: string;
   transport: string;
@@ -56,10 +62,12 @@ type FormState = {
   tun_dns: string;
   tun_routes: string;
   tun_interface: string;
+  stream_json: string;
 };
 const fresh = (node = ""): FormState => ({
   node,
   name: "Main",
+  listen: "0.0.0.0",
   port: "443",
   protocol: "vless",
   transport: "raw",
@@ -94,6 +102,7 @@ const fresh = (node = ""): FormState => ({
   tun_dns: "1.1.1.1,8.8.8.8",
   tun_routes: "",
   tun_interface: "auto",
+  stream_json: "{}",
 });
 function Field({
   label,
@@ -175,6 +184,91 @@ export function InboundsPage() {
     [clonePort, setClonePort] = useState(""),
     [cloneName, setCloneName] = useState(""),
     [cloneBusy, setCloneBusy] = useState(false);
+  const [portResult, setPortResult] = useState("");
+  const [portBusy, setPortBusy] = useState(false);
+  const [portSignature, setPortSignature] = useState("");
+  const signature = JSON.stringify([
+    editing?.id || 0,
+    form.node,
+    form.listen,
+    form.port,
+    form.protocol,
+    form.transport,
+    form.socks_udp,
+    form.tunnel_network,
+  ]);
+  function preset(value: string) {
+    if (!value) return;
+    const next = fresh(form.node);
+    if (value === "reality") {
+      next.name = "VLESS REALITY";
+      next.port = "2053";
+    } else if (value === "websocket") {
+      next.name = "VLESS WebSocket";
+      next.port = "2083";
+      next.transport = "ws";
+      next.security = "tls";
+      next.flow = "";
+      next.path = "/vpn";
+    } else if (value === "trojan") {
+      next.name = "Trojan TLS";
+      next.port = "2087";
+      next.protocol = "trojan";
+      next.security = "tls";
+      next.flow = "";
+    } else if (value === "wireguard") {
+      next.name = "WireGuard";
+      next.port = "51820";
+      next.protocol = "wireguard";
+      next.security = "none";
+      next.flow = "";
+    } else if (value === "hysteria") {
+      next.name = "Hysteria2";
+      next.port = "4443";
+      next.protocol = "hysteria";
+      next.transport = "hysteria";
+      next.security = "tls";
+      next.flow = "";
+    }
+    setForm(next);
+    setPortResult("");
+    setMsg(
+      next.security === "tls"
+        ? "Set the server name and certificate paths, then check the port."
+        : "Generate the server keypair, then check the port.",
+    );
+  }
+  async function checkPort() {
+    const snapshot = signature;
+    setPortBusy(true);
+    setPortSignature(snapshot);
+    try {
+      const result = await api<PortReport>(
+        `/nodes/${form.node}/check-listener/`,
+        {
+          method: "POST",
+          body: JSON.stringify({ ...payload(), id: editing?.id || 0 }),
+        },
+      );
+      const conflicts = result.ports.filter((p) => p.state === "conflict");
+      setPortResult(
+        conflicts.length
+          ? conflicts
+              .map(
+                (p) =>
+                  `${p.network.toUpperCase()} :${p.port} — ${p.owner || "occupied"}`,
+              )
+              .join(" · ")
+          : "Port check passed. Availability is checked again before deployment.",
+      );
+    } catch (error: unknown) {
+      setPortResult(
+        error instanceof Error ? error.message : "Port check failed.",
+      );
+    } finally {
+      setPortBusy(false);
+    }
+  }
   const load = async () => {
     const [n, i] = await Promise.all([
       api<NodeItem[]>("/nodes/"),
@@ -276,6 +370,7 @@ export function InboundsPage() {
     const p: any = {
       node: Number(form.node),
       name: form.name,
+      listen: form.listen,
       port: Number(form.port),
       protocol: form.protocol,
       transport: form.transport,
@@ -293,7 +388,8 @@ export function InboundsPage() {
       reality_public_key: form.reality_public_key,
       reality_short_id: form.reality_short_id,
       enabled: editing?.enabled ?? true,
-      protocol_settings: {},
+      protocol_settings: { ...(editing?.protocol_settings || {}) },
+      stream_settings: JSON.parse(form.stream_json || "{}"),
     };
     if (form.protocol === "wireguard")
       p.protocol_settings = {
@@ -380,6 +476,7 @@ export function InboundsPage() {
     setForm({
       node: String(i.node),
       name: i.name,
+      listen: i.listen || "0.0.0.0",
       port: String(i.port),
       protocol: i.protocol,
       transport: i.transport,
@@ -420,6 +517,7 @@ export function InboundsPage() {
         ? ps.auto_routes.join(", ")
         : String(ps.auto_routes || ""),
       tun_interface: String(ps.outbound_interface || "auto"),
+      stream_json: JSON.stringify(i.stream_settings || {}, null, 2),
     });
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -503,7 +601,7 @@ export function InboundsPage() {
     <div className="space-y-6">
       <PageHeader
         title="Inbounds"
-        description="Create validated Xray listeners across modern protocols and transports."
+        description="Connection protocols, ports and server credentials."
       />
       {msg && (
         <div
@@ -550,6 +648,25 @@ export function InboundsPage() {
           </CardHeader>
           <CardContent>
             <form onSubmit={save} className="space-y-5">
+              {!editing && (
+                <label className="label">
+                  Connection preset
+                  <select
+                    className="input"
+                    aria-label="Connection preset"
+                    value=""
+                    onChange={(e) => preset(e.target.value)}
+                    disabled={busy}
+                  >
+                    <option value="">Choose a starting point</option>
+                    <option value="reality">VLESS · REALITY · Vision</option>
+                    <option value="websocket">VLESS · WebSocket · TLS</option>
+                    <option value="trojan">Trojan · TLS</option>
+                    <option value="wireguard">WireGuard · UDP</option>
+                    <option value="hysteria">Hysteria2 · UDP · TLS</option>
+                  </select>
+                </label>
+              )}
               <section>
                 <div className="panel-section-title mb-3">Listener</div>
                 <div className="grid gap-3 sm:grid-cols-2">
@@ -591,7 +708,43 @@ export function InboundsPage() {
                       required
                     />
                   </Field>
+                  {form.protocol !== "tun" && (
+                    <Field label="Listen address" className="sm:col-span-2">
+                      <input
+                        className="input"
+                        value={form.listen}
+                        onChange={(e) => set("listen", e.target.value)}
+                        placeholder="0.0.0.0 or ::"
+                        required
+                      />
+                      <span className="mt-1 text-[10px] font-normal text-[var(--muted)]">
+                        Use 0.0.0.0 for IPv4 or :: for IPv6. Enter a specific IP
+                        to restrict the listener.
+                      </span>
+                    </Field>
+                  )}
                 </div>
+                {form.protocol !== "tun" && (
+                  <div className="mt-3 space-y-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={checkPort}
+                      disabled={portBusy || busy || !form.node}
+                    >
+                      <FaIcon icon="shield-halved" />
+                      {portBusy ? "Checking port…" : "Check port"}
+                    </Button>
+                    {portResult && portSignature === signature && (
+                      <p
+                        role="status"
+                        className="break-words text-[11px] leading-5 text-[var(--muted-strong)]"
+                      >
+                        {portResult}
+                      </p>
+                    )}
+                  </div>
+                )}
               </section>
               <section>
                 <div className="panel-section-title mb-3">Protocol</div>
@@ -1038,6 +1191,25 @@ export function InboundsPage() {
                   </div>
                 </section>
               )}
+              <details className="rounded-lg border border-[var(--border)] p-3">
+                <summary className="cursor-pointer text-[12px] font-medium">
+                  Advanced stream settings
+                </summary>
+                <p className="mt-2 text-[11px] leading-5 text-[var(--muted)]">
+                  Configure transport, ALPN, socket and TLS options. Ports,
+                  credentials and security mode use the fields above. Xray
+                  validates changes before applying them.
+                </p>
+                <label className="label mt-3">
+                  Stream settings JSON
+                  <textarea
+                    className="input min-h-40 font-mono text-[11px]"
+                    value={form.stream_json}
+                    onChange={(e) => set("stream_json", e.target.value)}
+                    spellCheck={false}
+                  />
+                </label>
+              </details>
               <Button
                 type="submit"
                 className="w-full"

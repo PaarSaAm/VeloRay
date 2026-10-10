@@ -17,10 +17,11 @@ import (
 )
 
 type Server struct {
-	Config Config
-	Store  *Store
-	HTTP   *http.Client
-	Logger *slog.Logger
+	Config       Config
+	Store        *Store
+	HTTP         *http.Client
+	TelegramHTTP *http.Client
+	Logger       *slog.Logger
 }
 type apiError struct {
 	Status       int

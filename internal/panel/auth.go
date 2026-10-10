@@ -83,7 +83,7 @@ func (s *Server) authorize(ctx context.Context, a Actor, method, path string) er
 			return failCode(403, "two_factor_setup_required", "Set up two-factor authentication to continue")
 		}
 	}
-	if strings.HasPrefix(path, "admin/") || path == "settings" && method != "GET" {
+	if strings.HasPrefix(path, "admin/") || strings.HasPrefix(path, "imports/") || strings.HasPrefix(path, "telegram/") || path == "settings" && method != "GET" {
 		if !flag(a.User, "is_superuser") || a.Scope != "admin" {
 			return fail(403, "administrator access required")
 		}
