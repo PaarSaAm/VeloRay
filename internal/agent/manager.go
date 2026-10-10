@@ -33,6 +33,7 @@ type Status struct {
 	Installed bool   `json:"installed"`
 	Running   bool   `json:"running"`
 	Version   string `json:"version"`
+	State     string `json:"state"`
 }
 type Counter struct {
 	Name  string `json:"name"`
@@ -147,7 +148,11 @@ func (m *Manager) status(ctx context.Context) Status {
 		version = strings.Join(fields[:2], " ")
 	}
 	a, e := m.Runtime.Run(ctx, "systemctl", "is-active", m.ServiceName)
-	return Status{version != "", e == nil && strings.TrimSpace(string(a)) == "active", version}
+	state := strings.TrimSpace(string(a))
+	if state == "" {
+		state = "unknown"
+	}
+	return Status{Installed: version != "", Running: e == nil && state == "active", Version: version, State: state}
 }
 func (m *Manager) Status(ctx context.Context) Status {
 	m.mu.Lock()
@@ -260,11 +265,20 @@ func (m *Manager) validate(ctx context.Context, raw []byte) error {
 func hash(raw []byte) string { v := sha256.Sum256(raw); return hex.EncodeToString(v[:]) }
 func (m *Manager) restart(ctx context.Context) error {
 	if _, real := m.Runtime.(Commands); real && os.Geteuid() == 0 {
-		if group, e := user.LookupGroup("nogroup"); e == nil {
-			gid, _ := strconv.Atoi(group.Gid)
-			if e = os.Chown(m.ConfigPath, 0, gid); e != nil {
-				return e
-			}
+		name := "nogroup"
+		if value, err := m.Runtime.Run(ctx, "systemctl", "show", m.ServiceName, "--property=Group", "--value"); err == nil && strings.TrimSpace(string(value)) != "" {
+			name = strings.TrimSpace(string(value))
+		}
+		group, err := user.LookupGroup(name)
+		if err != nil {
+			return fmt.Errorf("Xray service group %s: %w", name, err)
+		}
+		gid, err := strconv.Atoi(group.Gid)
+		if err != nil {
+			return err
+		}
+		if err = os.Chown(m.ConfigPath, 0, gid); err != nil {
+			return err
 		}
 	}
 

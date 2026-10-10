@@ -10,12 +10,12 @@ Built with a Go backend, a Go node agent and a React interface, VeloRay keeps in
 
 ## Built for everyday operations
 
-- **Infrastructure management.** Manage local and remote nodes, check runtime status, preview configurations, deploy changes and restart services. Remote agents support HTTPS, custom certificate authorities and optional mutual TLS.
+- **Infrastructure management.** Manage local and remote nodes, check runtime status, validate and download configurations, deploy changes and recover stopped services. Remote agents support HTTPS, custom certificate authorities and optional mutual TLS.
 - **Client lifecycle.** Create individual credentials, traffic allowances, expiry dates and scheduled renewals. Enable or disable access and reset quota periods while retaining recorded traffic history.
 - **Subscription delivery.** Give each client a private subscription address and a browser portal with usage, expiry and a QR code. English and Persian portals support Base64, raw URI, JSON, Clash/Mihomo and WireGuard exports where supported.
 - **Administrative control.** Administrator roles, TOTP two-factor authentication, recovery codes, scoped API keys and audit records help control access and trace changes.
 - **Operational visibility.** Review host metrics, node health and client traffic. Telegram owner commands and resource alerts provide an additional management channel.
-- **Recovery tools.** Persistent accounting, configuration journals, retries and rollback handling support recovery from node failures. A host CLI handles service management, certificates, backups and restore.
+- **Recovery tools.** Persistent accounting, configuration journals, retries and rollback handling support recovery from node failures. An interactive host menu handles service management, certificates, scheduled backups and restore.
 
 ## Protocols
 
@@ -50,7 +50,7 @@ This package includes verified Linux runtimes for amd64 and arm64: the panel, no
 
 The GitHub download is pinned to a resolved commit and uses alternate archive routes if a route fails. A source checkout without runtime packages, or with changed build inputs, is built locally. In that case the installer prepares missing Go and Node.js tools from verified official downloads, tries alternate routes and supported versions, and reuses cached tools on subsequent runs. These tools are placed under `/opt/veloray/toolchains`.
 
-Review `install.sh` before running it. The installer asks for the public host and administrator password; the default panel port is `8443`. Normal installation needs access to GitHub and Ubuntu package servers. Building changed source additionally needs Go, Node.js and npm download services.
+Review `install.sh` before running it. The installer shows concise progress steps, keeps detailed output in a private installation log and checks the panel, database, agent, Xray and traffic accounting before confirming success. It asks for the public host and administrator password; the default panel port is `8443`. Normal installation needs access to GitHub and Ubuntu package servers. Building changed source additionally needs Go, Node.js and npm download services.
 
 You can also install from an extracted source checkout with `sudo -E bash install.sh`. Use `--repo OWNER/REPOSITORY` and `--ref BRANCH_OR_TAG_OR_COMMIT` for a fork or a pinned version. Ref names must use letters, numbers, dots, underscores or hyphens.
 
@@ -63,11 +63,11 @@ For unattended installation, provide `VELORAY_PUBLIC_HOST`, `VELORAY_PANEL_PORT`
 The initial panel certificate is self-signed. Configure a domain and request a trusted certificate:
 
 ```bash
-sudo velorayctl domain panel.example.com
-sudo velorayctl ssl owner@example.com
+sudo veloray domain panel.example.com
+sudo veloray ssl owner@example.com
 ```
 
-The standalone certificate challenge needs a free, publicly reachable port `80`. VPN certificates must be readable by Xray's `nobody:nogroup` service account. Place certificate copies in a traversable directory such as `/usr/local/etc/xray/tls`, with owner `root`, group `nogroup` and file mode `0640`.
+Certificate issuance uses Nginx webroot challenges and keeps the panel running. The domain must resolve to this server and HTTP port `80` must be publicly reachable. Other Nginx sites retain their own server blocks. VPN certificates must be readable by Xray's `nobody:nogroup` service account. Place certificate copies in a traversable directory such as `/usr/local/etc/xray/tls`, with owner `root`, group `nogroup` and file mode `0640`.
 
 For a remote node, run:
 
@@ -79,18 +79,26 @@ Keep the agent token private. Use a trusted agent certificate or configure `VELO
 
 ## Management
 
+Run `sudo veloray` to open the management menu. The menu shows the panel address and current service states, with English and Persian options.
+
 ```bash
-sudo velorayctl status
-sudo velorayctl doctor
-sudo velorayctl logs web
-sudo velorayctl backup
-sudo velorayctl restore /path/to/backup.tar.gz
-sudo velorayctl admin-reset admin
-sudo velorayctl update /path/to/built-project
-sudo veloray uninstall
+sudo veloray
+sudo veloray status
+sudo veloray doctor
+sudo veloray repair
+sudo veloray logs xray
+sudo veloray logs install
+sudo veloray reset admin
+sudo veloray backup
+sudo veloray backup-schedule daily
+sudo veloray restore /path/to/backup.tar.gz
+sudo veloray update
 ```
 
-`veloray` handles application and database commands. `velorayctl` manages services and the host installation. Backups contain database data, application secrets, local certificates, configuration and the local agent ledger. Back up remote node state separately and keep all backups private.
+
+`veloray` is the main server-management command. Running it without arguments opens the menu; it does not start another web server. `velorayctl` remains available with the same host-management actions. Use `veloray language fa` or `veloray language en` to change the menu language. Daily backups run around 03:00 in the server time zone and remain in `/var/lib/veloray/backups`. Disable scheduling with `veloray backup-schedule off`. Restore validates the archive, requires the word `RESTORE` and creates a recovery backup before replacing data.
+
+Backups contain database data, application secrets, local certificates, configuration and the local agent ledger. Back up remote node state separately and keep all backups private.
 
 | Component | Default listener |
 | --- | --- |
@@ -126,7 +134,7 @@ export VELORAY_ENV_FILE=.env
 
 go run ./cmd/veloray migrate
 VELORAY_ADMIN_USERNAME=admin go run ./cmd/veloray bootstrap
-# Enter the administrator password on stdin, then end input.
+# Enter one password line, or provide VELORAY_ADMIN_PASSWORD.
 go run ./cmd/veloray serve
 ```
 
@@ -155,7 +163,7 @@ bash scripts/test-installer.sh
 
 Browser tests are in `frontend/tests`. Run them against an isolated panel with the `admin` test account, a node and an inbound. Set `VELORAY_E2E_URL` and `VELORAY_E2E_PASSWORD`, then run `npx playwright install chromium && npm test` in `frontend/`.
 
-GitHub CI checks Go code, PostgreSQL integration, dependency vulnerabilities, the frontend build and shell syntax. The manual build workflow produces architecture-specific archives. Test installation, restore and actual client connections on a separate server before enabling production traffic.
+GitHub CI checks Go code, PostgreSQL integration, dependency vulnerabilities, the frontend build and shell syntax. The manual build workflow produces architecture-specific archives. Validate installation, backup restore, certificates and client connections on a separate server before enabling production traffic.
 
 ## Security and contributions
 

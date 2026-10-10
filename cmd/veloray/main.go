@@ -1,13 +1,14 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	hostpkg "github.com/PaarSaAm/VeloRay/internal/host"
 	"github.com/PaarSaAm/VeloRay/internal/panel"
-	"log"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -50,12 +51,13 @@ func loadEnv(path string) error {
 }
 func main() {
 	if e := run(); e != nil {
-		log.Fatal(e)
+		fmt.Fprintln(os.Stderr, "VeloRay:", e)
+		os.Exit(1)
 	}
 }
 func run() error {
 	args := os.Args[1:]
-	command := "serve"
+	command := "menu"
 	if len(args) > 0 {
 		command = args[0]
 	}
@@ -63,15 +65,42 @@ func run() error {
 		fmt.Println(panel.Version)
 		return nil
 	}
-	if command == "uninstall" {
+	switch command {
+	case "menu", "status", "doctor", "start", "stop", "restart", "logs", "url", "reset", "admin-reset", "domain", "port", "ssl", "update", "uninstall", "repair", "backup-schedule", "language", "node":
 		controller, err := exec.LookPath("velorayctl")
 		if err != nil {
-			return errors.New("velorayctl is required for uninstall; use the installed server command")
+			return errors.New("management is available after installation; run veloray help for development commands")
+		}
+		if len(args) == 0 {
+			args = []string{"menu"}
+		}
+		return syscall.Exec(controller, append([]string{"velorayctl"}, args...), os.Environ())
+	}
+	if command == "backup" && len(args) == 1 || command == "restore" {
+		controller, err := exec.LookPath("velorayctl")
+		if err != nil {
+			return err
 		}
 		return syscall.Exec(controller, append([]string{"velorayctl"}, args...), os.Environ())
 	}
 	if command == "help" || command == "--help" {
-		fmt.Println("veloray serve | migrate | import-legacy [--dry-run] | bootstrap | bootstrap-local | admin-reset | reconcile | version | uninstall\nInstallation management: velorayctl help\nVELORAY_ENV_FILE selects the environment file. Bootstrap/reset password is read from VELORAY_ADMIN_PASSWORD or stdin.")
+		fmt.Println(`VeloRay 0.1.0
+
+  veloray                         Open the management menu
+  veloray status | doctor | url    Service health and panel address
+  veloray start | stop | restart   Manage panel, agent and Xray
+  veloray reset [USERNAME]         Change an administrator password
+  veloray logs [web|agent|xray]     Follow service logs
+  veloray backup [FILE]            Create a private recovery backup
+  veloray restore FILE            Verify and restore a backup
+  veloray domain HOST | port PORT  Configure the panel address
+  veloray ssl EMAIL                Issue a trusted HTTPS certificate
+  veloray repair                  Check and recover the Xray service
+  veloray update [DIRECTORY]       Install an update with a recovery backup
+  veloray uninstall                Remove services and program files
+
+Development: serve | migrate | bootstrap | bootstrap-local | reconcile | version
+Run veloray serve explicitly to start the application in the foreground.`)
 		return nil
 	}
 	env := os.Getenv("VELORAY_ENV_FILE")
@@ -110,7 +139,7 @@ func run() error {
 		}
 		defer os.RemoveAll(tmp)
 		return json.NewEncoder(os.Stdout).Encode(m)
-	case "restore":
+	case "restore-data":
 		if len(args) != 2 {
 			return errors.New("usage: veloray restore FILE.tar.gz (stop services first)")
 		}
@@ -167,15 +196,16 @@ func run() error {
 			return e
 		}
 		return json.NewEncoder(os.Stdout).Encode(out)
-	case "bootstrap", "admin-reset":
+	case "bootstrap", "reset-password":
 		username := os.Getenv("VELORAY_ADMIN_USERNAME")
 		if username == "" {
 			username = "admin"
 		}
 		password := os.Getenv("VELORAY_ADMIN_PASSWORD")
 		if password == "" {
-			raw, e := os.ReadFile("/dev/stdin")
-			if e != nil {
+			fmt.Fprint(os.Stderr, "Administrator password: ")
+			raw, e := bufio.NewReader(io.LimitReader(os.Stdin, 4096)).ReadString('\n')
+			if e != nil && e != io.EOF {
 				return e
 			}
 			password = strings.TrimRight(string(raw), "\r\n")

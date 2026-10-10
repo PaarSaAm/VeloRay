@@ -84,3 +84,21 @@ test("login is accessible in Persian", async ({ page }) => {
   ).toBeVisible();
   await page.screenshot({ path: "test-results/login-fa.png", fullPage: true });
 });
+
+
+test("runtime validation and private configuration download", async ({ page }) => {
+  await page.goto("/xray");
+  await page.getByLabel("Username", { exact: true }).fill("admin");
+  await page.getByLabel("Password", { exact: true }).fill(process.env.VELORAY_E2E_PASSWORD || "Test-password-very-long");
+  await page.getByRole("button", { name: "Login", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Xray Core", exact: true })).toBeVisible();
+  await expect(page.getByText("Running", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Validate", exact: true }).click();
+  await expect(page.getByRole("status")).toContainText("Configuration is valid");
+  const downloading = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download", exact: true }).click();
+  const download = await downloading;
+  expect(download.suggestedFilename()).toMatch(/^veloray-node-\d+\.json$/);
+  expect(await download.failure()).toBeNull();
+  await page.screenshot({ path: "test-results/runtime-desktop.png", fullPage: true });
+});

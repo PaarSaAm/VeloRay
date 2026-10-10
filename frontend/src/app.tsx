@@ -52,21 +52,15 @@ import { VeloRayMark } from "@/components/brand/veloray-mark";
 const meta: Record<RouteKey, [string, string]> = {
   dashboard: ["Dashboard", "Traffic and server status"],
   clients: ["Clients", "Credentials, quotas, expiry and subscription access"],
-  inbounds: [
-    "Inbounds",
-    "Validated Xray listeners, transports and REALITY/TLS settings",
-  ],
+  inbounds: ["Inbounds", "Ports, protocols and connection security"],
   nodes: ["Nodes", "Local server and remote VeloRay agents"],
-  subscriptions: ["Subscriptions", "Browser portals and client feed endpoints"],
-  traffic: ["Traffic", "Persisted Xray per-client accounting"],
-  xray: ["Xray Core", "Generated config, advanced patches and runtime actions"],
+  subscriptions: ["Subscriptions", "Client portals and connection profiles"],
+  traffic: ["Traffic", "Client usage and traffic history"],
+  xray: ["Xray Core", "Service health and configuration"],
   audit: ["Audit log", "Who changed what, and when"],
   security: ["Security", "Administrator 2FA and account protection"],
   api: ["API", "REST endpoints and automation reference"],
-  settings: [
-    "Settings",
-    "Runtime information, product defaults and host management",
-  ],
+  settings: ["Settings", "Panel defaults and server information"],
   admin: ["Administration", "Panel operators, roles and account security"],
 };
 const routes: Record<string, RouteKey> = {

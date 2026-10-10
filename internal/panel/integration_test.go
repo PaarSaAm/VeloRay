@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/jackc/pgx/v5"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -15,10 +16,11 @@ import (
 )
 
 type nodeMock struct {
-	value              int64
-	running, failApply bool
-	applies, rollbacks int
-	config             Data
+	value                int64
+	running, failApply   bool
+	applies, rollbacks   int
+	config               Data
+	statsCalls, restarts int
 }
 
 func (m *nodeMock) handler(w http.ResponseWriter, r *http.Request) {
@@ -28,6 +30,11 @@ func (m *nodeMock) handler(w http.ResponseWriter, r *http.Request) {
 	case "/xray/status":
 		writeJSON(w, 200, Data{"running": m.running})
 	case "/xray/stats":
+		m.statsCalls++
+		if !m.running {
+			writeJSON(w, 503, Data{"detail": "Xray is stopped"})
+			return
+		}
 		writeJSON(w, 200, Data{"accounting": "durable-v1", "ledger_id": "stable-ledger", "stat": []any{Data{"name": "user>>>veloray:1:alice>>>traffic>>>uplink", "value": m.value}}})
 	case "/xray/validate":
 		writeJSON(w, 200, Data{"status": "valid"})
@@ -45,9 +52,43 @@ func (m *nodeMock) handler(w http.ResponseWriter, r *http.Request) {
 		m.rollbacks++
 		writeJSON(w, 200, Data{"status": "rolled_back"})
 	case "/xray/restart":
+		m.restarts++
+		m.running = true
 		writeJSON(w, 200, Data{"status": "restarted"})
 	default:
 		http.NotFound(w, r)
+	}
+}
+
+func TestServeRejectsOccupiedPortBeforeDatabase(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	err = Serve(context.Background(), Config{Listen: listener.Addr().String(), DatabaseURL: "invalid"})
+	if err == nil || !strings.Contains(err.Error(), "cannot listen") {
+		t.Fatal("duplicate server reached database startup", err)
+	}
+}
+
+func TestIntegrationValidateAndRecoverStoppedXray(t *testing.T) {
+	s, ctx := integration(t)
+	m := &nodeMock{running: false}
+	n, _, _ := fixture(t, s, ctx, m)
+	req := httptest.NewRequest("POST", "/", nil).WithContext(ctx)
+	w := httptest.NewRecorder()
+	if _, _, err := s.action(w, req, "nodes", num(n, "id"), "config-validate", Actor{}); err != nil {
+		t.Fatal(err)
+	}
+	if m.applies != 0 || m.restarts != 0 {
+		t.Fatal("validation changed the running service")
+	}
+	if _, _, err := s.action(w, req, "nodes", num(n, "id"), "xray-restart", Actor{}); err != nil {
+		t.Fatal(err)
+	}
+	if !m.running || m.restarts != 1 || m.statsCalls != 0 {
+		t.Fatal("stopped runtime could not be recovered without live counters", m)
 	}
 }
 func integration(t *testing.T) (*Server, context.Context) {

@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/jackc/pgx/v5"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -171,6 +173,11 @@ func (s *Server) frontend(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, filepath.Join(root, "index.html"))
 }
 func Serve(ctx context.Context, c Config) error {
+	listener, e := net.Listen("tcp", c.Listen)
+	if e != nil {
+		return fmt.Errorf("cannot listen on %s: %w; use veloray restart to manage the installed service", c.Listen, e)
+	}
+	defer listener.Close()
 	store, e := OpenStore(ctx, c.DatabaseURL)
 	if e != nil {
 		return e
@@ -180,14 +187,21 @@ func Serve(ctx context.Context, c Config) error {
 		return e
 	}
 	s := &Server{Config: c, Store: store, Logger: slog.Default()}
-	go s.Worker(ctx)
+	workerCtx, stopWorker := context.WithCancel(ctx)
+	workerDone := make(chan struct{})
+	go func() { defer close(workerDone); s.Worker(workerCtx) }()
+	defer func() { stopWorker(); <-workerDone }()
 	server := &http.Server{Addr: c.Listen, Handler: s.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 20 * time.Second, WriteTimeout: 180 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16384}
 	go func() {
-		<-ctx.Done()
+		select {
+		case <-ctx.Done():
+		case <-workerCtx.Done():
+			return
+		}
 		c, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		_ = server.Shutdown(c)
 	}()
 	s.Logger.Info("VeloRay started", "version", Version, "listen", c.Listen)
-	return server.ListenAndServe()
+	return server.Serve(listener)
 }

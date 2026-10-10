@@ -11,6 +11,8 @@ sed -e 's|source /etc/os-release|source "$TEST_ROOT/os-release"|' \
  -e '/^\[\[ ${EUID:/d' \
  -e 's|/opt/veloray/toolchains|$TEST_ROOT/toolchains|g' \
  -e 's|/usr/local/bin/xray|$TEST_ROOT/installed-xray|g' \
+ -e 's|/var/log/veloray|$TEST_ROOT/logs|g' \
+ -e 's|/run/lock/veloray-install.lock|$TEST_ROOT/install.lock|g' \
  "$project/install.sh" >"$TEST_ROOT/bootstrap.sh"
 printf 'module test\ngo 1.26.0\n' >"$TEST_ROOT/fixture/go.mod"
 printf '{}\n' >"$TEST_ROOT/fixture/frontend/package-lock.json"
@@ -121,6 +123,10 @@ reject 'Missing value' --database
 reject 'Language must' --lang xx
 reject 'Invalid repository' --repo ../bad
 reject 'Unknown argument' --unavailable
+: >"$TEST_ROOT/calls"
+if flock "$TEST_ROOT/install.lock" bash "$TEST_ROOT/bootstrap.sh" install >"$TEST_ROOT/result" 2>&1;then echo 'Concurrent installation accepted' >&2;exit 1;fi
+grep -Fq 'Another VeloRay installation is running' "$TEST_ROOT/result"
+test ! -s "$TEST_ROOT/calls";pass concurrent-installation-blocked
 for machine in x86_64 aarch64;do
  export TEST_MACHINE="$machine"
  for mode in install node;do
@@ -147,7 +153,7 @@ export TEST_SOURCE_ROUTE=unavailable
 : >"$TEST_ROOT/calls"
 if bash -c "$(cat "$TEST_ROOT/bootstrap.sh")" @ install >"$TEST_ROOT/result" 2>&1;then echo 'Unavailable source accepted' >&2;exit 1;fi
 grep -Fq 'Cannot download source commit 1111111111111111111111111111111111111111' "$TEST_ROOT/result"
-grep -Fq 'download failed (curl 22): https://' "$TEST_ROOT/result"
+grep -RFq 'Download failed (curl 22): https://' "$TEST_ROOT/logs"
 test ! -s "$TEST_ROOT/calls"
 pass source-download-failure
 unset TEST_SOURCE_ROUTE
@@ -252,8 +258,8 @@ cp -a "$project/deploy" "$host_project/"
 cp "$project/go.mod" "$host_project/";cp "$project/install.sh" "$host_project/"
 cp "$project/frontend/"package{,-lock}.json "$host_project/frontend/"
 touch "$host_project/frontend/dist/index.html"
-for script in scripts/install-panel.sh scripts/velorayctl scripts/xray-install.sh;do
- sed -e '/^\[\[ ${EUID:/d' -e "s|/etc/|$HOST_ROOT/etc/|g" -e "s|/opt/|$HOST_ROOT/opt/|g" -e "s|/usr/local/|$HOST_ROOT/usr/local/|g" -e "s|/var/lib/|$HOST_ROOT/var/lib/|g" "$project/$script" >"$host_project/$script"
+for script in scripts/install-panel.sh scripts/velorayctl scripts/xray-install.sh scripts/common.sh;do
+ sed -e '/^\[\[ ${EUID:/d' -e "s|/etc/|$HOST_ROOT/etc/|g" -e "s|/opt/|$HOST_ROOT/opt/|g" -e "s|/usr/local/|$HOST_ROOT/usr/local/|g" -e "s|/var/lib/|$HOST_ROOT/var/lib/|g" -e "s|/var/log/|$HOST_ROOT/var/log/|g" -e "s|/run/lock/veloray-install.lock|$HOST_ROOT/install.lock|g" "$project/$script" >"$host_project/$script"
 done
 cat >"$host_project/bin/linux-amd64/veloray" <<'APP'
 #!/usr/bin/env bash
@@ -263,6 +269,7 @@ case "$1" in
  version) echo 0.1.0;;
  bootstrap) [[ "${TEST_BOOTSTRAP_FAIL:-}" != 1 ]]||exit 1;touch "$HOST_ROOT/admin";;
  backup) printf fixture-backup >"$2";;
+ reset-password) [[ "${#VELORAY_ADMIN_PASSWORD}" -ge 12 ]]||exit 1;touch "$HOST_ROOT/password-reset";;
 esac
 APP
 printf '#!/usr/bin/env bash\nexit 0\n' >"$host_project/bin/linux-amd64/veloray-agent"
@@ -306,9 +313,25 @@ INSTALL
 cat >"$TEST_ROOT/host-tools/curl" <<'HEALTH'
 #!/usr/bin/env bash
 [[ "${TEST_HEALTH_FAIL:-}" != 1 ]]||exit 22
-echo '{"status":"ok"}'
+case "$*" in
+ */xray/stats*) echo '{"accounting":"durable-v1","ledger_id":"fixture","stat":[]}' ;;
+ *:9191/health*) if [[ "${TEST_DEGRADED:-}" == 1 ]];then echo '{"status":"degraded","xray":{"installed":true,"running":false}}';else echo '{"status":"ok","xray":{"installed":true,"running":true}}';fi;;
+ *) echo '{"status":"ok"}';;
+esac
 HEALTH
-for command in chown id systemctl nginx journalctl sleep;do printf '#!/usr/bin/env bash\nexit 0\n' >"$TEST_ROOT/host-tools/$command";done
+for command in chown id nginx journalctl sleep;do printf '#!/usr/bin/env bash\nexit 0\n' >"$TEST_ROOT/host-tools/$command";done
+cat >"$TEST_ROOT/host-tools/systemctl" <<'SYSTEMD'
+#!/usr/bin/env bash
+echo "$*" >>"$HOST_ROOT/service-calls"
+if [[ "$1" == is-active ]];then
+ [[ "$*" != *"${TEST_FAILED_UNIT:-__none__}"* ]]||exit 3
+ [[ "$*" == *--quiet* ]]||echo active
+fi
+SYSTEMD
+cat >"$TEST_ROOT/host-tools/certbot" <<'CERTBOT'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >"$HOST_ROOT/certbot-call"
+CERTBOT
 printf '#!/usr/bin/env bash\nprintf fixture-dump\n' >"$TEST_ROOT/host-tools/pg_dump"
 chmod +x "$TEST_ROOT/host-tools/"*
 bootstrap_test_path="$PATH"
@@ -316,11 +339,14 @@ export PATH="$HOST_ROOT/usr/local/bin:$TEST_ROOT/host-tools:$PATH" TEST_MACHINE=
 reset_host() {
  rm -rf -- "$HOST_ROOT"
  mkdir -p "$HOST_ROOT/usr/local/bin" "$HOST_ROOT/opt/veloray" "$HOST_ROOT/etc/systemd/system"
- printf '#!/usr/bin/env bash\nexit 0\n' >"$HOST_ROOT/usr/local/bin/xray";chmod +x "$HOST_ROOT/usr/local/bin/xray"
+ printf '#!/usr/bin/env bash\n[[ "${TEST_XRAY_CONFIG_FAIL:-}" != 1 ]]\n' >"$HOST_ROOT/usr/local/bin/xray";chmod +x "$HOST_ROOT/usr/local/bin/xray"
 }
 host_install() { bash "$host_project/scripts/install-panel.sh" >"$TEST_ROOT/host-result" 2>&1; }
 reset_host
+chmod 0600 "$host_project/frontend/dist/index.html"
 host_install
+[[ "$(stat -c '%a' "$HOST_ROOT/opt/veloray/current/frontend/dist/index.html")" == 644 ]]
+pass web-assets-readable-after-private-umask
 test -f "$HOST_ROOT/admin";test -f "$HOST_ROOT/database";test -f "$HOST_ROOT/role"
 original_env="$(sha256sum "$HOST_ROOT/etc/veloray/veloray.env")"
 pass host-fresh-install
@@ -352,6 +378,57 @@ pass uninstall-keeps-data-and-keys
 host_install
 [[ "$(sha256sum "$HOST_ROOT/etc/veloray/veloray.env")" == "$original_env" ]]
 test -f "$HOST_ROOT/admin";pass reinstall-after-uninstall
+bash "$HOST_ROOT/usr/local/bin/velorayctl" >"$TEST_ROOT/host-result" 2>&1
+grep -Fq 'Administrator password' "$TEST_ROOT/host-result"
+grep -Fq 'Panel address' "$TEST_ROOT/host-result";pass default-management-menu
+export TEST_DEGRADED=1
+if bash "$HOST_ROOT/usr/local/bin/velorayctl" doctor >"$TEST_ROOT/host-result" 2>&1;then echo 'Degraded Xray accepted by doctor' >&2;exit 1;fi
+grep -Fq 'Xray is stopped' "$TEST_ROOT/host-result";pass doctor-rejects-degraded-agent
+if host_install;then echo 'Install announced success with stopped Xray' >&2;exit 1;fi
+if grep -Fq 'Installation completed.' "$TEST_ROOT/host-result";then echo 'False installation success' >&2;exit 1;fi
+pass install-rejects-stopped-xray
+unset TEST_DEGRADED
+export TEST_FAILED_UNIT=xray.service
+if bash "$HOST_ROOT/usr/local/bin/velorayctl" doctor >"$TEST_ROOT/host-result" 2>&1;then echo 'Inactive Xray service accepted' >&2;exit 1;fi
+pass doctor-checks-each-service
+unset TEST_FAILED_UNIT
+export TEST_XRAY_CONFIG_FAIL=1
+if host_install;then echo 'Invalid Xray config accepted' >&2;exit 1;fi
+grep -Fq 'Xray rejected' "$TEST_ROOT/host-result";pass install-rejects-invalid-xray
+unset TEST_XRAY_CONFIG_FAIL
+bash "$HOST_ROOT/usr/local/bin/velorayctl" reset >"$TEST_ROOT/host-result" 2>&1
+test -f "$HOST_ROOT/password-reset"
+grep -Fq 'Password changed' "$TEST_ROOT/host-result";pass administrator-reset-alias
+rm -f "$HOST_ROOT/password-reset"
+if printf 'Valid-long-password\nDifferent-password\n' | env -u VELORAY_ADMIN_PASSWORD bash "$HOST_ROOT/usr/local/bin/velorayctl" reset >"$TEST_ROOT/host-result" 2>&1;then echo 'Mismatched password confirmation accepted' >&2;exit 1;fi
+test ! -f "$HOST_ROOT/password-reset";pass reset-rejects-password-mismatch
+printf 'Valid-long-password\nValid-long-password\n' | env -u VELORAY_ADMIN_PASSWORD bash "$HOST_ROOT/usr/local/bin/velorayctl" reset >"$TEST_ROOT/host-result" 2>&1
+test -f "$HOST_ROOT/password-reset"
+if grep -Fq 'Valid-long-password' "$TEST_ROOT/host-result";then echo 'Password leaked into terminal output' >&2;exit 1;fi
+pass reset-reads-one-password-with-confirmation
+bash "$HOST_ROOT/usr/local/bin/velorayctl" backup-schedule daily >"$TEST_ROOT/host-result" 2>&1
+test -f "$HOST_ROOT/etc/systemd/system/veloray-backup.timer"
+grep -Fq 'enable --now veloray-backup.timer' "$HOST_ROOT/service-calls";pass daily-backup-schedule
+bash "$HOST_ROOT/usr/local/bin/velorayctl" ssl admin@example.com >"$TEST_ROOT/host-result" 2>&1
+grep -Fq -- '--webroot' "$HOST_ROOT/certbot-call"
+if grep -Fq 'stop nginx' "$HOST_ROOT/service-calls";then echo 'Certificate request stopped nginx' >&2;exit 1;fi
+pass certificate-keeps-nginx-running
+VELORAY_LANGUAGE=fa bash "$HOST_ROOT/usr/local/bin/velorayctl" menu >"$TEST_ROOT/host-result" 2>&1
+# The persistent setting is authoritative; explicitly save it before checking localization.
+bash "$HOST_ROOT/usr/local/bin/velorayctl" help >"$TEST_ROOT/host-result" 2>&1
+grep -Fq 'veloray reset' "$TEST_ROOT/host-result";pass management-help
+printf '\nVELORAY_LANGUAGE=fa\n' >>"$HOST_ROOT/etc/veloray/veloray.env"
+bash "$HOST_ROOT/usr/local/bin/velorayctl" menu >"$TEST_ROOT/host-result" 2>&1
+grep -Fq 'تغییر رمز مدیر' "$TEST_ROOT/host-result";pass persisted-persian-menu
+[[ "$(stat -c '%a' "$HOST_ROOT/var/log/veloray")" == 700 ]]
+if find "$HOST_ROOT/var/log/veloray" -type f ! -perm 0600 | grep -q .;then echo 'Operation log is not private' >&2;exit 1;fi
+pass private-operation-logs
+if [[ -n "${VELORAY_TEST_PANEL_BINARY:-}" ]];then
+ VELORAY_ENV_FILE="$HOST_ROOT/etc/veloray/veloray.env" "$VELORAY_TEST_PANEL_BINARY" >"$TEST_ROOT/host-result" 2>&1
+ grep -Fq 'تغییر رمز مدیر' "$TEST_ROOT/host-result";pass compiled-default-opens-menu
+ VELORAY_ENV_FILE="$HOST_ROOT/etc/veloray/veloray.env" "$VELORAY_TEST_PANEL_BINARY" reset >"$TEST_ROOT/host-result" 2>&1
+ grep -Fq 'نشست‌های قبلی' "$TEST_ROOT/host-result";pass compiled-reset-alias
+fi
 reset_host;touch "$HOST_ROOT/database" "$HOST_ROOT/role"
 if host_install;then echo 'Preserved database with lost keys accepted' >&2;exit 1;fi
 grep -Fq 'Restore this environment file from your backup' "$TEST_ROOT/host-result"

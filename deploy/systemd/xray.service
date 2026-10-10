@@ -17,6 +17,8 @@ LimitNOFILE=1048576
 ProtectHome=true
 ProtectSystem=strict
 PrivateTmp=true
+LogsDirectory=xray
+LogsDirectoryMode=0750
 
 [Install]
 WantedBy=multi-user.target

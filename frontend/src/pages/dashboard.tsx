@@ -349,6 +349,73 @@ export function Dashboard() {
           {msg}
         </div>
       )}
+      {nodes.some((n) => n.enabled && n.status !== "ok") && (
+        <div
+          role="status"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/25 bg-amber-500/5 px-4 py-3"
+        >
+          <div className="text-[12px]">
+            <div className="font-semibold text-amber-500">
+              Nodes need attention
+            </div>
+            <p className="mt-1 text-[var(--muted-strong)]">
+              {nodes
+                .filter((n) => n.enabled && n.status !== "ok")
+                .map((n) => `${n.name}: ${n.status || "pending"}`)
+                .join(" · ")}
+            </p>
+          </div>
+          <a
+            href="/xray"
+            className="text-[12px] font-semibold text-[var(--fg)] underline underline-offset-4"
+          >
+            Inspect Xray
+          </a>
+        </div>
+      )}
+      {o && (o.inbounds_total === 0 || o.clients_total === 0) && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Set up your first connection</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-3 sm:grid-cols-3">
+            {[
+              {
+                href: "/inbounds",
+                title: "1. Create an inbound",
+                text: "Choose a port, protocol and connection security.",
+                done: o.inbounds_total > 0,
+              },
+              {
+                href: "/clients",
+                title: "2. Add a client",
+                text: "Set credentials, traffic quota and expiry.",
+                done: o.clients_total > 0,
+              },
+              {
+                href: "/subscriptions",
+                title: "3. Share the subscription",
+                text: "Open the client portal or copy a connection link.",
+                done: false,
+              },
+            ].map((step) => (
+              <a
+                key={step.href}
+                href={step.href}
+                className="rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-4 transition hover:border-[var(--brand)]"
+              >
+                <div className="text-[12px] font-semibold">
+                  {step.title}
+                  {step.done ? " ✓" : ""}
+                </div>
+                <p className="mt-2 text-[11px] leading-5 text-[var(--muted)]">
+                  {step.text}
+                </p>
+              </a>
+            ))}
+          </CardContent>
+        </Card>
+      )}
       <section className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <Metric
           label="CPU"

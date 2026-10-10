@@ -1,7 +1,34 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-fail() { printf 'VeloRay: %s\n' "$*" >&2; exit 1; }
+vr_text() { if [[ "${VELORAY_INSTALL_LANG:-${VELORAY_LANGUAGE:-en}}" == fa ]];then printf '%s' "$2";else printf '%s' "$1";fi; }
+vr_say() { vr_text "$1" "$2";printf '\n'; }
+vr_step() { VR_STEP="$(vr_text "$1" "$2")";printf '\n  • %s\n' "$VR_STEP"; }
+vr_log_init() {
+ local previous_mask="$(umask)"
+ umask 077
+ if [[ -z "${VELORAY_INSTALL_LOG:-}" ]];then
+  install -d -m 0700 /var/log/veloray
+  VELORAY_INSTALL_LOG="$(mktemp "/var/log/veloray/${1:-operation}-$(date -u +%Y%m%dT%H%M%SZ)-XXXXXX.log")"
+ fi
+ [[ -f "$VELORAY_INSTALL_LOG" && ! -L "$VELORAY_INSTALL_LOG" ]]||{ echo 'Invalid operation log.' >&2;return 1; }
+ chmod 0600 "$VELORAY_INSTALL_LOG"
+ export VELORAY_INSTALL_LOG
+ umask "$previous_mask"
+}
+vr_run() { "$@" >>"$VELORAY_INSTALL_LOG" 2>&1; }
+vr_error() {
+ local line="$1" status="${2:-1}"
+ printf 'Failure: step=%s line=%s status=%s\n' "${VR_STEP:-operation}" "$line" "$status" >>"$VELORAY_INSTALL_LOG"
+ vr_say "Failed: ${VR_STEP:-operation}." "مرحله ناموفق: ${VR_STEP:-عملیات}." >&2
+ vr_say "Details: sudo tail -n 60 $VELORAY_INSTALL_LOG" "جزئیات: sudo tail -n 60 $VELORAY_INSTALL_LOG" >&2
+ exit "$status"
+}
+fail() {
+ printf 'VeloRay: %s\n' "$*" >&2
+ [[ -z "${VELORAY_INSTALL_LOG:-}" ]]||vr_say "Details: $VELORAY_INSTALL_LOG" "جزئیات: $VELORAY_INSTALL_LOG" >&2
+ exit 1
+}
 usage() {
  cat <<'HELP'
 VeloRay installer
@@ -13,9 +40,9 @@ HELP
 version_at_least() { [[ "$(printf '%s\n%s\n' "$2" "$1" | sort -V | head -n1)" == "$2" ]]; }
 fetch() {
  local status=0
- curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL --retry 3 --connect-timeout 15 --max-time 600 "$1" -o "$2" || status=$?
+ curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL --retry 3 --connect-timeout 15 --max-time 600 "$1" -o "$2" 2>>"${VELORAY_INSTALL_LOG:-/dev/null}" || status=$?
  if [[ "$status" -ne 0 ]];then
-  printf 'VeloRay: download failed (curl %s): %s\n' "$status" "$1" >&2
+  printf 'Download failed (curl %s): %s\n' "$status" "$1" >>"${VELORAY_INSTALL_LOG:-/dev/null}"
   return "$status"
  fi
 }
@@ -27,7 +54,7 @@ download_source() {
             "https://github.com/$repository/archive/$commit.tar.gz";do
   if fetch "$url" "$temporary/source.tar.gz";then return 0;fi
   rm -f -- "$temporary/source.tar.gz"
-  printf 'Trying the next GitHub archive route.\n' >&2
+  vr_say 'Trying an alternate GitHub download route…' 'تلاش با مسیر جایگزین دانلود گیت‌هاب…'
  done
  fail "Cannot download source commit $commit from $repository. Check GitHub access from this server and retry."
 }
@@ -70,9 +97,21 @@ case "$(uname -m)" in x86_64) arch=amd64;node_arch=x64;xray_asset=Xray-linux-64.
 
 temporary="$(mktemp -d)"
 trap 'rm -rf -- "$temporary"' EXIT
-trap 'printf "VeloRay installation failed at line %s.\n" "$LINENO" >&2' ERR
-apt-get update
-apt-get install -y ca-certificates curl jq tar xz-utils unzip openssl
+export VELORAY_INSTALL_LANG="$language"
+vr_log_init install
+exec 9>/run/lock/veloray-install.lock
+flock -n 9||fail 'Another VeloRay installation is running. Wait for it to finish.'
+export VELORAY_INSTALL_LOCKED=true
+trap 'vr_error "$LINENO" "$?"' ERR
+printf '\nVeloRay 0.1.0\n'
+vr_say 'Server installation' 'نصب روی سرور'
+vr_step 'Prepare system packages' 'آماده‌سازی بسته‌های سیستم'
+packages=(ca-certificates curl jq tar xz-utils unzip openssl)
+[[ "$action" != install ]]||packages+=(postgresql postgresql-client nginx certbot)
+vr_run env DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l apt-get update
+vr_run env DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l apt-get install -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold "${packages[@]}"
+export VELORAY_DEPENDENCIES_READY=true
+vr_step 'Download and verify VeloRay' 'دریافت و بررسی فایل‌های VeloRay'
 
 source_directory=""
 if [[ -n "${BASH_SOURCE[0]:-}" && -f "${BASH_SOURCE[0]}" ]];then
@@ -82,7 +121,7 @@ if [[ -z "$source_directory" || ! -f "$source_directory/go.mod" || ! -f "$source
  fetch "https://api.github.com/repos/$repository/commits/$reference" "$temporary/commit.json"
  commit="$(jq -er '.sha' "$temporary/commit.json")"
  [[ "$commit" =~ ^[a-f0-9]{40}$ ]]||fail 'GitHub did not return a valid source commit.'
- printf 'Downloading %s at %s\n' "$repository" "$commit"
+ printf 'Repository=%s commit=%s\n' "$repository" "$commit" >>"$VELORAY_INSTALL_LOG"
  download_source
  # GitHub archives contain regular files/directories; reject links and traversal before extracting.
  check_archive "$temporary/source.tar.gz"
@@ -107,15 +146,16 @@ prepare_runtime() {
   printf 'Source files changed; building the current source instead of using the bundled runtime.\n'
   return 1
  fi
- (cd "$bundle/bin/linux-$arch" && sha256sum -c SHA256SUMS) || fail 'Runtime binary checksum mismatch.'
+ (cd "$bundle/bin/linux-$arch" && sha256sum -c SHA256SUMS) >>"$VELORAY_INSTALL_LOG" 2>&1 || fail 'Runtime binary checksum mismatch.'
  mkdir -p "$source_directory/bin" "$source_directory/frontend"
+ rm -rf -- "$source_directory/bin/linux-$arch" "$source_directory/frontend/dist"
  cp -a "$bundle/bin/linux-$arch" "$source_directory/bin/" || fail 'Cannot copy runtime binaries.'
  cp -a "$bundle/frontend/dist" "$source_directory/frontend/" || fail 'Cannot copy runtime frontend.'
  if [[ -z "${VELORAY_XRAY_ARCHIVE:-}" && -x "$bundle/xray/xray" && -f "$bundle/xray/SHA256SUMS" ]];then
-  (cd "$bundle/xray" && sha256sum -c SHA256SUMS) || fail 'Bundled Xray checksum mismatch.'
+  (cd "$bundle/xray" && sha256sum -c SHA256SUMS) >>"$VELORAY_INSTALL_LOG" 2>&1 || fail 'Bundled Xray checksum mismatch.'
   export VELORAY_XRAY_DIRECTORY="$bundle/xray"
  fi
- printf 'Using verified %s runtime; Go and Node.js are not required.\n' "$arch"
+ vr_say "Using verified $arch runtime." "بستهٔ آمادهٔ $arch تأیید شد."
 }
 
 prepare_build_tools() {
@@ -188,11 +228,12 @@ prepare_build_tools() {
  fi
 }
 
-if [[ ! -x "$source_directory/bin/linux-$arch/veloray-agent" || ! -x "$source_directory/bin/linux-$arch/veloray" || ! -f "$source_directory/frontend/dist/index.html" ]];then
- if ! prepare_runtime;then
-  prepare_build_tools
-  bash "$source_directory/scripts/build.sh" "$arch"
- fi
+vr_step 'Prepare application runtime' 'آماده‌سازی برنامه'
+if [[ -f "$source_directory/runtime/linux-$arch.tar.xz" ]];then
+ if ! prepare_runtime;then prepare_build_tools;vr_run bash "$source_directory/scripts/build.sh" "$arch";fi
+elif [[ ! -x "$source_directory/bin/linux-$arch/veloray-agent" || ! -x "$source_directory/bin/linux-$arch/veloray" || ! -f "$source_directory/frontend/dist/index.html" ]];then
+ prepare_build_tools
+ vr_run bash "$source_directory/scripts/build.sh" "$arch"
 fi
 
 if [[ ! -x /usr/local/bin/xray && -z "${VELORAY_XRAY_ARCHIVE:-}" && -z "${VELORAY_XRAY_DIRECTORY:-}" ]];then
@@ -208,13 +249,14 @@ if [[ ! -x /usr/local/bin/xray && -z "${VELORAY_XRAY_ARCHIVE:-}" && -z "${VELORA
  fetch "https://github.com/XTLS/Xray-core/releases/download/$xray_version/$xray_asset" "$VELORAY_XRAY_ARCHIVE"
  verify "$VELORAY_XRAY_SHA256" "$VELORAY_XRAY_ARCHIVE"
 fi
-export VELORAY_INSTALL_LANG="$language"
+export VELORAY_INSTALL_REPO="$repository" VELORAY_INSTALL_REF="$reference"
 installer="$source_directory/scripts/install-panel.sh"
 [[ "$action" != node ]]||installer="$source_directory/deploy/node/install.sh"
 # Piped invocations reserve stdin for the script; prompts must use the terminal.
-if { true </dev/tty; } 2>/dev/null;then bash "$installer" </dev/tty
+if { true </dev/tty; } 2>/dev/null;then
+ if bash "$installer" </dev/tty;then exit 0;else exit $?;fi
 else
  [[ -n "${VELORAY_PUBLIC_HOST:-}" ]]||fail 'No terminal: set VELORAY_PUBLIC_HOST for unattended installation.'
  if [[ "$action" == install && ! -f /etc/veloray/veloray.env && -z "${VELORAY_ADMIN_PASSWORD:-}" ]];then fail 'No terminal: set VELORAY_ADMIN_PASSWORD.';fi
- bash "$installer"
+ if bash "$installer";then exit 0;else exit $?;fi
 fi

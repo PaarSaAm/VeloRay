@@ -538,6 +538,16 @@ func (s *Server) action(w http.ResponseWriter, r *http.Request, kind string, id 
 		case "deploy":
 			out, e := s.change(ctx, []int64{id}, a, "node.deploy", str(d, "name"), func(pgx.Tx) (any, error) { return Data{"status": "applied"}, nil })
 			return out, 200, e
+		case "config-validate":
+			cfg, err := buildConfig(ctx, s.Store.Pool, d)
+			if err != nil {
+				return nil, 0, err
+			}
+			out, err := s.nodeCall(ctx, d, "/xray/validate", Data{"config": cfg})
+			if err != nil {
+				return nil, 0, fail(502, err.Error())
+			}
+			return out, 200, nil
 		case "xray-restart":
 			tx, e := s.Store.Pool.Begin(ctx)
 			if e != nil {
@@ -551,8 +561,14 @@ func (s *Server) action(w http.ResponseWriter, r *http.Request, kind string, id 
 			if e != nil {
 				return nil, 0, e
 			}
-			if e = s.collect(ctx, tx, d); e != nil {
-				return nil, 0, fail(502, e.Error())
+			st, err := s.nodeCall(ctx, d, "/xray/status", nil)
+			if err != nil {
+				return nil, 0, fail(502, err.Error())
+			}
+			if flag(st, "running") {
+				if e = s.collect(ctx, tx, d); e != nil {
+					return nil, 0, fail(502, e.Error())
+				}
 			}
 			out, e := s.nodeCall(ctx, d, "/xray/restart", Data{})
 			if e != nil {

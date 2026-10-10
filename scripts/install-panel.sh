@@ -3,25 +3,29 @@ set -Eeuo pipefail
 [[ ${EUID:-$(id -u)} -eq 0 ]]||{ echo 'Run with sudo.' >&2;exit 1; }
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 source_dir="$PWD"
+source scripts/common.sh
+vr_log_init install
+vr_install_lock
+trap 'failure_status=$?;vr_diagnostics;vr_error "$LINENO" "$failure_status"' ERR
+vr_step 'Configure database and local services' 'آماده‌سازی پایگاه داده و سرویس‌ها' 
 prompt() { if [[ "${VELORAY_INSTALL_LANG:-en}" == fa ]];then printf '%s' "$2";else printf '%s' "$1";fi; }
 ensure_local_database() {
  [[ -z "${DATABASE_URL:-}" && "${POSTGRES_HOST:-127.0.0.1}" =~ ^(127\.0\.0\.1|localhost)$ && "${POSTGRES_USER:-veloray}" == veloray && "${POSTGRES_DB:-veloray}" == veloray ]]||return 0
  local present
  present="$(runuser -u postgres -- psql -tAc "SELECT EXISTS(SELECT 1 FROM pg_roles WHERE rolname='veloray')")"
  if [[ "${present//[[:space:]]/}" != t ]];then
-  runuser -u postgres -- psql -v ON_ERROR_STOP=1 --set=password="$POSTGRES_PASSWORD" <<'SQL'
+  vr_run runuser -u postgres -- psql -v ON_ERROR_STOP=1 --set=password="$POSTGRES_PASSWORD" <<'SQL'
 SELECT format('CREATE ROLE veloray WITH LOGIN PASSWORD %L', :'password') \gexec
 SQL
  fi
  present="$(runuser -u postgres -- psql -tAc "SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname='veloray')")"
- [[ "${present//[[:space:]]/}" == t ]]||runuser -u postgres -- createdb -O veloray veloray
+ [[ "${present//[[:space:]]/}" == t ]]||vr_run runuser -u postgres -- createdb -O veloray veloray
 }
 arch="$(uname -m)";case "$arch" in x86_64) arch=amd64;;aarch64|arm64) arch=arm64;;*) echo 'Unsupported CPU' >&2;exit 1;;esac
 [[ -f go.mod && -f frontend/package-lock.json ]]||{ echo 'Extract a complete VeloRay release first.' >&2;exit 1; }
-if [[ ! -x "bin/linux-$arch/veloray" || ! -f frontend/dist/index.html ]];then bash scripts/build.sh "$arch";fi
-(cd "bin/linux-$arch" && sha256sum -c SHA256SUMS)
-apt-get update
-apt-get install -y postgresql postgresql-client nginx openssl curl unzip certbot ca-certificates
+if [[ ! -x "bin/linux-$arch/veloray" || ! -f frontend/dist/index.html ]];then vr_run bash scripts/build.sh "$arch";fi
+(cd "bin/linux-$arch" && sha256sum -c SHA256SUMS) >>"$VELORAY_INSTALL_LOG" 2>&1
+vr_packages postgresql postgresql-client nginx openssl curl jq unzip certbot ca-certificates
 id veloray >/dev/null 2>&1||useradd --system --home /var/lib/veloray --shell /usr/sbin/nologin veloray
 install -d -o veloray -g veloray -m 0750 /var/lib/veloray
 install -d -m 0750 /etc/veloray /etc/veloray-node
@@ -34,11 +38,13 @@ chmod 0755 "$release"
 mkdir -p "$release/frontend"
 cp -a frontend/dist "$release/frontend/"
 cp -a frontend/package-lock.json frontend/package.json "$release/frontend/"
+find "$release/frontend" -type d -exec chmod 0755 {} +
+find "$release/frontend" -type f -exec chmod 0644 {} +
 cp -a deploy scripts install.sh go.mod "$release/"
 mkdir -p "$release/bin/linux-$arch"
 cp -a "bin/linux-$arch/"* "$release/bin/linux-$arch/"
-[[ -x /usr/local/bin/xray ]]||bash scripts/xray-install.sh
-systemctl enable --now postgresql nginx
+[[ -x /usr/local/bin/xray ]]||vr_run bash scripts/xray-install.sh
+vr_run systemctl enable --now postgresql nginx
 existing=false
 if [[ -f /etc/veloray/veloray.env ]];then
  existing=true
@@ -79,6 +85,9 @@ POSTGRES_PORT=5432
 POSTGRES_DB=veloray
 POSTGRES_USER=veloray
 POSTGRES_PASSWORD=$dbpass
+VELORAY_LANGUAGE=${VELORAY_INSTALL_LANG:-en}
+VELORAY_REPO=${VELORAY_REPO:-PaarSaAm/VeloRay}
+VELORAY_REF=${VELORAY_REF:-main}
 ENV
  mv "$env_temporary" /etc/veloray/veloray.env
  set -a;source /etc/veloray/veloray.env;set +a
@@ -95,33 +104,43 @@ export VELORAY_PANEL_PORT="${VELORAY_PANEL_PORT:-8443}"
 VELORAY_LOCAL_NODE_TOKEN="${VELORAY_LOCAL_NODE_TOKEN:-$(openssl rand -hex 32)}"
 public_url_host="$VELORAY_PUBLIC_HOST";[[ "$public_url_host" != *:* ]]||public_url_host="[$public_url_host]"
 export VELORAY_PUBLIC_URL="https://$public_url_host:$VELORAY_PANEL_PORT"
+vr_step 'Configure panel and administrator' 'تنظیم پنل و حساب مدیر'
+vr_run veloray set-env VELORAY_LANGUAGE "${VELORAY_INSTALL_LANG:-${VELORAY_LANGUAGE:-en}}"
+vr_run veloray set-env VELORAY_REPO "${VELORAY_INSTALL_REPO:-${VELORAY_REPO:-PaarSaAm/VeloRay}}"
+vr_run veloray set-env VELORAY_REF "${VELORAY_INSTALL_REF:-${VELORAY_REF:-main}}"
 veloray set-env VELORAY_PUBLIC_URL "$VELORAY_PUBLIC_URL"
 veloray set-env VELORAY_FRONTEND_DIR /opt/veloray/current/frontend/dist
 veloray set-env VELORAY_LOCAL_NODE_TOKEN "$VELORAY_LOCAL_NODE_TOKEN"
 veloray set-env VELORAY_LISTEN 127.0.0.1:8610
 veloray set-env VELORAY_COOKIE_SECURE true
 veloray set-env POSTGRES_HOST "${POSTGRES_HOST:-127.0.0.1}"
-veloray migrate
+vr_run veloray migrate
 if $existing;then
  legacy="$(PGHOST="${POSTGRES_HOST:-127.0.0.1}" PGPORT="${POSTGRES_PORT:-5432}" PGUSER="${POSTGRES_USER:-veloray}" PGPASSWORD="$POSTGRES_PASSWORD" psql -tAc "SELECT to_regclass('core_node') IS NOT NULL AND NOT EXISTS(SELECT 1 FROM vr_users)" "${POSTGRES_DB:-veloray}")"
- if [[ "${legacy//[[:space:]]/}" == t ]];then veloray import-legacy --dry-run;veloray import-legacy;fi
+ if [[ "${legacy//[[:space:]]/}" == t ]];then vr_run veloray import-legacy --dry-run;vr_run veloray import-legacy;fi
 fi
 has_admin="$(PGHOST="${POSTGRES_HOST:-127.0.0.1}" PGPORT="${POSTGRES_PORT:-5432}" PGUSER="${POSTGRES_USER:-veloray}" PGPASSWORD="$POSTGRES_PASSWORD" psql -tAc "SELECT EXISTS(SELECT 1 FROM vr_users WHERE data->>'is_superuser'='true')" "${POSTGRES_DB:-veloray}")"
 if [[ "${has_admin//[[:space:]]/}" != t ]];then
  export VELORAY_ADMIN_USERNAME="${VELORAY_ADMIN_USERNAME:-admin}"
- if [[ -z "${VELORAY_ADMIN_PASSWORD:-}" ]];then read -rsp "$(prompt 'Administrator password (12+ characters): ' 'رمز مدیر (حداقل ۱۲ کاراکتر): ')" VELORAY_ADMIN_PASSWORD;echo;fi
+ if [[ -z "${VELORAY_ADMIN_PASSWORD:-}" ]];then
+  read -rsp "$(prompt 'Administrator password (12+ characters): ' 'رمز مدیر (حداقل ۱۲ کاراکتر): ')" VELORAY_ADMIN_PASSWORD;printf '\n'
+  read -rsp "$(prompt 'Confirm password: ' 'تکرار رمز: ')" confirmation;printf '\n'
+  [[ "$VELORAY_ADMIN_PASSWORD" == "$confirmation" ]]||{ vr_say 'Passwords do not match.' 'رمزها یکسان نیستند.' >&2;exit 2; }
+ fi
  export VELORAY_ADMIN_PASSWORD
- veloray bootstrap
+ vr_run veloray bootstrap
  unset VELORAY_ADMIN_PASSWORD
 fi
-veloray bootstrap-local
+vr_run veloray bootstrap-local
 # Preserve existing Xray configuration. The upgraded agent can harvest the old API address.
 if [[ ! -f /usr/local/etc/xray/config.json ]];then
  cat >/usr/local/etc/xray/config.json <<'JSON'
 {"log":{"loglevel":"warning"},"api":{"tag":"api","services":["StatsService"]},"stats":{},"policy":{"levels":{"0":{"statsUserUplink":true,"statsUserDownlink":true}},"system":{"statsInboundUplink":true,"statsInboundDownlink":true}},"inbounds":[{"tag":"api","listen":"127.0.0.1","port":10085,"protocol":"dokodemo-door","settings":{"address":"127.0.0.1"}}],"outbounds":[{"protocol":"freedom","tag":"direct"}],"routing":{"rules":[{"type":"field","inboundTag":["api"],"outboundTag":"api"}]}}
 JSON
 fi
-chown root:nogroup /usr/local/etc/xray/config.json;chmod 0640 /usr/local/etc/xray/config.json
+vr_step 'Validate Xray configuration and file access' 'بررسی پیکربندی و دسترسی فایل‌های Xray'
+vr_xray_prepare
+if ! vr_xray_check;then vr_say 'Xray rejected the existing configuration. Inspect the log before retrying.' 'پیکربندی فعلی Xray رد شد؛ گزارش خطا را بررسی کنید.' >&2;vr_error "$LINENO" 1;fi
 cat >/etc/veloray-node/agent.env <<ENV
 VELORAY_NODE_ID=local
 VELORAY_AGENT_LISTEN=127.0.0.1:9191
@@ -135,22 +154,27 @@ chmod 0600 /etc/veloray-node/agent.env
 install -m 0644 deploy/systemd/{veloray-web,veloray-agent,xray}.service /etc/systemd/system/
 ln -sfn "$release" /opt/veloray/current
 systemctl disable --now veloray-reconcile.timer 2>/dev/null||true
-systemctl daemon-reload
-systemctl enable --now xray.service
-systemctl restart veloray-agent.service
-systemctl enable veloray-agent.service veloray-web.service
-veloray render-nginx
-systemctl restart veloray-web.service
-healthy=false
-for attempt in {1..60};do if curl -fsS --max-time 3 http://127.0.0.1:8610/api/health >/dev/null;then healthy=true;break;fi;sleep 1;done
-if ! $healthy;then journalctl -u veloray-web.service -n 40 --no-pager >&2||true;echo 'Panel health check failed. Run velorayctl logs web to inspect the startup error.' >&2;exit 1;fi
-velorayctl doctor
-echo "VeloRay $version installed. Open https://$VELORAY_PUBLIC_HOST:$VELORAY_PANEL_PORT"
-echo 'Use velorayctl for service management. The initial TLS certificate is self-signed.'
-
+vr_step 'Start HTTPS and panel services' 'راه‌اندازی HTTPS و سرویس‌های پنل'
+vr_run systemctl daemon-reload
+vr_run systemctl enable xray.service veloray-agent.service veloray-web.service
+vr_run systemctl restart xray.service veloray-agent.service
+vr_run veloray render-nginx
+vr_run systemctl restart veloray-web.service
 install -d -m 0755 /etc/letsencrypt/renewal-hooks/deploy
 cat >/etc/letsencrypt/renewal-hooks/deploy/veloray-nginx <<'HOOK'
 #!/usr/bin/env bash
 systemctl reload nginx
 HOOK
 chmod 0755 /etc/letsencrypt/renewal-hooks/deploy/veloray-nginx
+
+vr_step 'Verify panel, Xray and traffic accounting' 'بررسی سلامت پنل، Xray و ثبت ترافیک'
+vr_wait http://127.0.0.1:8610/api/health
+vr_wait http://127.0.0.1:9191/health "$VELORAY_LOCAL_NODE_TOKEN"
+vr_run velorayctl doctor
+vr_say 'Installation completed. All health checks passed.' 'نصب کامل شد و تمام بررسی‌های سلامت موفق بود.'
+printf '\n  %s\n' "$VELORAY_PUBLIC_URL"
+vr_say 'Management menu: sudo veloray' 'منوی مدیریت: sudo veloray'
+vr_say 'Administrator password: sudo veloray reset' 'تغییر رمز مدیر: sudo veloray reset'
+if [[ ! -f "/etc/letsencrypt/live/$VELORAY_PUBLIC_HOST/fullchain.pem" ]];then
+ vr_say 'HTTPS uses a local certificate. After configuring a domain, run: veloray ssl EMAIL' 'HTTPS با گواهی محلی فعال است؛ پس از تنظیم دامنه: veloray ssl EMAIL'
+fi

@@ -18,7 +18,7 @@ ProtectHome=true
 ProtectKernelTunables=true
 ProtectControlGroups=true
 ProtectKernelModules=true
-ReadWritePaths=/usr/local/etc/xray /var/lib/veloray-agent
+ReadWritePaths=/usr/local/etc/xray /var/lib/veloray-agent /var/log/xray
 
 [Install]
 WantedBy=multi-user.target

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api, type NodeItem } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,7 +7,12 @@ import { PageHeader } from "@/components/common/page-header";
 import { FaIcon } from "@/components/ui/fa-icon";
 
 type Preview = { node: string; config: Record<string, unknown> };
-type XrayStatus = { installed: boolean; running: boolean; version: string };
+type XrayStatus = {
+  installed: boolean;
+  running: boolean;
+  version: string;
+  state?: string;
+};
 
 export function XrayPage() {
   const [nodes, setNodes] = useState<NodeItem[]>([]);
@@ -17,6 +22,7 @@ export function XrayPage() {
   const [patch, setPatch] = useState("{}");
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
+  const refreshSequence = useRef(0);
 
   async function loadNodes() {
     const list = await api<NodeItem[]>("/nodes/");
@@ -26,28 +32,35 @@ export function XrayPage() {
   }
   async function refresh(id = nodeId) {
     if (!id) return;
+    const sequence = ++refreshSequence.current;
+    setStatus(null);
+    setPreview(null);
     setBusy(true);
     try {
       const [p, s] = await Promise.all([
         api<Preview>(`/nodes/${id}/config-preview/`),
         api<XrayStatus>(`/nodes/${id}/xray-status/`),
       ]);
+      if (sequence !== refreshSequence.current) return;
       setPreview(p);
       setStatus(s);
       const n = nodes.find((x) => String(x.id) === id);
       if (n) setPatch(JSON.stringify(n.config_patch || {}, null, 2));
       setMsg("");
     } catch (e: any) {
-      setMsg(e.message);
+      if (sequence === refreshSequence.current) setMsg(e.message);
     } finally {
-      setBusy(false);
+      if (sequence === refreshSequence.current) setBusy(false);
     }
   }
   useEffect(() => {
     loadNodes().catch((e) => setMsg(e.message));
   }, []);
   useEffect(() => {
-    if (nodeId) refresh(nodeId);
+    if (nodeId) void refresh(nodeId);
+    return () => {
+      refreshSequence.current++;
+    };
   }, [nodeId, nodes.length]);
   const selected = useMemo(
     () => nodes.find((x) => String(x.id) === nodeId),
@@ -87,8 +100,8 @@ export function XrayPage() {
     setBusy(true);
     try {
       await api(`/nodes/${selected.id}/deploy/`, { method: "POST" });
-      setMsg("Generated config validated and deployed.");
       await refresh();
+      setMsg("Configuration deployed.");
     } catch (e: any) {
       setMsg(e.message);
     } finally {
@@ -106,8 +119,20 @@ export function XrayPage() {
     setBusy(true);
     try {
       await api(`/nodes/${selected.id}/xray-restart/`, { method: "POST" });
-      setMsg("Xray restarted.");
       await refresh();
+      setMsg("Xray restarted.");
+    } catch (e: any) {
+      setMsg(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function validateConfig() {
+    if (!selected) return;
+    setBusy(true);
+    try {
+      await api(`/nodes/${selected.id}/config-validate/`, { method: "POST" });
+      setMsg("Configuration is valid. The running service was not changed.");
     } catch (e: any) {
       setMsg(e.message);
     } finally {
@@ -116,19 +141,36 @@ export function XrayPage() {
   }
   async function copyConfig() {
     if (!preview) return;
-    await navigator.clipboard.writeText(
-      JSON.stringify(preview.config, null, 2),
+    try {
+      await navigator.clipboard.writeText(
+        JSON.stringify(preview.config, null, 2),
+      );
+      setMsg("Configuration copied.");
+    } catch {
+      setMsg("Clipboard is unavailable. Download the configuration instead.");
+    }
+  }
+  function downloadConfig() {
+    if (!preview) return;
+    const url = URL.createObjectURL(
+      new Blob([JSON.stringify(preview.config, null, 2)], {
+        type: "application/json",
+      }),
     );
-    setMsg("Generated Xray config copied.");
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `veloray-node-${nodeId}.json`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Xray Core"
-        description="Inspect generated configuration, apply advanced patches, deploy and restart each node."
+        description="Service health, connection configuration and deployment."
         actions={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button
               variant="outline"
               onClick={() => refresh()}
@@ -136,6 +178,14 @@ export function XrayPage() {
             >
               <FaIcon icon="rotate" />
               Refresh
+            </Button>
+            <Button
+              variant="outline"
+              onClick={validateConfig}
+              disabled={busy || !nodeId}
+            >
+              <FaIcon icon="shield-halved" />
+              Validate
             </Button>
             <Button onClick={deploy} disabled={busy || !nodeId}>
               <FaIcon icon="rocket" />
@@ -151,6 +201,21 @@ export function XrayPage() {
           className="rounded-xl border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-[12px] text-[var(--muted-strong)]"
         >
           {msg}
+        </div>
+      )}
+      {status && !status.running && (
+        <div
+          role="alert"
+          className="rounded-xl border border-red-500/25 bg-red-500/5 p-4 text-[12px] leading-6"
+        >
+          <div className="font-semibold text-red-500">
+            Xray is {status.installed ? "stopped" : "not installed"} on{" "}
+            {selected?.name}.
+          </div>
+          <p className="text-[var(--muted-strong)]">
+            Validate the configuration, then restart Xray. If it still fails,
+            inspect the service log on this node.
+          </p>
         </div>
       )}
       <div className="grid gap-4 xl:grid-cols-[360px_1fr]">
@@ -187,8 +252,16 @@ export function XrayPage() {
                     Service
                   </div>
                   <div className="mt-2">
-                    <Badge tone={status?.running ? "green" : "red"}>
-                      {status?.running ? "Running" : "Stopped"}
+                    <Badge
+                      tone={
+                        status ? (status.running ? "green" : "red") : "neutral"
+                      }
+                    >
+                      {status
+                        ? status.running
+                          ? "Running"
+                          : "Stopped"
+                        : "Checking…"}
                     </Badge>
                   </div>
                 </div>
@@ -254,18 +327,30 @@ export function XrayPage() {
             <div>
               <CardTitle>Generated config preview</CardTitle>
               <p className="mt-1 text-[11px] text-[var(--muted)]">
-                This is the exact JSON VeloRay will send to the selected Agent.
+                Configuration for the selected node. Downloads contain private
+                connection credentials.
               </p>
             </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={copyConfig}
-              disabled={!preview}
-            >
-              <FaIcon icon="copy" family="regular" />
-              Copy
-            </Button>
+            <div className="flex flex-wrap gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={copyConfig}
+                disabled={!preview}
+              >
+                <FaIcon icon="copy" family="regular" />
+                Copy
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={downloadConfig}
+                disabled={!preview}
+              >
+                <FaIcon icon="download" />
+                Download
+              </Button>
+            </div>
           </CardHeader>
           <CardContent className="p-0">
             <pre className="m-0 max-h-[760px] overflow-auto p-5 text-[10px] leading-5 text-[var(--muted-strong)]">

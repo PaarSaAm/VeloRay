@@ -8,7 +8,9 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -35,7 +37,7 @@ func SetEnv(path, key, value string) error {
 }
 func RenderNginx(ctx context.Context, origin, path string) error {
 	u, e := url.Parse(origin)
-	if e != nil || u.Scheme != "https" || u.User != nil || u.Path != "" || u.Host == "" {
+	if e != nil || u.Scheme != "https" || u.User != nil || u.Path != "" || u.Host == "" || u.RawQuery != "" || u.Fragment != "" {
 		return errors.New("HTTPS origin is required")
 	}
 	host := u.Hostname()
@@ -46,7 +48,8 @@ func RenderNginx(ctx context.Context, origin, path string) error {
 	if port == "" {
 		port = "443"
 	}
-	if !regexp.MustCompile(`^[0-9]{1,5}$`).MatchString(port) {
+	n, pe := strconv.Atoi(port)
+	if pe != nil || n < 1 || n > 65535 {
 		return errors.New("invalid port")
 	}
 	cert, key := "/etc/veloray/tls/panel.crt", "/etc/veloray/tls/panel.key"
@@ -57,39 +60,39 @@ func RenderNginx(ctx context.Context, origin, path string) error {
 		if e = os.MkdirAll("/etc/veloray/tls", 0700); e != nil {
 			return e
 		}
-		san := "DNS:" + host
+		san, check := "DNS:"+host, "-checkhost"
 		if net.ParseIP(host) != nil {
-			san = "IP:" + host
+			san, check = "IP:"+host, "-checkip"
 		}
-		cmd := exec.CommandContext(ctx, "openssl", "req", "-x509", "-newkey", "rsa:3072", "-sha256", "-nodes", "-days", "365", "-keyout", key, "-out", cert, "-subj", "/CN="+host, "-addext", "subjectAltName="+san)
-		cmd.Stdout = nil
-		cmd.Stderr = nil
-		if e = cmd.Run(); e != nil {
-			return e
-		}
-		if e = os.Chmod(key, 0600); e != nil {
-			return e
+		_, keyErr := os.Stat(key)
+		matches := exec.CommandContext(ctx, "openssl", "x509", "-in", cert, "-noout", check, host).Run() == nil
+		if keyErr != nil || !matches {
+			temporary, err := os.MkdirTemp(filepath.Dir(cert), ".certificate-*")
+			if err != nil {
+				return err
+			}
+			defer os.RemoveAll(temporary)
+			newKey, newCert := filepath.Join(temporary, "panel.key"), filepath.Join(temporary, "panel.crt")
+			cmd := exec.CommandContext(ctx, "openssl", "req", "-x509", "-newkey", "rsa:3072", "-sha256", "-nodes", "-days", "365", "-keyout", newKey, "-out", newCert, "-subj", "/CN="+host, "-addext", "subjectAltName="+san)
+			if e = cmd.Run(); e != nil {
+				return fmt.Errorf("cannot generate panel certificate: %w", e)
+			}
+			if e = os.Chmod(newKey, 0600); e != nil {
+				return e
+			}
+			if e = os.Rename(newKey, key); e != nil {
+				return e
+			}
+			if e = os.Rename(newCert, cert); e != nil {
+				return e
+			}
 		}
 	}
-	raw := []byte(fmt.Sprintf(`server {
- listen %s ssl;
- listen [::]:%s ssl;
- server_name %s;
- ssl_certificate %s;
- ssl_certificate_key %s;
- ssl_protocols TLSv1.2 TLSv1.3;
- server_tokens off;
- client_max_body_size 2m;
- location / {
-  proxy_pass http://127.0.0.1:8610;
-  proxy_set_header Host $http_host;
-  proxy_set_header X-Real-IP $remote_addr;
-  proxy_set_header X-Forwarded-Proto https;
-  proxy_read_timeout 180s;
- }
- access_log off;
-}
-`, port, port, host, cert, key))
+	if e = os.MkdirAll("/var/lib/veloray-acme", 0755); e != nil {
+		return e
+	}
+	raw := nginxConfiguration(host, port, cert, key)
+
 	old, e := os.ReadFile(path)
 	exists := e == nil
 	if e = AtomicFile(path, raw, 0644); e != nil {
@@ -110,5 +113,53 @@ func RenderNginx(ctx context.Context, origin, path string) error {
 		}
 		return fmt.Errorf("Nginx validation failed: %.1500s", out)
 	}
-	return exec.CommandContext(ctx, "systemctl", "reload", "nginx").Run()
+	if e = exec.CommandContext(ctx, "systemctl", "reload", "nginx").Run(); e != nil {
+		if exists {
+			_ = AtomicFile(path, old, 0644)
+		} else {
+			_ = os.Remove(path)
+			_ = os.Remove(link)
+		}
+		_ = exec.CommandContext(ctx, "systemctl", "reload", "nginx").Run()
+		return fmt.Errorf("Nginx reload failed; previous configuration restored: %w", e)
+	}
+	return nil
+}
+func nginxConfiguration(host, port, cert, key string) []byte {
+	raw := []byte(fmt.Sprintf(`server {
+ listen %s ssl;
+ listen [::]:%s ssl;
+ server_name %s;
+ ssl_certificate %s;
+ ssl_certificate_key %s;
+ ssl_protocols TLSv1.2 TLSv1.3;
+ server_tokens off;
+ client_max_body_size 2m;
+ location / {
+  proxy_pass http://127.0.0.1:8610;
+  proxy_set_header Host $http_host;
+  proxy_set_header X-Real-IP $remote_addr;
+  proxy_set_header X-Forwarded-Proto https;
+  proxy_read_timeout 180s;
+ }
+ access_log off;
+}
+`, port, port, host, cert, key))
+	if port != "80" {
+		raw = append(raw, []byte(fmt.Sprintf(`server {
+ listen 80;
+ listen [::]:80;
+ server_name %s;
+ server_tokens off;
+ location ^~ /.well-known/acme-challenge/ {
+  root /var/lib/veloray-acme;
+  default_type text/plain;
+  try_files $uri =404;
+ }
+ location / { return 308 https://%s$request_uri; }
+ access_log off;
+}
+`, host, net.JoinHostPort(host, port)))...)
+	}
+	return raw
 }

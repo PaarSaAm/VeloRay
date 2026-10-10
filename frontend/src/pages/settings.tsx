@@ -667,14 +667,14 @@ export function SettingsPage() {
                   <CardContent>
                     <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                       {[
-                        "velorayctl status",
-                        "velorayctl doctor",
-                        "velorayctl backup",
-                        "velorayctl port PORT",
-                        "velorayctl logs web",
-                        "velorayctl logs agent",
-                        "velorayctl ssl EMAIL",
-                        "velorayctl update RELEASE_DIRECTORY",
+                        "veloray status",
+                        "veloray doctor",
+                        "veloray backup",
+                        "veloray port PORT",
+                        "veloray logs web",
+                        "veloray logs agent",
+                        "veloray ssl EMAIL",
+                        "veloray update",
                       ].map((x) => (
                         <div
                           key={x}

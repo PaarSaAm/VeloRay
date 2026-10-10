@@ -2,40 +2,141 @@
 set -Eeuo pipefail
 [[ ${EUID:-$(id -u)} -eq 0 ]] || { echo 'Run with sudo.' >&2; exit 1; }
 ENV_FILE="${VELORAY_ENV_FILE:-/etc/veloray/veloray.env}"
-[[ -f "$ENV_FILE" ]] || { echo 'VeloRay is not installed.' >&2; exit 1; }
+command="${1:-menu}"; shift || true
+if [[ "$command" == help || "$command" == --help ]];then
+ cat <<'HELP'
+VeloRay 0.1.0 · Server management
+  veloray                         Interactive menu
+  veloray status | doctor | url
+  veloray start | stop | restart
+  veloray logs [web|agent|xray|install]
+  veloray reset [USERNAME]
+  veloray domain HOST | port PORT | ssl EMAIL
+  veloray backup [FILE] | restore FILE
+  veloray backup-schedule daily|off
+  veloray repair | update [DIRECTORY] | uninstall
+  veloray language en|fa
+HELP
+ exit 0
+fi
+[[ -f "$ENV_FILE" ]] || { echo 'VeloRay is not installed. Run install.sh first.' >&2; exit 1; }
 set -a
-# Installer-owned configuration, readable only by root and the panel service.
 source "$ENV_FILE"
 set +a
+source /opt/veloray/current/scripts/common.sh
+vr_log_init
 WEB=veloray-web.service
 AGENT=veloray-agent.service
-command="${1:-help}"; shift || true
+trap 'vr_error "$LINENO" "$?"' ERR
+VR_STEP="$(vr_text 'Server management' 'مدیریت سرور')"
+summary() {
+ printf '\nVeloRay 0.1.0\n'
+ vr_say "Panel: $VELORAY_PUBLIC_URL" "آدرس پنل: $VELORAY_PUBLIC_URL"
+ local unit state label
+ for unit in "$WEB" "$AGENT" xray.service;do
+  state="$(systemctl is-active "$unit" 2>/dev/null)"||true
+  label="${state:-unknown}"
+  if [[ "${VELORAY_LANGUAGE:-en}" == fa ]];then case "$state" in active) label=فعال;;inactive) label=خاموش;;failed) label=خطا;;activating) label=درحال‌راه‌اندازی;;esac;fi
+  printf '  %-22s %s\n' "${unit%.service}" "$label"
+ done
+}
+doctor() {
+ local unit body failed=0
+ for unit in "$WEB" "$AGENT" xray.service postgresql.service nginx.service;do
+  if systemctl is-active --quiet "$unit";then printf '  ✓ %s\n' "$unit";else printf '  ✗ %s\n' "$unit";failed=1;fi
+ done
+ if vr_run nginx -t;then vr_say '  ✓ HTTPS configuration' '  ✓ پیکربندی HTTPS';else vr_say '  ✗ HTTPS configuration' '  ✗ پیکربندی HTTPS';failed=1;fi
+ if body="$(curl -fsS --max-time 5 http://127.0.0.1:8610/api/health 2>>"$VELORAY_INSTALL_LOG")" && jq -e '.status=="ok"' <<<"$body" >/dev/null 2>&1;then vr_say '  ✓ Panel and database' '  ✓ پنل و پایگاه داده';else vr_say '  ✗ Panel or database is unavailable' '  ✗ پنل یا پایگاه داده در دسترس نیست';failed=1;fi
+ if body="$(curl -fsS --max-time 10 -H "Authorization: Bearer $VELORAY_LOCAL_NODE_TOKEN" http://127.0.0.1:9191/health 2>>"$VELORAY_INSTALL_LOG")" && jq -e '.status=="ok" and .xray.installed==true and .xray.running==true' <<<"$body" >/dev/null 2>&1;then vr_say '  ✓ Agent and Xray runtime' '  ✓ نود و سرویس Xray';else vr_say '  ✗ Xray is stopped or the agent is unavailable; run veloray repair' '  ✗ سرویس Xray خاموش است یا نود پاسخ نمی‌دهد؛ دستور veloray repair را اجرا کنید';failed=1;fi
+ if body="$(curl -fsS --max-time 15 -H "Authorization: Bearer $VELORAY_LOCAL_NODE_TOKEN" http://127.0.0.1:9191/xray/stats 2>>"$VELORAY_INSTALL_LOG")" && jq -e '.accounting=="durable-v1" and (.ledger_id|type=="string" and length>0)' <<<"$body" >/dev/null 2>&1;then vr_say '  ✓ Persistent traffic accounting' '  ✓ ثبت پایدار مصرف ترافیک';else vr_say '  ✗ Traffic accounting API is unavailable' '  ✗ رابط ثبت ترافیک در دسترس نیست';failed=1;fi
+ if ((failed));then vr_diagnostics;vr_say "Inspect: $VELORAY_INSTALL_LOG" "گزارش عیب‌یابی: $VELORAY_INSTALL_LOG";return 1;fi
+ vr_say 'All checks passed.' 'همهٔ بررسی‌ها موفق بود.'
+}
+menu() {
+ local selection value
+ while true;do
+  summary
+  if [[ "${VELORAY_LANGUAGE:-en}" == fa ]];then
+   cat <<'MENU'
+
+   1  وضعیت سرویس‌ها           2  آدرس پنل
+   3  راه‌اندازی مجدد          4  روشن کردن
+   5  خاموش کردن               6  مشاهدهٔ گزارش‌ها
+   7  تغییر رمز مدیر           8  تغییر دامنه یا آی‌پی
+   9  تغییر پورت              10  گواهی HTTPS
+  11  پشتیبان‌گیری            12  بازیابی پشتیبان
+  13  پشتیبان‌گیری روزانه     14  بررسی سلامت
+  15  عیب‌یابی و بازیابی Xray 16  به‌روزرسانی
+  17  حذف برنامه              18  زبان / Language
+   0  خروج
+MENU
+  else
+   cat <<'MENU'
+
+   1  Service status            2  Panel address
+   3  Restart                   4  Start
+   5  Stop                      6  Logs
+   7  Administrator password    8  Domain or IP
+   9  Panel port               10  HTTPS certificate
+  11  Backup                   12  Restore backup
+  13  Daily backups            14  Health check
+  15  Recover Xray             16  Update
+  17  Uninstall                18  Language / زبان
+   0  Exit
+MENU
+  fi
+  [[ -t 0 ]]||return 0
+  read -rp "$(vr_text 'Select [0–18]: ' 'انتخاب [۰ تا ۱۸]: ')" selection||return 0
+  local -a operation=()
+  case "$selection" in
+   0) return 0;;1) operation=(status);;2) operation=(url);;3) operation=(restart);;4) operation=(start);;5) operation=(stop);;
+   6) read -rp "$(vr_text 'Log [web/agent/xray/install]: ' 'گزارش [web/agent/xray/install]: ')" value;operation=(logs "${value:-web}");;
+   7) read -rp "$(vr_text 'Username [admin]: ' 'نام کاربری [admin]: ')" value;operation=(reset "${value:-admin}");;
+   8) read -rp "$(vr_text 'New domain or IP: ' 'دامنه یا آی‌پی جدید: ')" value;operation=(domain "$value");;
+   9) read -rp "$(vr_text 'New port: ' 'پورت جدید: ')" value;operation=(port "$value");;
+   10) read -rp "$(vr_text 'Certificate email: ' 'ایمیل گواهی: ')" value;operation=(ssl "$value");;
+   11) operation=(backup);;
+   12) read -rp "$(vr_text 'Backup path: ' 'مسیر فایل پشتیبان: ')" value;operation=(restore "$value");;
+   13) read -rp "$(vr_text 'Daily backups [daily/off]: ' 'پشتیبان روزانه [daily/off]: ')" value;operation=(backup-schedule "$value");;
+   14) operation=(doctor);;15) operation=(repair);;16) operation=(update);;17) operation=(uninstall);;
+   18) read -rp 'Language [en/fa]: ' value;operation=(language "$value");;
+   *) vr_say 'Choose a listed number.' 'یکی از شماره‌های منو را وارد کنید.';continue;;
+  esac
+  "$0" "${operation[@]}"||true
+  [[ "$selection" != 17 || -x "$0" ]]||return 0
+  set -a;source "$ENV_FILE";set +a
+  read -rp "$(vr_text 'Press Enter to return…' 'برای بازگشت Enter بزنید…')" value||return 0
+ done
+}
 case "$command" in
- help) cat <<'HELP'
-velorayctl status | doctor | start | stop | restart
-velorayctl logs [web|agent|xray]
-velorayctl backup [FILE.tar.gz] | restore FILE.tar.gz
-velorayctl admin-reset [USERNAME]
-velorayctl domain HOST | port PORT | ssl EMAIL
-velorayctl update RELEASE_DIRECTORY | node | uninstall
-HELP
- ;;
- status) systemctl --no-pager status "$WEB" "$AGENT" xray.service; ;;
- doctor) systemctl is-active --quiet "$WEB" "$AGENT" xray.service postgresql nginx
- nginx -t
- curl -fsS --max-time 5 http://127.0.0.1:8610/api/health
- curl -fsS --max-time 5 -H "Authorization: Bearer $VELORAY_LOCAL_NODE_TOKEN" http://127.0.0.1:9191/health
- ;;
- start|stop|restart) systemctl "$command" "$WEB" "$AGENT"; ;;
- logs) unit="$WEB"; case "${1:-web}" in agent) unit="$AGENT";; xray) unit=xray.service;; web) ;; *) exit 2;; esac; exec journalctl -u "$unit" -n 100 -f; ;;
- backup) dir=/var/lib/veloray/backups;install -d -m 0700 "$dir"; file="${1:-$dir/veloray-$(date -u +%Y%m%dT%H%M%SZ).tar.gz}"; veloray backup "$file";echo "$file"; ;;
+ menu) menu;;
+ status) summary;;
+ url) printf '%s\n' "$VELORAY_PUBLIC_URL";;
+ doctor) doctor;;
+ start|stop|restart)
+ vr_step "${command^} services" 'مدیریت سرویس‌های پنل و Xray'
+ if [[ "$command" == stop ]];then vr_run systemctl stop "$WEB" "$AGENT" xray.service;else
+  vr_run systemctl "$command" xray.service "$AGENT" "$WEB"
+  vr_wait http://127.0.0.1:8610/api/health
+  vr_wait http://127.0.0.1:9191/health "$VELORAY_LOCAL_NODE_TOKEN"
+  doctor
+ fi
+ summary;;
+ logs) unit="$WEB";case "${1:-web}" in agent) unit="$AGENT";;xray) unit=xray.service;;web) ;;
+ install) latest="$(find /var/log/veloray -maxdepth 1 -name 'install-*.log' -type f | sort | tail -1)";[[ -n "$latest" ]]||{ vr_say 'No installation log found.' 'گزارش نصب موجود نیست.';exit 1; };exec tail -n 100 "$latest";;
+ *) vr_say 'Use web, agent, xray or install.' 'گزینهٔ web، agent، xray یا install را انتخاب کنید.';exit 2;;esac;exec journalctl -u "$unit" -n 100 -f;;
+ language) [[ "${1:-}" == en || "${1:-}" == fa ]]||exit 2;veloray set-env VELORAY_LANGUAGE "$1";vr_say 'Language saved.' 'زبان ذخیره شد.';;
+ backup) dir=/var/lib/veloray/backups;install -d -m 0700 "$dir"; file="${1:-$dir/veloray-$(date -u +%Y%m%dT%H%M%S%NZ).tar.gz}"; veloray backup "$file";echo "$file"; ;;
  restore) [[ $# -eq 1 ]] || { echo 'Usage: velorayctl restore FILE.tar.gz' >&2;exit 2; }
- veloray backup-verify "$1" >/dev/null
+ vr_run veloray backup-verify "$1"
+ vr_say 'Restore replaces current panel data and configuration. A recovery backup is created first.' 'بازیابی، اطلاعات و تنظیمات فعلی را جایگزین می‌کند؛ ابتدا پشتیبان بازیابی گرفته می‌شود.'
+ read -rp "$(vr_text 'Type RESTORE to continue: ' 'برای ادامه RESTORE را وارد کنید: ')" confirmation
+ [[ "$confirmation" == RESTORE ]]||{ vr_say 'Cancelled.' 'لغو شد.';exit 0; }
  # Always create a recovery point before replacing data and secrets.
  "$0" backup
  systemctl stop "$WEB" "$AGENT" xray.service
  trap 'echo "Restore stopped. Inspect the error and recovery backup before restarting services." >&2' ERR
- veloray restore "$1"
+ veloray restore-data "$1"
  chown root:veloray "$ENV_FILE";chmod 0640 "$ENV_FILE"
  chown root:veloray "$(dirname "$ENV_FILE")";chmod 0750 "$(dirname "$ENV_FILE")"
  # Discard old application keys before loading the restored environment.
@@ -54,7 +155,16 @@ HELP
  systemctl start xray.service "$AGENT" "$WEB"
  "$0" doctor
  ;;
- admin-reset) export VELORAY_ADMIN_USERNAME="${1:-admin}";read -rsp 'New password: ' VELORAY_ADMIN_PASSWORD;echo;export VELORAY_ADMIN_PASSWORD;veloray admin-reset;unset VELORAY_ADMIN_PASSWORD; ;;
+ reset|admin-reset)
+ export VELORAY_ADMIN_USERNAME="${1:-admin}"
+ if [[ -z "${VELORAY_ADMIN_PASSWORD:-}" ]];then
+  read -rsp "$(vr_text 'New password (12+ characters): ' 'رمز جدید (حداقل ۱۲ کاراکتر): ')" VELORAY_ADMIN_PASSWORD;printf '\n'
+  read -rsp "$(vr_text 'Confirm password: ' 'تکرار رمز جدید: ')" confirmation;printf '\n'
+  [[ "$VELORAY_ADMIN_PASSWORD" == "$confirmation" ]]||{ vr_say 'Passwords do not match.' 'رمزها یکسان نیستند.' >&2;exit 2; }
+ fi
+ export VELORAY_ADMIN_PASSWORD
+ if reset_output="$(veloray reset-password 2>&1)";then vr_say "Password changed for $VELORAY_ADMIN_USERNAME. Existing sessions were revoked." "رمز $VELORAY_ADMIN_USERNAME تغییر کرد و نشست‌های قبلی بسته شد.";else unset VELORAY_ADMIN_PASSWORD;printf '%s\n' "$reset_output" | tee -a "$VELORAY_INSTALL_LOG" >&2;exit 1;fi
+ unset VELORAY_ADMIN_PASSWORD confirmation;;
  domain|port) [[ $# -eq 1 ]]||exit 2
  old_origin="$VELORAY_PUBLIC_URL";old_host="$VELORAY_PUBLIC_HOST";old_port="$VELORAY_PANEL_PORT"
  if [[ "$command" == domain ]];then [[ "$1" =~ ^[a-zA-Z0-9.-]+$ ]]||exit 2;host="$1";port="$VELORAY_PANEL_PORT";else [[ "$1" =~ ^[0-9]+$ ]]&&(( $1>0&&$1<65536 ))||exit 2;host="$VELORAY_PUBLIC_HOST";port="$1";fi
@@ -65,23 +175,66 @@ HELP
  systemctl restart "$WEB"
  ;;
  ssl) [[ $# -eq 1 && -n "${VELORAY_PUBLIC_HOST:-}" ]]||exit 2
- certbot certonly --standalone --preferred-challenges http --agree-tos --non-interactive --email "$1" -d "$VELORAY_PUBLIC_HOST"
- veloray render-nginx
- ;;
- update) [[ $# -eq 1 && -f "$1/install.sh" ]]||{ echo 'Pass an extracted, verified release directory.' >&2;exit 2; };exec bash "$1/install.sh"; ;;
+ [[ "$VELORAY_PUBLIC_HOST" =~ ^[A-Za-z0-9.-]+$ && ! "$VELORAY_PUBLIC_HOST" =~ ^[0-9.]+$ && "$VELORAY_PANEL_PORT" != 80 ]]||{ vr_say 'Configure a public domain and use an HTTPS port other than 80 first.' 'ابتدا یک دامنهٔ عمومی و پورت HTTPS غیر از ۸۰ تنظیم کنید.' >&2;exit 2; }
+ vr_step 'Issue HTTPS certificate' 'صدور گواهی HTTPS'
+ vr_run veloray render-nginx
+ vr_run certbot certonly --webroot --webroot-path /var/lib/veloray-acme --preferred-challenges http --agree-tos --non-interactive --email "$1" -d "$VELORAY_PUBLIC_HOST"
+ vr_run veloray render-nginx
+ vr_say 'Trusted HTTPS certificate installed. Automatic renewal is enabled.' 'گواهی معتبر HTTPS نصب شد؛ تمدید خودکار فعال است.';;
+ repair)
+ vr_step 'Validate and recover Xray' 'بررسی و بازیابی سرویس Xray'
+ vr_xray_prepare
+ if ! vr_xray_check;then vr_say 'Xray config was rejected. Check certificate access and veloray logs xray.' 'پیکربندی Xray رد شد؛ دسترسی گواهی‌ها و veloray logs xray را بررسی کنید.' >&2;vr_error "$LINENO" 1;fi
+ vr_run systemctl restart xray.service "$AGENT"
+ vr_wait http://127.0.0.1:9191/health "$VELORAY_LOCAL_NODE_TOKEN"
+ doctor;;
+ backup-schedule)
+ case "${1:-}" in
+ daily)
+  cat >/etc/systemd/system/veloray-backup.service <<'SERVICE'
+[Unit]
+Description=VeloRay recovery backup
+After=postgresql.service
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/velorayctl backup
+UMask=0077
+Nice=10
+SERVICE
+  cat >/etc/systemd/system/veloray-backup.timer <<'TIMER'
+[Unit]
+Description=Daily VeloRay recovery backup
+[Timer]
+OnCalendar=*-*-* 03:00:00
+RandomizedDelaySec=15m
+Persistent=true
+[Install]
+WantedBy=timers.target
+TIMER
+  vr_run systemctl daemon-reload
+  vr_run systemctl enable --now veloray-backup.timer
+  vr_say 'Daily backup scheduled around 03:00 server time. Files are kept in /var/lib/veloray/backups.' 'پشتیبان روزانه حدود ساعت ۰۳:۰۰ سرور فعال شد؛ فایل‌ها در /var/lib/veloray/backups ذخیره می‌شوند.';;
+ off) vr_run systemctl disable --now veloray-backup.timer;vr_say 'Daily backups disabled. Existing backups are kept.' 'پشتیبان روزانه غیرفعال شد؛ فایل‌های قبلی حفظ می‌شوند.';;
+ *) echo 'Usage: veloray backup-schedule daily|off' >&2;exit 2;;esac;;
+ update)
+ if [[ $# -gt 0 ]];then [[ $# -eq 1 && -f "$1/install.sh" ]]||exit 2;exec bash "$1/install.sh" install --lang "${VELORAY_LANGUAGE:-en}";fi
+ vr_step 'Download installer' 'دریافت نصب‌کنندهٔ به‌روزرسانی'
+ temporary="$(mktemp -d)";trap 'rm -rf -- "$temporary"' EXIT
+ vr_run curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL --retry 3 --connect-timeout 15 --max-time 60 "https://raw.githubusercontent.com/${VELORAY_REPO:-PaarSaAm/VeloRay}/${VELORAY_REF:-main}/install.sh" -o "$temporary/install.sh"
+ bash "$temporary/install.sh" install --repo "${VELORAY_REPO:-PaarSaAm/VeloRay}" --ref "${VELORAY_REF:-main}" --lang "${VELORAY_LANGUAGE:-en}";;
  uninstall)
-  echo 'Remove VeloRay services and program files. Configuration, encryption keys, PostgreSQL data and backups are preserved for reinstall.'
-  read -rp 'Type REMOVE to continue: ' confirmation
-  [[ "$confirmation" == REMOVE ]]||{ echo 'Cancelled.';exit 0; }
-  systemctl disable --now veloray-web.service veloray-agent.service veloray-reconcile.timer xray.service 2>/dev/null||true
+  vr_say 'Remove services and program files. Configuration, database and backups are preserved.' 'سرویس‌ها و فایل‌های برنامه حذف می‌شوند؛ تنظیمات، پایگاه داده و پشتیبان‌ها حفظ می‌شوند.'
+  read -rp "$(vr_text 'Type REMOVE to continue: ' 'برای ادامه REMOVE را وارد کنید: ')" confirmation
+  [[ "$confirmation" == REMOVE ]]||{ vr_say 'Cancelled.' 'لغو شد.';exit 0; }
+  systemctl disable --now veloray-web.service veloray-agent.service veloray-reconcile.timer veloray-backup.timer xray.service 2>/dev/null||true
   systemctl stop veloray-reconcile.service 2>/dev/null||true
-  rm -f /etc/systemd/system/{veloray-web,veloray-agent,veloray-reconcile,xray}.service /etc/systemd/system/veloray-reconcile.timer
+  rm -f /etc/systemd/system/{veloray-web,veloray-agent,veloray-reconcile,xray}.service /etc/systemd/system/veloray-reconcile.timer /etc/systemd/system/veloray-backup.{service,timer}
   rm -f /etc/nginx/sites-enabled/veloray /etc/nginx/sites-available/veloray /etc/letsencrypt/renewal-hooks/deploy/veloray-nginx
   systemctl daemon-reload
-  if nginx -t;then systemctl reload nginx||true;fi
+  if vr_run nginx -t;then vr_run systemctl reload nginx||true;fi
   rm -rf -- /opt/veloray
   rm -f /usr/local/bin/veloray /usr/local/bin/veloray-agent /usr/local/bin/velorayctl
-  echo 'VeloRay removed. Run the installer again to reuse the preserved configuration and data.'
+  vr_say 'VeloRay removed. Reinstall to reuse the preserved configuration and data.' 'VeloRay حذف شد؛ برای استفادهٔ دوباره از داده‌ها نصب را اجرا کنید.'
  ;;
  node) echo 'Extract the release on the remote server and run: sudo bash deploy/node/install.sh'; ;;
  *) echo 'Unknown command. Run velorayctl help.' >&2;exit 2; ;;

@@ -8,10 +8,28 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
 )
+
+func TestHTTPSChallengeConfiguration(t *testing.T) {
+	for _, host := range []string{"panel.example.com", "2001:db8::1"} {
+		raw := string(nginxConfiguration(host, "8443", "/private/panel.crt", "/private/panel.key"))
+		for _, part := range []string{"listen 8443 ssl;", "listen 80;", "location ^~ /.well-known/acme-challenge/", "root /var/lib/veloray-acme;", "try_files $uri =404;", "proxy_pass http://127.0.0.1:8610;"} {
+			if !strings.Contains(raw, part) {
+				t.Fatalf("missing %q in configuration for %s", part, host)
+			}
+		}
+		if host == "2001:db8::1" && !strings.Contains(raw, "https://[2001:db8::1]:8443$request_uri") {
+			t.Fatal("IPv6 redirect is invalid")
+		}
+	}
+	if strings.Contains(string(nginxConfiguration("panel.example.com", "80", "cert", "key")), "listen 80;") {
+		t.Fatal("HTTPS on port 80 has a duplicate HTTP listener")
+	}
+}
 
 func TestSetEnvPreservesServiceGroup(t *testing.T) {
 	groups, err := os.Getgroups()
