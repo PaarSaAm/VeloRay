@@ -20,7 +20,6 @@ import { useTheme } from "@/components/theme/theme-provider";
 const copy = {
   en: {
     title: "Login to your account",
-    subtitle: "Enter your username and password.",
     username: "Username",
     password: "Password",
     code: "Authenticator / recovery code",
@@ -28,7 +27,6 @@ const copy = {
     verify: "Verify and continue",
     back: "Back to login",
     loading: "Please wait…",
-    secure: "Secure administrator access",
     version: "VeloRay v1.0",
     usernamePlaceholder: "Username",
     passwordPlaceholder: "Password",
@@ -39,7 +37,6 @@ const copy = {
   },
   fa: {
     title: "ورود به حساب کاربری",
-    subtitle: "نام کاربری و رمز عبورت را وارد کن.",
     username: "نام کاربری",
     password: "رمز عبور",
     code: "کد احراز هویت / بازیابی",
@@ -47,7 +44,6 @@ const copy = {
     verify: "تأیید و ادامه",
     back: "بازگشت به ورود",
     loading: "لطفاً صبر کنید…",
-    secure: "دسترسی امن مدیر سیستم",
     version: "VeloRay v1.0",
     usernamePlaceholder: "نام کاربری",
     passwordPlaceholder: "رمز عبور",
@@ -72,7 +68,6 @@ export function LoginPage({ onSuccess }: { onSuccess: () => void }) {
   const t = copy[locale];
   const rtl = locale === "fa";
   const formTitle = need2fa ? t.verifyTitle : t.title;
-  const formSubtitle = need2fa ? t.verifySubtitle : t.subtitle;
 
   const canSubmit = useMemo(() => {
     if (busy) return false;
@@ -148,15 +143,12 @@ export function LoginPage({ onSuccess }: { onSuccess: () => void }) {
         <section className="flex w-full flex-1 items-center justify-center py-8 sm:py-12">
           <div className="w-full max-w-[340px]">
             <div className="flex flex-col items-center gap-2 text-center">
-              <div className="mb-1 grid h-20 w-20 place-items-center drop-shadow-[0_14px_28px_rgba(0,237,123,.12)]">
+              <div className="mb-1 grid h-20 w-20 place-items-center drop-shadow-[0_14px_28px_rgba(90,142,235,.12)]">
                 <VeloRayMark className="h-20 w-20" />
               </div>
               <h1 className="mt-2 text-2xl font-semibold tracking-[-.025em] text-[var(--fg)]">
                 {formTitle}
               </h1>
-              <p className="max-w-[310px] text-[13px] leading-5 text-[var(--muted)]">
-                {formSubtitle}
-              </p>
             </div>
 
             <div className="mx-auto w-full max-w-[300px] pt-4">

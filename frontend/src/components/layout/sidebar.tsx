@@ -11,7 +11,6 @@ export type RouteKey =
   | "routing"
   | "inbounds"
   | "nodes"
-  | "traffic"
   | "xray"
   | "security"
   | "settings"
@@ -79,7 +78,6 @@ export function Sidebar({
     nodes: "nodes.read",
     outbounds: "outbounds.read",
     routing: "routing_rules.read",
-    traffic: "traffic.read",
     xray: "xray.read",
     api: "api.read",
   };

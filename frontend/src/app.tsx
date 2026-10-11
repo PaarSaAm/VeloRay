@@ -9,7 +9,6 @@ import { NodesPage as NodesPage } from "@/pages/nodes";
 import { InboundsPage as InboundsPage } from "@/pages/inbounds";
 import { ImportsPage as ImportsPage } from "@/pages/imports";
 import { ClientsPage as ClientsPage } from "@/pages/clients";
-import { TrafficPage as TrafficPage } from "@/pages/traffic";
 import { SecurityPage as SecurityPage } from "@/pages/security";
 import { SettingsPage as SettingsPage } from "@/pages/settings";
 import { XrayPage as XrayPage } from "@/pages/xray";
@@ -33,7 +32,6 @@ const meta: Record<RouteKey, [string, string]> = {
   routing: ["Routing", ""],
   inbounds: ["Inbounds", "Ports, protocols and connection security"],
   nodes: ["Nodes", "Local server and remote VeloRay agents"],
-  traffic: ["Traffic", "Client usage and traffic history"],
   xray: ["Xray Core", "Service health and configuration"],
   security: ["Security", "Administrator 2FA and account protection"],
   api: ["API", "REST endpoints and automation reference"],
@@ -50,7 +48,7 @@ const routes: Record<string, RouteKey> = {
   "/routing": "routing",
   "/nodes": "nodes",
   "/subscriptions": "clients",
-  "/traffic": "traffic",
+  "/traffic": "dashboard",
   "/xray": "xray",
   "/audit": "dashboard",
   "/security": "security",
@@ -67,7 +65,6 @@ const paths: Record<RouteKey, string> = {
   outbounds: "/outbounds",
   routing: "/routing",
   nodes: "/nodes",
-  traffic: "/traffic",
   xray: "/xray",
   security: "/security",
   api: "/api-docs",
@@ -130,7 +127,9 @@ export default function App() {
       setRouteState("dashboard");
       history.replaceState({}, "", "/dashboard");
     } else if (
-      ["/admin", "/audit", "/subscriptions"].includes(window.location.pathname)
+      ["/admin", "/audit", "/subscriptions", "/traffic"].includes(
+        window.location.pathname,
+      )
     )
       history.replaceState({}, "", paths[route]);
   }, [user, route]);
@@ -147,7 +146,6 @@ export default function App() {
       outbounds: "outbounds.read",
       routing: "routing_rules.read",
       nodes: "nodes.read",
-      traffic: "traffic.read",
       xray: "xray.read",
       api: "api.read",
     };
@@ -170,8 +168,6 @@ export default function App() {
         return <SettingsPage initialTab="imports" />;
       case "clients":
         return <ClientsPage />;
-      case "traffic":
-        return <Dashboard />;
       case "xray":
         return <XrayPage />;
       case "security":
