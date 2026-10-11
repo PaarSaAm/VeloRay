@@ -57,7 +57,7 @@ download_source() {
  for url in "https://codeload.github.com/$repository/tar.gz/$commit" \
             "https://api.github.com/repos/$repository/tarball/$commit" \
             "https://github.com/$repository/archive/$commit.tar.gz";do
-  if fetch "$url" "$temporary/source.tar.gz";then return 0;fi
+  if fetch "$url" "$temporary/source.tar.gz" 3600;then return 0;fi
   rm -f -- "$temporary/source.tar.gz"
   vr_say 'Trying an alternate GitHub download route…' 'تلاش با مسیر جایگزین دانلود گیت‌هاب…'
  done
