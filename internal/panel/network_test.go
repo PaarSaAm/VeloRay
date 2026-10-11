@@ -7,6 +7,7 @@ import (
 
 func TestIntegrationNetworkDefaultsOrderingAndCoreIsolation(t *testing.T) {
 	s, ctx := integration(t)
+	asData := func(value any) Data { return obj(Data{"item": value}, "item") }
 	n, _, _ := fixture(t, s, ctx, &nodeMock{running: true})
 	n["_singbox_deployed"] = true
 	outbound := defaults("outbounds")
@@ -43,16 +44,16 @@ func TestIntegrationNetworkDefaultsOrderingAndCoreIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 	outs := array(cfg, "outbounds")
-	if len(outs) != 3 || str(outs[0].(Data), "tag") != "direct" || str(outs[1].(Data), "tag") != "blocked" || str(outs[2].(Data), "tag") != "edge" {
+	if len(outs) != 3 || str(asData(outs[0]), "tag") != "direct" || str(asData(outs[1]), "tag") != "blocked" || str(asData(outs[2]), "tag") != "edge" {
 		t.Fatal("default outbounds changed", outs)
 	}
 	rules := array(obj(cfg, "routing"), "rules")
-	if len(rules) != 3 || str(rules[0].(Data), "outboundTag") != "api" || str(rules[1].(Data), "outboundTag") != "edge" || array(rules[1].(Data), "domain")[0] != "domain:route-100.example" {
+	if len(rules) != 3 || str(asData(rules[0]), "outboundTag") != "api" || str(asData(rules[1]), "outboundTag") != "edge" || array(asData(rules[1]), "domain")[0] != "domain:route-100.example" {
 		t.Fatal("protected API or routes missing", rules)
 	}
 	sing := obj(cfg, "_singbox")
 	singRules := array(obj(sing, "route"), "rules")
-	if len(array(sing, "outbounds")) != 1 || len(singRules) != 1 || str(singRules[0].(Data), "action") != "reject" || str(obj(sing, "route"), "final") != "direct" {
+	if len(array(sing, "outbounds")) != 1 || len(singRules) != 1 || str(asData(singRules[0]), "action") != "reject" || str(obj(sing, "route"), "final") != "direct" {
 		t.Fatal("core routes leaked", sing)
 	}
 	protocolRule := defaults("routing_rules")
@@ -66,7 +67,7 @@ func TestIntegrationNetworkDefaultsOrderingAndCoreIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 	singRules = array(obj(obj(cfg, "_singbox"), "route"), "rules")
-	if len(singRules) != 3 || str(singRules[0].(Data), "action") != "sniff" {
+	if len(singRules) != 3 || str(asData(singRules[0]), "action") != "sniff" {
 		t.Fatal("protocol rule lacks sniffing", singRules)
 	}
 
