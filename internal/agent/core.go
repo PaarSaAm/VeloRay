@@ -173,23 +173,32 @@ func (m *Manager) inspectPorts(ctx context.Context, raw []byte) ([]PortCheck, er
 	return InspectConfigPorts(ctx, m.Runtime, m.ServiceName, raw)
 }
 
-func (m *Manager) singOnlineIPs(ctx context.Context) map[string]map[string]int64 {
+func (m *Manager) singOnlineIPs(ctx context.Context) (map[string]map[string]int64, error) {
 	out := map[string]map[string]int64{}
 	req, _ := http.NewRequestWithContext(ctx, "GET", "http://127.0.0.1:10087/connections", nil)
 	client := http.Client{Timeout: 2 * time.Second}
 	res, e := client.Do(req)
 	if e != nil {
-		return out
+		return out, e
 	}
 	defer res.Body.Close()
-	raw, _ := io.ReadAll(io.LimitReader(res.Body, 4<<20))
+	if res.StatusCode != http.StatusOK {
+		return out, fmt.Errorf("connection telemetry returned %d", res.StatusCode)
+	}
+	raw, e := io.ReadAll(io.LimitReader(res.Body, (4<<20)+1))
+	if e != nil {
+		return out, e
+	}
+	if len(raw) > 4<<20 {
+		return out, fmt.Errorf("connection telemetry exceeds size limit")
+	}
 	var live struct {
 		Connections []struct {
 			Metadata struct{ SourceIP, User string }
 		}
 	}
-	if json.Unmarshal(raw, &live) != nil {
-		return out
+	if e = json.Unmarshal(raw, &live); e != nil {
+		return out, e
 	}
 	for _, c := range live.Connections {
 		ip, name := c.Metadata.SourceIP, c.Metadata.User
@@ -201,7 +210,7 @@ func (m *Manager) singOnlineIPs(ctx context.Context) map[string]map[string]int64
 		}
 		out[name][ip] = time.Now().Unix()
 	}
-	return out
+	return out, nil
 }
 func splitCore(raw []byte) ([]byte, []byte, error) {
 	var cfg map[string]json.RawMessage

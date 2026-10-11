@@ -1,3 +1,4 @@
+import { ClientConnections } from "@/components/client-connections";
 import { Textarea } from "@/components/ui/controls";
 import { Select, Input } from "@/components/ui/controls";
 import { t } from "@/lib/i18n";
@@ -10,6 +11,8 @@ import {
   Copy,
   ExternalLink,
   MoreHorizontal,
+  Globe,
+  MonitorSmartphone,
   Pause,
   Pencil,
   Play,
@@ -122,6 +125,10 @@ export function ClientsPage() {
     [editor, setEditor] = useState<Editor | null>(null),
     [busy, setBusy] = useState(false),
     [menu, setMenu] = useState<number | null>(null);
+  const [connections, setConnections] = useState<{
+    client: ClientItem;
+    kind: "ips" | "devices";
+  } | null>(null);
   const [owners, setOwners] = useState<import("@/lib/api").AdminUser[]>([]);
   useEffect(() => {
     if (session?.is_superuser)
@@ -804,6 +811,22 @@ export function ClientsPage() {
                               }}
                             />
                             <MenuItem
+                              icon="globe"
+                              label={t("IP's")}
+                              onClick={() => {
+                                setMenu(null);
+                                setConnections({ client: c, kind: "ips" });
+                              }}
+                            />
+                            <MenuItem
+                              icon="device"
+                              label={t("Device's")}
+                              onClick={() => {
+                                setMenu(null);
+                                setConnections({ client: c, kind: "devices" });
+                              }}
+                            />
+                            <MenuItem
                               icon="rotate-left"
                               disabled={!can(session, "clients.write")}
                               label={t("Reset usage")}
@@ -913,6 +936,24 @@ export function ClientsPage() {
                       <Pencil className="h-3.5 w-3.5" />
                       {t("Edit")}
                     </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setConnections({ client: c, kind: "ips" })}
+                    >
+                      <Globe size={14} />
+                      {t("IP's")}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() =>
+                        setConnections({ client: c, kind: "devices" })
+                      }
+                    >
+                      <MonitorSmartphone size={14} />
+                      {t("Device's")}
+                    </Button>
                     <Button size="sm" variant="ghost" onClick={() => toggle(c)}>
                       {c.enabled ? (
                         <Pause className="h-3.5 w-3.5" />
@@ -939,6 +980,14 @@ export function ClientsPage() {
           )}
         </CardContent>
       </Card>
+      {connections && (
+        <ClientConnections
+          key={`${connections.client.id}-${connections.kind}`}
+          client={connections.client}
+          kind={connections.kind}
+          onClose={() => setConnections(null)}
+        />
+      )}
       {editor && (
         <ClientModal
           editor={editor}

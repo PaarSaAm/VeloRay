@@ -648,6 +648,20 @@ export const fa: Record<string, string> = Object.fromEntries(
     .map((line) => line.split("|")),
 );
 Object.assign(fa, {
+  "IP's": "آی‌پی‌ها",
+  "Device's": "دستگاه‌ها",
+  "No connected IPs": "آی‌پی متصلی وجود ندارد",
+  "No registered devices": "دستگاهی ثبت نشده است",
+  "Devices are registered by apps that send HWID.":
+    "ثبت دستگاه توسط برنامه‌های دارای HWID انجام می‌شود.",
+  "Some connection data is unavailable": "بخشی از اطلاعات اتصال در دسترس نیست",
+  "Last observed": "آخرین مشاهده",
+  "First registered": "اولین ثبت",
+  "Last subscription update": "آخرین دریافت ساب",
+  Application: "برنامه",
+  Device: "دستگاه",
+  "Could not load connections": "دریافت اطلاعات اتصال انجام نشد",
+
   " · Shared across {0} connections": " · مشترک بین {0} اتصال",
   "Actions for {0}": "عملیات برای {0}",
   "Delete administrator {0}?": "حساب {0} حذف شود؟",

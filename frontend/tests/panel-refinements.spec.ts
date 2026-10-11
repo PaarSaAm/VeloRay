@@ -244,3 +244,147 @@ test("editing credentials preserves advanced fields and templates remain isolate
   expect(() => parsePorts("9000-8000")).toThrow();
   expect(() => parsePorts("65536")).toThrow();
 });
+
+test("client IP and registered device dialogs on desktop and mobile", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("veloray-theme", "dark");
+    localStorage.setItem("veloray-locale", "en");
+  });
+  let unavailable = false,
+    fail = false;
+  await page.route("**/api/**", async (route) => {
+    const path = new URL(route.request().url()).pathname.replace(/\/$/, "");
+    let json: any = {};
+    if (path === "/api/auth/me")
+      json = { id: 1, username: "admin", is_superuser: true, permissions: [] };
+    else if (path === "/api/settings")
+      json = {
+        site_name: "VeloRay",
+        default_locale: "en",
+        default_expiry_days: 30,
+      };
+    else if (path === "/api/inbounds")
+      json = [{ id: 1, name: "main", supports_clients: true }];
+    else if (path === "/api/clients")
+      json = [
+        {
+          id: 7,
+          name: "alice",
+          inbound: 1,
+          inbound_name: "main",
+          node_name: "Local",
+          enabled: true,
+          online: true,
+          used_traffic_bytes: 0,
+          traffic_limit_bytes: 0,
+          usage_metered: true,
+          device_limit: 0,
+          device_count: 0,
+          account_id: 0,
+          protocol: "vless",
+          expires_at: null,
+          subscription_url: "/sub/test",
+          share_link: "vless://test",
+          effective_traffic_multiplier: 1,
+        },
+      ];
+    else if (path === "/api/clients/7/ips") {
+      if (fail) {
+        await route.fulfill({
+          status: 503,
+          json: { detail: "Connection service unavailable" },
+        });
+        return;
+      }
+      json = {
+        count: unavailable ? 0 : 1,
+        available: !unavailable,
+        observed_at: new Date().toISOString(),
+        items: unavailable
+          ? []
+          : [
+              {
+                ip: "203.0.113.7",
+                last_seen_at: new Date().toISOString(),
+                connections: [
+                  {
+                    node: 1,
+                    node_name: "Local",
+                    inbound: 1,
+                    inbound_name: "main",
+                    core: "xray",
+                  },
+                ],
+              },
+            ],
+      };
+    } else if (path === "/api/clients/7/devices")
+      json = {
+        count: 1,
+        items: [
+          {
+            id: 1,
+            hwid: "device-123",
+            device_model: "iPhone 14",
+            device_os: "iOS",
+            os_version: "18.3",
+            user_agent: "TestApp/1.0",
+            first_seen_at: "2026-10-11T10:00:00Z",
+            last_seen_at: "2026-10-11T11:00:00Z",
+          },
+        ],
+      };
+    else if (path === "/api/admin/users") json = [];
+    await route.fulfill({ json });
+  });
+  await page.goto("/clients");
+  await page.getByRole("button", { name: "Actions for alice" }).click();
+  await page
+    .getByRole("button", { name: "IP's", exact: true })
+    .filter({ visible: true })
+    .click();
+  let dialog = page.getByRole("dialog");
+  await expect(dialog.getByText("203.0.113.7", { exact: true })).toBeVisible();
+  unavailable = true;
+  await dialog.getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect(
+    dialog.getByText("Some connection data is unavailable"),
+  ).toBeVisible();
+  await expect(dialog.getByText("203.0.113.7", { exact: true })).toHaveCount(0);
+  await expect(dialog.getByText("No connected IPs")).toHaveCount(0);
+  fail = true;
+  await dialog.getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect(dialog.getByRole("alert")).toContainText(
+    "Connection service unavailable",
+  );
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await page.getByRole("button", { name: "Actions for alice" }).click();
+  await page
+    .getByRole("button", { name: "Device's", exact: true })
+    .filter({ visible: true })
+    .click();
+  dialog = page.getByRole("dialog");
+  await expect(dialog.getByText("iPhone 14", { exact: true })).toBeVisible();
+  await expect(dialog.getByText("device-123", { exact: true })).toBeVisible();
+  await expect(
+    dialog.getByText("Last subscription update", { exact: true }),
+  ).toBeVisible();
+  await expect(dialog.getByText("Online", { exact: true })).toHaveCount(0);
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page
+    .getByRole("button", { name: "Device's", exact: true })
+    .filter({ visible: true })
+    .click();
+  await expect(
+    page.getByRole("dialog").getByText("iPhone 14", { exact: true }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBeTruthy();
+});

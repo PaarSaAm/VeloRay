@@ -2,6 +2,8 @@ import { useLocale } from "@/lib/i18n";
 import type { HTMLAttributes } from "react";
 import {
   Activity,
+  Globe,
+  MonitorSmartphone,
   ArrowUpRight,
   Bell,
   ChartArea,
@@ -48,6 +50,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 const icons: Record<string, LucideIcon> = {
+  globe: Globe,
+  device: MonitorSmartphone,
   "gauge-high": Gauge,
   route: Route,
   "arrow-right-from-bracket": ArrowUpRight,

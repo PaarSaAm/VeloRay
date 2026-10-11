@@ -189,6 +189,13 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request, path string, a Acto
 	if kind == "api_keys" && len(parts) > 2 && parts[2] == "reset" {
 		return s.resetAPIKey(w, r, id, a)
 	}
+	if kind == "clients" && len(parts) == 3 && oneOf(parts[2], "ips", "devices") {
+		if r.Method != http.MethodGet {
+			return nil, 0, fail(405, "method not allowed")
+		}
+		out, err := s.clientConnections(ctx, id, parts[2])
+		return out, 200, err
+	}
 	if len(parts) > 2 {
 		return s.action(w, r, kind, id, parts[2], a)
 	}

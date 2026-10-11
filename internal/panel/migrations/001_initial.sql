@@ -54,6 +54,17 @@ CREATE TABLE IF NOT EXISTS vr_accounts (id bigserial PRIMARY KEY, data jsonb NOT
  node_id bigint GENERATED ALWAYS AS ((data->>'_node')::bigint) STORED NOT NULL REFERENCES vr_nodes(id) ON DELETE CASCADE);
 ALTER TABLE vr_clients ADD COLUMN IF NOT EXISTS account_id bigint GENERATED ALWAYS AS ((data->>'_account')::bigint) STORED REFERENCES vr_accounts(id);
 CREATE INDEX IF NOT EXISTS vr_clients_account ON vr_clients(account_id) WHERE account_id IS NOT NULL;
+CREATE TABLE IF NOT EXISTS vr_client_devices (
+ id bigserial PRIMARY KEY,
+ client_id bigint REFERENCES vr_clients(id) ON DELETE CASCADE,
+ account_id bigint REFERENCES vr_accounts(id) ON DELETE CASCADE,
+ hwid text NOT NULL CHECK(length(hwid) BETWEEN 1 AND 256),
+ data jsonb NOT NULL CHECK(jsonb_typeof(data)='object'),
+ first_seen_at timestamptz NOT NULL DEFAULT now(),
+ last_seen_at timestamptz NOT NULL DEFAULT now(),
+ CHECK((client_id IS NULL) <> (account_id IS NULL)),
+ UNIQUE(client_id,hwid), UNIQUE(account_id,hwid)
+);
 CREATE TABLE IF NOT EXISTS vr_import_jobs (
  id text PRIMARY KEY, actor_id bigint NOT NULL REFERENCES vr_users(id) ON DELETE CASCADE,
  node_id bigint NOT NULL REFERENCES vr_nodes(id) ON DELETE CASCADE, digest text NOT NULL,

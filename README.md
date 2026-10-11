@@ -121,6 +121,12 @@ Set **Devices** to the allowed number of concurrent source IPs. `0` means unlimi
 
 The core exposes source IPs, not hardware identities. Devices behind the same NAT share one IP; a device changing networks can appear as another IP. Enforcement follows the five-second reconciliation loop. Applying routing policy restarts the affected core, so other connections on that core can briefly reconnect.
 
+### Connected IPs and registered devices
+
+Open a client’s action menu and select **IP's** for current VPN source IPs, or **Device's** for devices registered through subscription downloads. IP lists refresh from native core telemetry and show node/inbound associations; stale or unavailable telemetry is reported explicitly.
+
+Device registration uses the optional `X-HWID` header, with `X-Device-OS`, `X-Ver-OS`, `X-Device-Model` and `User-Agent` metadata. First and latest subscription downloads are recorded, with one entry per identifier across a shared account. Browser portal visits, HEAD requests and failed downloads do not register devices. Apps without HWID remain compatible but cannot populate this list. Registered devices are not an online-device count, and their metadata is reported by the client app. The existing Devices limit still controls concurrent source IPs.
+
 ### Renewals and shared accounts
 
 Quota renewal resets charged usage on the configured interval. Expiry and quota exhaustion disable the account. Imported shared accounts retain one quota, expiry and subscription across their connections.

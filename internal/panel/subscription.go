@@ -208,6 +208,10 @@ func (s *Server) subscription(w http.ResponseWriter, r *http.Request) {
 		body = string(raw) + "\n"
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	case "json":
+		if err := s.recordSubscriptionDevice(r, c); err != nil {
+			s.respond(w, r, nil, 0, err)
+			return
+		}
 		writeJSON(w, 200, Data{"name": str(c, "name"), "protocol": str(i, "protocol"), "link": link, "profile": profile, "used_traffic_bytes": num(c, "used_traffic_bytes"), "traffic_limit_bytes": num(c, "traffic_limit_bytes"), "expires_at": c["expires_at"], "raw_used_traffic_bytes": num(c, "raw_used_traffic_bytes"), "traffic_multiplier": c["traffic_multiplier"], "connections": details})
 		return
 	case "clash", "yaml":
@@ -241,6 +245,10 @@ func (s *Server) subscription(w http.ResponseWriter, r *http.Request) {
 		return
 	default:
 		writeJSON(w, 400, Data{"detail": "Unknown subscription format"})
+		return
+	}
+	if err := s.recordSubscriptionDevice(r, c); err != nil {
+		s.respond(w, r, nil, 0, err)
 		return
 	}
 	if r.Method != "HEAD" {

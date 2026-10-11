@@ -109,6 +109,8 @@ func (s *Server) collect(ctx context.Context, q Query, node Data) error {
 	node["_core_ledgers"] = obj(stats, "core_ledgers")
 	node["_ledger_id"] = ledgerID
 	node["_online_ips"] = obj(stats, "online_ips")
+	node["_online_ips_available"] = flag(stats, "online_ips_available")
+	node["_online_ip_cores"] = obj(stats, "online_ip_cores")
 	node["_online_available"] = flag(stats, "online_available")
 	node["_online_tracking_required"] = flag(stats, "online_tracking_required")
 	node["_telemetry_at"] = stamp()

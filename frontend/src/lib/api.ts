@@ -386,3 +386,33 @@ function localizeError(message: string): string {
   if (translated !== message) return translated;
   return "درخواست انجام نشد. ورودی‌ها و دسترسی حساب را بررسی کنید.";
 }
+
+export type ClientIPList = {
+  count: number;
+  available: boolean;
+  observed_at: string;
+  items: {
+    ip: string;
+    last_seen_at: string;
+    connections: {
+      node: number;
+      node_name: string;
+      inbound: number;
+      inbound_name: string;
+      core: string;
+    }[];
+  }[];
+};
+export type ClientDeviceList = {
+  count: number;
+  items: {
+    id: number;
+    hwid: string;
+    device_model?: string;
+    device_os?: string;
+    os_version?: string;
+    user_agent?: string;
+    first_seen_at: string;
+    last_seen_at: string;
+  }[];
+};

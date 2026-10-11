@@ -124,7 +124,10 @@ func TestRealCoresTrafficAndAuthenticatedIPs(t *testing.T) {
 				if total < int64(len(payload)) {
 					t.Fatal("real traffic was not counted", string(stats))
 				}
-				ips := m.singOnlineIPs(ctx)
+				ips, err := m.singOnlineIPs(ctx)
+				if err != nil {
+					t.Fatal(err)
+				}
 				if ips[name]["127.0.0.2"] == 0 {
 					t.Fatal("secondary authenticated IP missing", ips)
 				}

@@ -106,6 +106,8 @@ func (s Server) Handler() http.Handler {
 			a.Stat = append(a.Stat, b.Stat...)
 
 			a.OnlineUsers = append(a.OnlineUsers, b.OnlineUsers...)
+			a.OnlineIPCoreAvailable["singbox"] = b.OnlineIPsAvailable
+			a.OnlineIPsAvailable = a.OnlineIPsAvailable && b.OnlineIPsAvailable
 			for name, ips := range b.OnlineIPs {
 				a.OnlineIPs[name] = ips
 			}

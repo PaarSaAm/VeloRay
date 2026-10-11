@@ -249,6 +249,8 @@ type Snapshot struct {
 	LedgerID               string                      `json:"ledger_id"`
 	OnlineUsers            []string                    `json:"online_users"`
 	OnlineIPs              map[string]map[string]int64 `json:"online_ips"`
+	OnlineIPsAvailable     bool                        `json:"online_ips_available"`
+	OnlineIPCoreAvailable  map[string]bool             `json:"online_ip_cores"`
 	OnlineAvailable        bool                        `json:"online_available"`
 	OnlineTrackingRequired bool                        `json:"online_tracking_required"`
 	ObservedAt             string                      `json:"observed_at"`
@@ -442,13 +444,17 @@ func (m *Manager) Stats(ctx context.Context) (Snapshot, error) {
 	s.OnlineIPs = map[string]map[string]int64{}
 	if m.Core == "singbox" {
 		if running {
-			s.OnlineIPs = m.singOnlineIPs(ctx)
+			var onlineErr error
+			s.OnlineIPs, onlineErr = m.singOnlineIPs(ctx)
+			s.OnlineIPsAvailable = onlineErr == nil
 			for name := range s.OnlineIPs {
 				s.OnlineUsers = append(s.OnlineUsers, name)
 			}
 		}
-		s.OnlineAvailable = true
+		s.OnlineAvailable = s.OnlineIPsAvailable || !running
+		s.OnlineIPsAvailable = s.OnlineAvailable
 	} else if !running {
+		s.OnlineIPsAvailable = true
 		s.OnlineAvailable = true
 	} else {
 		var cfg struct {
@@ -485,6 +491,7 @@ func (m *Manager) Stats(ctx context.Context) (Snapshot, error) {
 		if _, ok := m.Runtime.(Commands); ok {
 			if ips, e := xrayOnlineIPs(ctx); e == nil {
 				s.OnlineIPs = ips
+				s.OnlineIPsAvailable = true
 				s.OnlineAvailable = true
 				s.OnlineUsers = []string{}
 				for name := range ips {
@@ -493,6 +500,7 @@ func (m *Manager) Stats(ctx context.Context) (Snapshot, error) {
 			}
 		}
 	}
+	s.OnlineIPCoreAvailable = map[string]bool{fallbackCore(m.Core): s.OnlineIPsAvailable}
 	for k, v := range m.state.Counters {
 		s.Stat = append(s.Stat, Counter{k, v.Total})
 	}
@@ -784,4 +792,11 @@ func (m *Manager) hasOperation(id string) bool {
 	defer m.mu.Unlock()
 	_, ok := m.state.Operations[id]
 	return ok
+}
+
+func fallbackCore(core string) string {
+	if core == "singbox" {
+		return core
+	}
+	return "xray"
 }
