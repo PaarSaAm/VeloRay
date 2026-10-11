@@ -49,3 +49,28 @@ func TestInvalidMultipliersAndOverflow(t *testing.T) {
 		t.Fatal("old account counters changed")
 	}
 }
+
+func TestDirectionalTrafficKeepsRawAndChargedSeparate(t *testing.T) {
+	c := defaults("clients")
+	c["traffic_multiplier"] = 3
+	for direction, delta := range map[string]int64{"uplink": 100, "downlink": 200} {
+		if err := applyDirectionalTrafficDelta(c, direction, delta); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if num(c, "used_traffic_bytes") != 900 || num(c, "raw_used_traffic_bytes") != 300 || num(c, "raw_upload_traffic_bytes") != 100 || num(c, "raw_download_traffic_bytes") != 200 {
+		t.Fatal("directional counters were multiplied", c)
+	}
+	before := clone(c)
+	if err := applyDirectionalTrafficDelta(c, "invalid", 1); err == nil || num(c, "used_traffic_bytes") != num(before, "used_traffic_bytes") {
+		t.Fatal("invalid direction changed accounting", c)
+	}
+	c["raw_upload_traffic_bytes"] = int64(^uint64(0) >> 1)
+	if err := applyDirectionalTrafficDelta(c, "uplink", 1); err == nil || num(c, "used_traffic_bytes") != 900 {
+		t.Fatal("direction overflow changed accounting", c)
+	}
+	resetTraffic(c)
+	if num(c, "raw_upload_traffic_bytes") != 0 || num(c, "raw_download_traffic_bytes") != 0 || num(c, "raw_lifetime_traffic_bytes") != 300 {
+		t.Fatal("reset lost lifetime or retained directions", c)
+	}
+}

@@ -1,4 +1,45 @@
 const entries = `
+Protocol detection|تشخیص پروتکل
+
+Outbound tags|تگ‌های خروجی
+sing-box blocking rules must use the reject action|برای مسدودسازی در sing-box از reject استفاده کنید
+
+Upload|آپلود
+Download|دانلود
+Earlier traffic|ترافیک قدیمی
+24h usage|مصرف ۲۴ ساعت
+Built-in|پیش‌فرض
+Default route|مسیر پیش‌فرض
+Panel API|رابط پنل
+Node rule|قانون نود
+New rule|قانون جدید
+New outbound|خروجی جدید
+Rules|قوانین
+Configured outbounds|خروجی‌های تنظیم‌شده
+No custom rules|قانون سفارشی وجود ندارد
+No custom outbounds|خروجی سفارشی وجود ندارد
+Name or match|نام یا شرط
+Name or tag|نام یا تگ
+Duplicate|کپی
+Server address|آدرس سرور
+Server port|پورت سرور
+Domains|دامنه‌ها
+Destination IPs|آی‌پی‌های مقصد
+Source IPs|آی‌پی‌های مبدا
+Inbound tags|تگ‌های ورودی
+Protocols|پروتکل‌ها
+Destination|مقصد
+Network|شبکه
+Any|همه
+Block|مسدود
+All traffic|تمام ترافیک
+Block private IPs|مسدودسازی آی‌پی خصوصی
+Block BitTorrent|مسدودسازی بیت‌تورنت
+Direct HTTPS|ارتباط مستقیم HTTPS
+Block ads|مسدودسازی تبلیغات
+Advanced configuration|تنظیمات پیشرفته
+Invalid port or range|پورت یا بازه نامعتبر است
+
 0 means no expiry.|۰ یعنی بدون انقضا.
 0 means unlimited.|۰ یعنی نامحدود.
 1 day|۱ روز

@@ -52,6 +52,9 @@ func validateNetworkEntity(ctx context.Context, q Query, kind string, d Data) er
 			key = "outbound"
 		}
 		tag := str(config, key)
+		if str(d, "core") == "singbox" && tag == "blocked" {
+			return errors.New("sing-box blocking rules must use the reject action")
+		}
 		if tag != "" && !oneOf(tag, "direct", "blocked") {
 			outs, e := list(ctx, q, "outbounds", "WHERE node_id=$1", num(d, "node"))
 			if e != nil {
@@ -100,22 +103,45 @@ func applyNetworkEntities(ctx context.Context, q Query, node, cfg Data, core str
 	}
 	route := obj(cfg, key)
 	entries = array(route, "rules")
+	needsSniff := false
 	for _, rule := range rules {
 		if flag(rule, "enabled") && str(rule, "core") == core {
 			if e := validateNetworkEntity(ctx, q, "routing_rules", rule); e != nil {
 				return e
 			}
 			v := clone(obj(rule, "config"))
+			if core == "singbox" && needsProtocolSniff(v) {
+				needsSniff = true
+			}
 			if core == "xray" {
 				v["type"] = "field"
 			}
 			entries = append(entries, v)
 		}
 	}
+	if needsSniff {
+		entries = append([]any{Data{"action": "sniff"}}, entries...)
+	}
 	route["rules"] = entries
 	cfg[key] = route
 	return nil
 }
+func needsProtocolSniff(config Data) bool {
+	for _, key := range []string{"protocol", "domain", "domain_suffix", "domain_keyword", "domain_regex"} {
+		if len(array(config, key)) > 0 || str(config, key) != "" {
+			return true
+		}
+	}
+	for _, raw := range array(config, "rules") {
+		b, _ := json.Marshal(raw)
+		child, err := decode(b)
+		if err == nil && needsProtocolSniff(child) {
+			return true
+		}
+	}
+	return false
+}
+
 func singTLS(i, n Data) Data {
 	security := str(i, "security")
 	if security == "none" {

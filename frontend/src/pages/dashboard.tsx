@@ -5,6 +5,7 @@ import * as echarts from "echarts/core";
 import { LineChart } from "echarts/charts";
 import {
   GridComponent,
+  LegendComponent,
   TooltipComponent,
   DataZoomComponent,
 } from "echarts/components";
@@ -12,6 +13,7 @@ import { CanvasRenderer } from "echarts/renderers";
 echarts.use([
   LineChart,
   GridComponent,
+  LegendComponent,
   TooltipComponent,
   DataZoomComponent,
   CanvasRenderer,
@@ -20,6 +22,7 @@ import { useTheme } from "@/components/theme/theme-provider";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowUpRight,
+  ArrowDownLeft,
   CircleGauge,
   RefreshCw,
   Server,
@@ -27,6 +30,7 @@ import {
 } from "lucide-react";
 import {
   api,
+  distinctAccounts,
   type AppSettings,
   type ClientItem,
   type NodeItem,
@@ -44,14 +48,20 @@ type Overview = {
   clients_total: number;
   clients_active: number;
   clients_expiring_7d: number;
-  traffic_used_bytes: number;
+  traffic_raw_bytes: number;
+  traffic_upload_bytes: number;
+  traffic_download_bytes: number;
   traffic_limit_bytes: number;
   inbounds_total: number;
   protocols: { protocol: string; count: number }[];
 };
 type TrafficPoint = {
   at: string;
-  used_traffic_bytes: number;
+  raw_upload_traffic_bytes: number;
+  raw_download_traffic_bytes: number;
+  upload_bytes: number;
+  download_bytes: number;
+  interval_seconds: number;
   active_clients: number;
   online_nodes: number;
 };
@@ -138,29 +148,53 @@ function TrafficChart({ points }: { points: TrafficPoint[] }) {
   useEffect(() => {
     const css = getComputedStyle(document.documentElement),
       color = css.getPropertyValue("--chart-line").trim();
-    const data = points.map((p, i) => [
-      new Date(p.at).getTime(),
-      mode === "usage"
-        ? p.used_traffic_bytes
-        : i
-          ? Math.max(
-              0,
-              p.used_traffic_bytes - points[i - 1].used_traffic_bytes,
-            ) /
-            Math.max(
-              1,
-              (new Date(p.at).getTime() -
-                new Date(points[i - 1].at).getTime()) /
-                1000,
-            )
-          : 0,
-    ]);
+    const downloadColor = css.getPropertyValue("--info").trim();
+    const series = [
+      {
+        name: t("Upload"),
+        color,
+        cumulative: "raw_upload_traffic_bytes",
+        interval: "upload_bytes",
+      },
+      {
+        name: t("Download"),
+        color: downloadColor,
+        cumulative: "raw_download_traffic_bytes",
+        interval: "download_bytes",
+      },
+    ].map((direction) => ({
+      name: direction.name,
+      type: "line",
+      smooth: 0.25,
+      showSymbol: points.length < 2,
+      sampling: "lttb",
+      lineStyle: { color: direction.color, width: 2.5 },
+      itemStyle: { color: direction.color },
+      areaStyle: {
+        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+          { offset: 0, color: direction.color + "25" },
+          { offset: 1, color: direction.color + "00" },
+        ]),
+      },
+      data: points.map((p) => [
+        new Date(p.at).getTime(),
+        mode === "usage"
+          ? (p[direction.cumulative as keyof TrafficPoint] ?? 0)
+          : Number(p[direction.interval as keyof TrafficPoint] ?? 0) /
+            Math.max(1, p.interval_seconds || 300),
+      ]),
+    }));
     chart.current?.setOption(
       {
         animation: !matchMedia("(prefers-reduced-motion: reduce)").matches,
         animationDurationUpdate: 500,
         textStyle: { fontFamily: "Inter, Vazirmatn, sans-serif" },
-        grid: { left: 64, right: 24, top: 18, bottom: 56 },
+        grid: { left: 64, right: 24, top: 40, bottom: 56 },
+        legend: {
+          top: 0,
+          textStyle: { color: css.getPropertyValue("--muted") },
+          icon: "roundRect",
+        },
         tooltip: {
           className: "chart-tooltip",
           trigger: "axis",
@@ -192,7 +226,7 @@ function TrafficChart({ points }: { points: TrafficPoint[] }) {
         },
         yAxis: {
           type: "value",
-          scale: true,
+          min: 0,
           axisLabel: {
             color: css.getPropertyValue("--muted"),
             fontSize: 10,
@@ -219,24 +253,7 @@ function TrafficChart({ points }: { points: TrafficPoint[] }) {
             dataBackground: { lineStyle: { color }, areaStyle: { color } },
           },
         ],
-        series: [
-          {
-            name: mode === "usage" ? t("Used") : t("Transfer rate"),
-            type: "line",
-            smooth: 0.25,
-            showSymbol: false,
-            sampling: "lttb",
-            lineStyle: { color, width: 2.5 },
-            itemStyle: { color },
-            areaStyle: {
-              color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                { offset: 0, color: color + "38" },
-                { offset: 1, color: color + "00" },
-              ]),
-            },
-            data,
-          },
-        ],
+        series,
       },
       true,
     );
@@ -249,7 +266,7 @@ function TrafficChart({ points }: { points: TrafficPoint[] }) {
           className={mode === "usage" ? "selected" : ""}
           onClick={() => setMode("usage")}
         >
-          {t("Used")}
+          {t("24h usage")}
         </button>
         <button
           type="button"
@@ -319,13 +336,18 @@ export function Dashboard() {
     } catch (e: any) {
       if (!controller.signal.aborted) setMsg(e.message);
     } finally {
-      inFlight.current = false;
-      if (!controller.signal.aborted) setBusy(false);
+      if (request.current === controller) {
+        inFlight.current = false;
+        if (!controller.signal.aborted) setBusy(false);
+      }
     }
   }, [session]);
   useEffect(() => {
     void load();
-    return () => request.current?.abort();
+    return () => {
+      request.current?.abort();
+      inFlight.current = false;
+    };
   }, [load]);
   useEffect(() => {
     if (!cfg) return;
@@ -337,16 +359,14 @@ export function Dashboard() {
   }, [cfg?.dashboard_refresh_seconds, load]);
   const top = useMemo(
       () =>
-        [...clients]
-          .sort((a, b) => b.used_traffic_bytes - a.used_traffic_bytes)
+        distinctAccounts(clients)
+          .sort((a, b) => b.raw_used_traffic_bytes - a.raw_used_traffic_bytes)
           .slice(0, 5),
       [clients],
     ),
-    max = Math.max(1, ...top.map((x) => x.used_traffic_bytes)),
+    max = Math.max(1, ...top.map((x) => x.raw_used_traffic_bytes)),
     local = nodes.find((n) => n.is_local),
     disabled = Math.max(0, (o?.clients_total ?? 0) - (o?.clients_active ?? 0)),
-    quota = o?.traffic_limit_bytes ?? 0,
-    usagePct = pct(o?.traffic_used_bytes ?? 0, quota),
     maxProto = Math.max(1, ...(o?.protocols || []).map((x) => x.count));
   return (
     <div className="space-y-6">
@@ -494,8 +514,8 @@ export function Dashboard() {
         />
         <Metric
           label={t("Recorded traffic")}
-          value={fmt(o?.traffic_used_bytes ?? 0)}
-          note={quota ? tx("{0}% of quotas", usagePct.toFixed(1)) : ""}
+          value={fmt(o?.traffic_raw_bytes ?? 0)}
+          note={""}
           icon="chart-area"
         />
         <Metric
@@ -521,7 +541,7 @@ export function Dashboard() {
             </div>
             <div className="text-right">
               <div className="text-[18px] font-semibold">
-                {fmt(o?.traffic_used_bytes ?? 0)}
+                {fmt(o?.traffic_raw_bytes ?? 0)}
               </div>
               <div className="text-[9px] text-[var(--muted)]">
                 {t("recorded total")}
@@ -529,6 +549,35 @@ export function Dashboard() {
             </div>
           </CardHeader>
           <CardContent className="p-3 sm:p-5">
+            <div className="traffic-directions">
+              <div>
+                <span className="traffic-direction-label">
+                  <ArrowUpRight size={15} />
+                  {t("Upload")}
+                </span>
+                <strong>{fmt(o?.traffic_upload_bytes ?? 0)}</strong>
+              </div>
+              <div>
+                <span className="traffic-direction-label download">
+                  <ArrowDownLeft size={15} />
+                  {t("Download")}
+                </span>
+                <strong>{fmt(o?.traffic_download_bytes ?? 0)}</strong>
+              </div>
+            </div>
+            {o &&
+              o.traffic_raw_bytes >
+                (o.traffic_upload_bytes || 0) +
+                  (o.traffic_download_bytes || 0) && (
+                <div className="text-[11px] text-[var(--muted)] mb-3">
+                  {t("Earlier traffic")}:{" "}
+                  {fmt(
+                    o.traffic_raw_bytes -
+                      (o.traffic_upload_bytes || 0) -
+                      (o.traffic_download_bytes || 0),
+                  )}
+                </div>
+              )}
             <TrafficChart points={history} />
           </CardContent>
         </Card>
@@ -675,14 +724,14 @@ export function Dashboard() {
                       <span className="truncate font-medium">{c.name}</span>
                     </div>
                     <span className="shrink-0 text-[var(--muted)]">
-                      {fmt(c.used_traffic_bytes)}
+                      {fmt(c.raw_used_traffic_bytes)}
                     </span>
                   </div>
                   <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[var(--surface-2)]">
                     <div
                       className="h-full rounded-full bg-[var(--brand)]"
                       style={{
-                        width: `${Math.max(2, (c.used_traffic_bytes / max) * 100)}%`,
+                        width: `${Math.max(2, (c.raw_used_traffic_bytes / max) * 100)}%`,
                       }}
                     />
                   </div>

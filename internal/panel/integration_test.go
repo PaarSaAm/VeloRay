@@ -523,3 +523,56 @@ func TestIntegrationCrashRecoveryAndProtectedPatch(t *testing.T) {
 		t.Fatal("API exposed by patch", api)
 	}
 }
+
+func TestIntegrationDirectionalTrafficHistoryAndOwnership(t *testing.T) {
+	s, ctx := integration(t)
+	m := &nodeMock{running: true}
+	n, _, c := fixture(t, s, ctx, m)
+	u := defaults("users")
+	u["username"], u["own_clients_only"] = "traffic-owner", true
+	if err := save(ctx, s.Store.Pool, "users", u); err != nil {
+		t.Fatal(err)
+	}
+	c["owner_id"], c["traffic_multiplier"] = num(u, "id"), 3
+	if err := save(ctx, s.Store.Pool, "clients", c); err != nil {
+		t.Fatal(err)
+	}
+	m.stats = []any{
+		Data{"name": fmt.Sprintf("user>>>veloray:%d:alice>>>traffic>>>uplink", num(c, "id")), "value": 100},
+		Data{"name": fmt.Sprintf("user>>>veloray:%d:alice>>>traffic>>>downlink", num(c, "id")), "value": 200},
+	}
+	for attempt := 0; attempt < 2; attempt++ {
+		tx, err := s.Store.Pool.Begin(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fresh, err := get(ctx, tx, "nodes", num(n, "id"))
+		if err == nil {
+			err = s.collect(ctx, tx, fresh)
+		}
+		if err != nil {
+			tx.Rollback(ctx)
+			t.Fatal(err)
+		}
+		if err = tx.Commit(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, actor := range []Actor{{}, {User: u}} {
+		o, err := s.overviewForActor(ctx, actor)
+		if err != nil || num(o, "traffic_used_bytes") != 900 || num(o, "traffic_raw_bytes") != 300 || num(o, "traffic_upload_bytes") != 100 || num(o, "traffic_download_bytes") != 200 {
+			t.Fatal("overview multiplied or duplicated real traffic", o, err)
+		}
+		h, err := s.trafficHistoryForActor(ctx, httptest.NewRequest("GET", "/traffic-history?hours=24", nil), actor)
+		if err != nil || len(h) != 1 || num(h[0], "upload_bytes") != 100 || num(h[0], "download_bytes") != 200 || num(h[0], "used_traffic_bytes") != 300 {
+			t.Fatal("history lost directions", h, err)
+		}
+	}
+	other := Actor{User: Data{"id": num(u, "id") + 1, "own_clients_only": true}}
+	if h, err := s.trafficHistoryForActor(ctx, httptest.NewRequest("GET", "/traffic-history", nil), other); err != nil || len(h) != 0 {
+		t.Fatal("another owner saw traffic", h, err)
+	}
+	if err := s.Store.Migrate(ctx); err != nil {
+		t.Fatal("migration is not repeatable", err)
+	}
+}

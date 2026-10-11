@@ -14,12 +14,12 @@ Xray as the primary core. sing-box as the secondary core. One interface for both
 
 | Area | Capabilities |
 |---|---|
-| Dashboard | Server resources, live client status, smooth traffic charts, transfer rate, time-range zoom |
+| Dashboard | Server resources, live client status, actual upload/download counters, dual-series traffic charts, transfer rate and time-range zoom |
 | Clients | Individual and batch creation, quotas, scheduled renewals, expiry, first-use activation, device limits, usage export, bulk actions |
 | Inbounds | Full-width directory, separate creation editor, protocol presets, custom selectors, port inspection, cloning between nodes |
 | Cores | Xray primary; sing-box secondary; configuration validation, durable traffic accounting and deployment recovery |
-| Outbounds | Per-node and per-core outbound definitions, protocol templates and native JSON settings |
-| Routing | Ordered rules, domain/IP/port/source/user matching, native rule settings and outbound references |
+| Outbounds | Built-in routes, node/core filters, guided proxy setup, protocol templates, duplicate and enable/disable actions |
+| Routing | Protected defaults, ordered rules, domain/IP/port/source/user matching, routing presets and outbound selectors |
 | Subscriptions | Portable URI feeds, Base64, Clash/Mihomo, sing-box JSON, account metadata, browser portal and QR codes |
 | Announcements | Subscription announcement and announcement URL; editable in Settings |
 | SNI scanner | Node-side DNS and TLS 1.3 probes, custom domains, suggested domains, latency and certificate checks |
@@ -103,7 +103,9 @@ HTTP and SOCKS have no managed per-client quota accounting in this panel. Shadow
 
 **Used** is the amount charged against the quota. A multiplier of `3` means a 1 GiB transfer consumes 3 GiB of quota. The client directory displays this charged amount once, with `3x` beside it.
 
-The subscription's usage header uses the charged amount as well. Internal raw counters remain available for accounting and administrator exports.
+The subscription's usage header uses the charged amount as well. **Overview** and **Top consumers** show actual transferred bytes without a multiplier. Traffic overview separates **Upload** and **Download**, with a separate chart series for each direction. Transfer rate uses the real bytes recorded in each five-minute interval.
+
+Existing usage is retained during the upgrade. Traffic collected before directional accounting was available appears as **Earlier traffic**; its direction is not guessed. New transfers are recorded separately. Resetting an account's usage resets its current upload/download counters alongside its quota usage, while lifetime counters and retained traffic history remain intact.
 
 When the effective multiplier exceeds `1`, exported configuration names receive a suffix such as `2.0x`. The stored client name stays unchanged. Decimal multipliers support up to three decimal places. Negative values represent discounts: `-0.5` charges half of the transferred bytes.
 
@@ -125,12 +127,19 @@ Quota renewal resets charged usage on the configured interval. Expiry and quota 
 
 ## Outbounds and routing
 
-Create outbounds with a unique tag on the selected node and core. Configure proxy servers, credentials, transport and security through the core's native JSON settings. The editor provides protocol templates; all submitted settings are checked by the running core.
+Select a node and core to see its built-in outbounds and custom entries. Xray starts with `direct` and `blocked`; sing-box starts with `direct`. Node configuration patches are reflected in the Xray defaults. Built-in entries can be inspected; custom entries can be edited, duplicated, enabled, disabled or deleted.
 
-Routing rules have a numeric priority; lower values are evaluated first. Use domain, IP, port, source or user match controls, then select an outbound through the native rule fields:
+Create outbounds with a unique tag. Configure server address, port, credentials, TLS, SNI and common transports through the guided form. **Advanced configuration** retains access to the native JSON and preserves extra settings when guided fields are edited. All submitted settings are checked by the running core.
+
+Routing displays Xray's protected panel API route and each core's default route. Custom rules have a numeric priority; lower values are evaluated first, with creation order resolving equal priorities. Templates cover private IP blocking, BitTorrent blocking and direct HTTPS; Xray also offers an ad-domain template using its bundled geosite database. Templates are applied only when you save them.
+
+Use domain, IP, port, source or user match controls and select the destination outbound. Domain entries use the native matching format, such as `domain:example.com` for Xray or `example.com` as a sing-box domain suffix. Ports accept individual values and ranges such as `443,8000-9000`:
+
 
 - Xray uses `outboundTag`, `domain`, `ip`, `source`, `user` and `port`.
 - The secondary core uses `outbound`, `domain_suffix`, `ip_cidr`, `source_ip_cidr`, `auth_user` and `port`.
+
+sing-box blocking uses `action: "reject"`; it does not require a `blocked` outbound. Protocol and domain matching automatically enables a sniff action before custom rules on that core.
 
 Rules and outbounds are isolated by node and core. Xray reserves `api`, `direct` and `blocked`. Internal device enforcement rules precede user-created rules. Dependencies are validated before deployment.
 

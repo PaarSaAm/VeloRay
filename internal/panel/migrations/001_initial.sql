@@ -73,3 +73,9 @@ CREATE INDEX IF NOT EXISTS vr_owner_traffic_lookup ON vr_owner_traffic_windows(o
 CREATE TABLE IF NOT EXISTS vr_outbounds (id BIGSERIAL PRIMARY KEY, data JSONB NOT NULL, node_id BIGINT GENERATED ALWAYS AS ((data->>'node')::bigint) STORED REFERENCES vr_nodes(id));
 CREATE TABLE IF NOT EXISTS vr_routing_rules (id BIGSERIAL PRIMARY KEY, data JSONB NOT NULL, node_id BIGINT GENERATED ALWAYS AS ((data->>'node')::bigint) STORED REFERENCES vr_nodes(id));
 CREATE UNIQUE INDEX IF NOT EXISTS vr_outbounds_tag ON vr_outbounds (node_id,(data->>'core'),(data->>'tag'));
+
+ALTER TABLE vr_traffic_windows ADD COLUMN IF NOT EXISTS upload_bytes bigint NOT NULL DEFAULT 0 CHECK(upload_bytes>=0);
+ALTER TABLE vr_traffic_windows ADD COLUMN IF NOT EXISTS download_bytes bigint NOT NULL DEFAULT 0 CHECK(download_bytes>=0);
+ALTER TABLE vr_owner_traffic_windows ADD COLUMN IF NOT EXISTS upload_bytes bigint NOT NULL DEFAULT 0 CHECK(upload_bytes>=0);
+ALTER TABLE vr_owner_traffic_windows ADD COLUMN IF NOT EXISTS download_bytes bigint NOT NULL DEFAULT 0 CHECK(download_bytes>=0);
+INSERT INTO vr_schema(version) VALUES(3) ON CONFLICT DO NOTHING;

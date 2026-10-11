@@ -212,6 +212,8 @@ export type ClientItem = {
   used_traffic_bytes: number;
   raw_used_traffic_bytes: number;
   raw_lifetime_traffic_bytes: number;
+  raw_upload_traffic_bytes: number;
+  raw_download_traffic_bytes: number;
   traffic_multiplier: number;
   effective_traffic_multiplier: number;
   account_id: number;

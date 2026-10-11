@@ -894,7 +894,7 @@ func (s *Server) overview(ctx context.Context) (Data, error) {
 	if e != nil {
 		return nil, e
 	}
-	out := Data{"nodes_total": len(nodes), "nodes_online": 0, "clients_total": len(clients), "clients_active": 0, "clients_expiring_7d": 0, "traffic_used_bytes": int64(0), "traffic_limit_bytes": int64(0), "inbounds_total": len(inbounds)}
+	out := Data{"nodes_total": len(nodes), "nodes_online": 0, "clients_total": len(clients), "clients_active": 0, "clients_expiring_7d": 0, "traffic_used_bytes": int64(0), "traffic_upload_bytes": int64(0), "traffic_download_bytes": int64(0), "traffic_limit_bytes": int64(0), "inbounds_total": len(inbounds)}
 	for _, n := range nodes {
 		if flag(n, "enabled") && str(n, "status") == "ok" {
 			out["nodes_online"] = num(out, "nodes_online") + 1
@@ -914,6 +914,8 @@ func (s *Server) overview(ctx context.Context) (Data, error) {
 		seenAccounts[accountKey(c)] = true
 		out["traffic_used_bytes"] = num(out, "traffic_used_bytes") + num(c, "used_traffic_bytes")
 		out["traffic_raw_bytes"] = num(out, "traffic_raw_bytes") + num(c, "raw_used_traffic_bytes")
+		out["traffic_upload_bytes"] = num(out, "traffic_upload_bytes") + num(c, "raw_upload_traffic_bytes")
+		out["traffic_download_bytes"] = num(out, "traffic_download_bytes") + num(c, "raw_download_traffic_bytes")
 		out["traffic_limit_bytes"] = num(out, "traffic_limit_bytes") + num(c, "traffic_limit_bytes")
 	}
 	counts := map[string]int{}
@@ -936,21 +938,23 @@ func (s *Server) trafficHistory(ctx context.Context, r *http.Request) ([]Data, e
 		}
 		hours = n
 	}
-	rows, e := s.Store.Pool.Query(ctx, `SELECT at,sum(bytes)::bigint FROM vr_traffic_windows WHERE at>now()-$1*interval '1 hour' GROUP BY at ORDER BY at`, hours)
+	rows, e := s.Store.Pool.Query(ctx, `SELECT at,sum(bytes)::bigint,sum(upload_bytes)::bigint,sum(download_bytes)::bigint FROM vr_traffic_windows WHERE at>now()-$1*interval '1 hour' GROUP BY at ORDER BY at`, hours)
 	if e != nil {
 		return nil, e
 	}
 	defer rows.Close()
 	out := []Data{}
-	var cumulative int64
+	var cumulative, upload, download int64
 	for rows.Next() {
 		var at time.Time
-		var b int64
-		if e = rows.Scan(&at, &b); e != nil {
+		var b, up, down int64
+		if e = rows.Scan(&at, &b, &up, &down); e != nil {
 			return nil, e
 		}
 		cumulative += b
-		out = append(out, Data{"at": stamp(at), "bytes": b, "used_traffic_bytes": cumulative, "active_clients": 0, "online_nodes": 0})
+		upload += up
+		download += down
+		out = append(out, Data{"at": stamp(at), "bytes": b, "used_traffic_bytes": cumulative, "upload_bytes": up, "download_bytes": down, "raw_upload_traffic_bytes": upload, "raw_download_traffic_bytes": download, "interval_seconds": 300, "active_clients": 0, "online_nodes": 0})
 	}
 	return out, rows.Err()
 }

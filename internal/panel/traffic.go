@@ -89,6 +89,24 @@ func applyTrafficDelta(c Data, delta int64) error {
 	return nil
 }
 
+func applyDirectionalTrafficDelta(c Data, direction string, delta int64) error {
+	key := "raw_upload_traffic_bytes"
+	if direction == "downlink" {
+		key = "raw_download_traffic_bytes"
+	} else if direction != "uplink" {
+		return errors.New("invalid traffic direction")
+	}
+	old := num(c, key)
+	if delta < 0 || old < 0 || delta > int64(^uint64(0)>>1)-old {
+		return errors.New("directional traffic overflow")
+	}
+	if err := applyTrafficDelta(c, delta); err != nil {
+		return err
+	}
+	c[key] = old + delta
+	return nil
+}
+
 func effectiveTrafficMultiplier(c Data) float64 {
 	rate, err := multiplierMilli(c)
 	if err != nil {
@@ -98,7 +116,7 @@ func effectiveTrafficMultiplier(c Data) float64 {
 	return value
 }
 
-var accountFields = []string{"device_limit", "start_after_first_use", "duration_days", "first_used_at", "_device_seen", "_device_denied", "owner_id", "enabled", "expires_at", "traffic_limit_bytes", "used_traffic_bytes", "lifetime_traffic_bytes", "raw_used_traffic_bytes", "raw_lifetime_traffic_bytes", "traffic_multiplier", "_charge_remainder", "last_traffic_at", "disabled_reason", "renewal_interval_days", "next_renewal_at"}
+var accountFields = []string{"device_limit", "start_after_first_use", "duration_days", "first_used_at", "_device_seen", "_device_denied", "owner_id", "enabled", "expires_at", "traffic_limit_bytes", "used_traffic_bytes", "lifetime_traffic_bytes", "raw_used_traffic_bytes", "raw_lifetime_traffic_bytes", "raw_upload_traffic_bytes", "raw_download_traffic_bytes", "traffic_multiplier", "_charge_remainder", "last_traffic_at", "disabled_reason", "renewal_interval_days", "next_renewal_at"}
 
 func accountKey(c Data) string {
 	if id := num(c, "_account"); id > 0 {
@@ -108,5 +126,6 @@ func accountKey(c Data) string {
 }
 
 func resetTraffic(c Data) {
+	c["raw_upload_traffic_bytes"], c["raw_download_traffic_bytes"] = int64(0), int64(0)
 	c["used_traffic_bytes"], c["raw_used_traffic_bytes"], c["_charge_remainder"] = int64(0), int64(0), int64(0)
 }

@@ -263,7 +263,7 @@ func (s *Server) overviewForActor(ctx context.Context, a Actor) (Data, error) {
 	if e != nil {
 		return nil, e
 	}
-	out := Data{"nodes_total": 0, "nodes_online": 0, "clients_total": len(clients), "clients_active": 0, "clients_expiring_7d": 0, "traffic_used_bytes": int64(0), "traffic_raw_bytes": int64(0), "traffic_limit_bytes": int64(0), "inbounds_total": len(array(a.User, "allowed_inbounds")), "protocols": []any{}}
+	out := Data{"nodes_total": 0, "nodes_online": 0, "clients_total": len(clients), "clients_active": 0, "clients_expiring_7d": 0, "traffic_used_bytes": int64(0), "traffic_upload_bytes": int64(0), "traffic_download_bytes": int64(0), "traffic_raw_bytes": int64(0), "traffic_limit_bytes": int64(0), "inbounds_total": len(array(a.User, "allowed_inbounds")), "protocols": []any{}}
 	seen := map[string]bool{}
 	for _, c := range clients {
 		if active(c, time.Now()) {
@@ -277,7 +277,7 @@ func (s *Server) overviewForActor(ctx context.Context, a Actor) (Data, error) {
 			continue
 		}
 		seen[key] = true
-		for output, field := range map[string]string{"traffic_used_bytes": "used_traffic_bytes", "traffic_raw_bytes": "raw_used_traffic_bytes", "traffic_limit_bytes": "traffic_limit_bytes"} {
+		for output, field := range map[string]string{"traffic_used_bytes": "used_traffic_bytes", "traffic_raw_bytes": "raw_used_traffic_bytes", "traffic_upload_bytes": "raw_upload_traffic_bytes", "traffic_download_bytes": "raw_download_traffic_bytes", "traffic_limit_bytes": "traffic_limit_bytes"} {
 			out[output] = num(out, output) + num(c, field)
 		}
 	}
@@ -295,21 +295,23 @@ func (s *Server) trafficHistoryForActor(ctx context.Context, r *http.Request, a 
 		}
 		hours = n
 	}
-	rows, e := s.Store.Pool.Query(ctx, `SELECT at,bytes FROM vr_owner_traffic_windows WHERE owner_id=$1 AND at>now()-$2*interval '1 hour' ORDER BY at`, num(a.User, "id"), hours)
+	rows, e := s.Store.Pool.Query(ctx, `SELECT at,bytes,upload_bytes,download_bytes FROM vr_owner_traffic_windows WHERE owner_id=$1 AND at>now()-$2*interval '1 hour' ORDER BY at`, num(a.User, "id"), hours)
 	if e != nil {
 		return nil, e
 	}
 	defer rows.Close()
 	out := []Data{}
-	var cumulative int64
+	var cumulative, upload, download int64
 	for rows.Next() {
 		var at time.Time
-		var bytes int64
-		if e = rows.Scan(&at, &bytes); e != nil {
+		var bytes, up, down int64
+		if e = rows.Scan(&at, &bytes, &up, &down); e != nil {
 			return nil, e
 		}
 		cumulative += bytes
-		out = append(out, Data{"at": stamp(at), "bytes": bytes, "used_traffic_bytes": cumulative, "active_clients": 0, "online_nodes": 0})
+		upload += up
+		download += down
+		out = append(out, Data{"at": stamp(at), "bytes": bytes, "used_traffic_bytes": cumulative, "upload_bytes": up, "download_bytes": down, "raw_upload_traffic_bytes": upload, "raw_download_traffic_bytes": download, "interval_seconds": 300, "active_clients": 0, "online_nodes": 0})
 	}
 	return out, rows.Err()
 }
