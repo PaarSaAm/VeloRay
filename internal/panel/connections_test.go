@@ -78,7 +78,7 @@ func TestIntegrationRegisteredDevicesAndClientScope(t *testing.T) {
 	if err != nil || num(out, "count") != 1 {
 		t.Fatal(out, err)
 	}
-	device := asData(array(out, "items")[0])
+	device := out["items"].([]Data)[0]
 	if str(device, "device_model") != "iPhone" || str(device, "os_version") != "18.3" || str(device, "first_seen_at") == "" {
 		t.Fatal(device)
 	}
@@ -163,8 +163,7 @@ func TestIntegrationSharedAccountDevicesAndIPs(t *testing.T) {
 	if err != nil || num(out, "count") != 2 || !flag(out, "available") {
 		t.Fatal(out, err, i)
 	}
-	for _, value := range array(out, "items") {
-		entry := asData(value)
+	for _, entry := range out["items"].([]Data) {
 		if str(entry, "ip") == "203.0.113.1" && len(array(entry, "connections")) != 2 {
 			t.Fatal(entry)
 		}
