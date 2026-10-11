@@ -42,7 +42,7 @@ version_at_least() { [[ "$(printf '%s\n%s\n' "$2" "$1" | sort -V | head -n1)" ==
 fetch() {
  local status=0 timeout="${3:-900}" log="${VELORAY_INSTALL_LOG:-/dev/null}"
  printf '  Download: %s\n' "$1" | tee -a "$log"
- curl --proto '=https' --proto-redir '=https' --tlsv1.2 --fail --location --show-error --progress-bar \
+ curl --proto '=https' --proto-redir '=https' --tlsv1.2 --fail --location --show-error --no-silent --no-progress-bar --progress-meter \
   --retry 2 --retry-max-time 120 --connect-timeout 15 --max-time "$timeout" \
   --speed-time 30 --speed-limit 1024 --write-out '  Received %{size_download} bytes in %{time_total}s (%{speed_download} bytes/s)\n' \
   "$1" -o "$2" 2> >(tee -a "$log" >&2) || status=$?

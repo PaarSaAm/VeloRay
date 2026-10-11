@@ -194,6 +194,7 @@ grep -Fq 'Log:' "$TEST_ROOT/result"
 grep -Fq -- '--max-time 45' "$TEST_ROOT/curl-options"
 grep -Fq -- '--max-time 900' "$TEST_ROOT/curl-options"
 if grep -vF -- '--speed-time 30 --speed-limit 1024' "$TEST_ROOT/curl-options" | grep -q .;then echo 'Download lacks a stall timeout' >&2;exit 1;fi
+if grep -vF -- '--no-silent --no-progress-bar --progress-meter' "$TEST_ROOT/curl-options" | grep -q .;then echo 'Download lacks a byte and speed meter' >&2;exit 1;fi
 pass visible-downloads-and-stall-timeouts
 export TEST_SOURCE_ROUTE=unavailable
 : >"$TEST_ROOT/calls"
