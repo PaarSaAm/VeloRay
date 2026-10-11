@@ -81,6 +81,7 @@ cat >"$TEST_ROOT/commands/curl" <<'CURL'
 #!/usr/bin/env bash
 set -e
 url='';destination=''
+printf '%s\n' "$*" >>"$TEST_ROOT/curl-options"
 while [[ $# -gt 0 ]];do case "$1" in -o) destination="$2";shift 2;;https://*) url="$1";shift;;*) shift;;esac;done
 echo "$url" >>"$TEST_ROOT/requests"
 case "$url" in
@@ -100,6 +101,7 @@ case "$url" in
   if [[ "${TEST_BAD_NODE_DIGEST:-}" == 1 ]];then printf broken >"$destination";else cp "$TEST_ROOT/node.tar.xz" "$destination";fi;;
  */commits/*) printf '{"sha":"1111111111111111111111111111111111111111"}' >"$destination";;
  https://codeload.github.com/PaarSaAm/VeloRay/tar.gz/*)
+  if [[ "${TEST_SOURCE_ROUTE:-}" == stalled ]];then echo 'curl: (28) Operation too slow' >&2;exit 28;fi
   [[ "${TEST_SOURCE_ROUTE:-direct}" == direct ]]||exit 22
   cp "$TEST_ROOT/source.tar.gz" "$destination";;
  https://api.github.com/repos/PaarSaAm/VeloRay/tarball/*)
@@ -116,6 +118,8 @@ CURL
 cat >"$TEST_ROOT/commands/apt-get" <<'APT'
 #!/usr/bin/env bash
 echo "apt=$*" >>"$TEST_ROOT/host-commands"
+echo 'Checking system package repositories'
+if [[ "${TEST_APT_FAILURE:-}" == 1 ]];then echo 'Package repository unavailable' >&2;exit 100;fi
 APT
 cat >"$TEST_ROOT/commands/uname" <<'UNAME'
 #!/usr/bin/env bash
@@ -151,6 +155,14 @@ reject 'Unknown argument' --unavailable
 if flock "$TEST_ROOT/install.lock" bash "$TEST_ROOT/bootstrap.sh" install >"$TEST_ROOT/result" 2>&1;then echo 'Concurrent installation accepted' >&2;exit 1;fi
 grep -Fq 'Another VeloRay installation is running' "$TEST_ROOT/result"
 test ! -s "$TEST_ROOT/calls";pass concurrent-installation-blocked
+export TEST_APT_FAILURE=1
+: >"$TEST_ROOT/requests"
+if bash "$TEST_ROOT/bootstrap.sh" install >"$TEST_ROOT/result" 2>&1;then echo 'Failed packages accepted' >&2;exit 1;fi
+grep -Fq 'Package repository unavailable' "$TEST_ROOT/result"
+grep -Fq 'Failed: Prepare system packages' "$TEST_ROOT/result"
+test ! -s "$TEST_ROOT/requests";test ! -s "$TEST_ROOT/calls"
+pass visible-package-failure-stops-installation
+unset TEST_APT_FAILURE
 for machine in x86_64 aarch64;do
  export TEST_MACHINE="$machine"
  for mode in install node;do
@@ -163,16 +175,26 @@ for machine in x86_64 aarch64;do
   pass "$mode/$machine"
  done
 done
-for route in api web;do
+for route in api web stalled;do
  export TEST_SOURCE_ROUTE="$route"
  : >"$TEST_ROOT/requests";: >"$TEST_ROOT/calls"
  bash -c "$(cat "$TEST_ROOT/bootstrap.sh")" @ install >"$TEST_ROOT/result" 2>&1
  grep -Fq 'panel=en' "$TEST_ROOT/calls"
- if [[ "$route" == api ]];then grep -Fq '/tarball/1111111111111111111111111111111111111111' "$TEST_ROOT/requests"
+ if [[ "$route" == api || "$route" == stalled ]];then grep -Fq '/tarball/1111111111111111111111111111111111111111' "$TEST_ROOT/requests"
  else grep -Fq '/archive/1111111111111111111111111111111111111111.tar.gz' "$TEST_ROOT/requests";fi
  if grep -Fq 'installation failed at line' "$TEST_ROOT/result";then echo 'Recovered download reported as installation failure' >&2;exit 1;fi
  pass "source-$route-fallback"
 done
+grep -Fq 'curl: (28) Operation too slow' "$TEST_ROOT/result"
+grep -Fq 'Download failed (curl 28)' "$TEST_ROOT/result"
+grep -Fq 'Download: https://api.github.com/repos/PaarSaAm/VeloRay/commits/main' "$TEST_ROOT/result"
+grep -Fq 'Resolve GitHub revision' "$TEST_ROOT/result"
+grep -Fq 'Check and extract project archive' "$TEST_ROOT/result"
+grep -Fq 'Log:' "$TEST_ROOT/result"
+grep -Fq -- '--max-time 45' "$TEST_ROOT/curl-options"
+grep -Fq -- '--max-time 900' "$TEST_ROOT/curl-options"
+if grep -vF -- '--speed-time 30 --speed-limit 1024' "$TEST_ROOT/curl-options" | grep -q .;then echo 'Download lacks a stall timeout' >&2;exit 1;fi
+pass visible-downloads-and-stall-timeouts
 export TEST_SOURCE_ROUTE=unavailable
 : >"$TEST_ROOT/calls"
 if bash -c "$(cat "$TEST_ROOT/bootstrap.sh")" @ install >"$TEST_ROOT/result" 2>&1;then echo 'Unavailable source accepted' >&2;exit 1;fi

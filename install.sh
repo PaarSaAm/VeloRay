@@ -17,6 +17,7 @@ vr_log_init() {
  umask "$previous_mask"
 }
 vr_run() { "$@" >>"$VELORAY_INSTALL_LOG" 2>&1; }
+vr_run_visible() { "$@" 2>&1 | tee -a "$VELORAY_INSTALL_LOG"; }
 vr_error() {
  local line="$1" status="${2:-1}"
  printf 'Failure: step=%s line=%s status=%s\n' "${VR_STEP:-operation}" "$line" "$status" >>"$VELORAY_INSTALL_LOG"
@@ -39,10 +40,14 @@ HELP
 }
 version_at_least() { [[ "$(printf '%s\n%s\n' "$2" "$1" | sort -V | head -n1)" == "$2" ]]; }
 fetch() {
- local status=0
- curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL --retry 3 --connect-timeout 15 --max-time 600 "$1" -o "$2" 2>>"${VELORAY_INSTALL_LOG:-/dev/null}" || status=$?
+ local status=0 timeout="${3:-900}" log="${VELORAY_INSTALL_LOG:-/dev/null}"
+ printf '  Download: %s\n' "$1" | tee -a "$log"
+ curl --proto '=https' --proto-redir '=https' --tlsv1.2 --fail --location --show-error --progress-bar \
+  --retry 2 --retry-max-time 120 --connect-timeout 15 --max-time "$timeout" \
+  --speed-time 30 --speed-limit 1024 --write-out '  Received %{size_download} bytes in %{time_total}s (%{speed_download} bytes/s)\n' \
+  "$1" -o "$2" 2> >(tee -a "$log" >&2) || status=$?
  if [[ "$status" -ne 0 ]];then
-  printf 'Download failed (curl %s): %s\n' "$status" "$1" >>"${VELORAY_INSTALL_LOG:-/dev/null}"
+  printf 'Download failed (curl %s): %s\n' "$status" "$1" | tee -a "$log" >&2
   return "$status"
  fi
 }
@@ -105,11 +110,13 @@ export VELORAY_INSTALL_LOCKED=true
 trap 'vr_error "$LINENO" "$?"' ERR
 printf '\nVeloRay 1.0\n'
 vr_say 'Server installation' 'نصب روی سرور'
+vr_say "Log: $VELORAY_INSTALL_LOG" "گزارش: $VELORAY_INSTALL_LOG"
 vr_step 'Prepare system packages' 'آماده‌سازی بسته‌های سیستم'
 packages=(ca-certificates curl jq tar xz-utils unzip openssl iproute2)
 [[ "$action" != install ]]||packages+=(postgresql postgresql-client nginx certbot python3)
-vr_run env DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l apt-get update
-vr_run env DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l apt-get install -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold "${packages[@]}"
+apt_options=(-o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30)
+vr_run_visible env DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l apt-get "${apt_options[@]}" update
+vr_run_visible env DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l apt-get "${apt_options[@]}" install -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold "${packages[@]}"
 export VELORAY_DEPENDENCIES_READY=true
 vr_step 'Download and verify VeloRay' 'دریافت و بررسی فایل‌های VeloRay'
 
@@ -118,11 +125,14 @@ if [[ -n "${BASH_SOURCE[0]:-}" && -f "${BASH_SOURCE[0]}" ]];then
  source_directory="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 fi
 if [[ -z "$source_directory" || ! -f "$source_directory/go.mod" || ! -f "$source_directory/scripts/install-panel.sh" ]];then
- fetch "https://api.github.com/repos/$repository/commits/$reference" "$temporary/commit.json"
+ vr_step 'Resolve GitHub revision' 'دریافت نسخهٔ گیت‌هاب'
+ fetch "https://api.github.com/repos/$repository/commits/$reference" "$temporary/commit.json" 45
  commit="$(jq -er '.sha' "$temporary/commit.json")"
  [[ "$commit" =~ ^[a-f0-9]{40}$ ]]||fail 'GitHub did not return a valid source commit.'
  printf 'Repository=%s commit=%s\n' "$repository" "$commit" >>"$VELORAY_INSTALL_LOG"
+ vr_step 'Download source and runtimes' 'دریافت سورس و بسته‌های آماده'
  download_source
+ vr_step 'Check and extract project archive' 'بررسی و استخراج آرشیو پروژه'
  # GitHub archives contain regular files/directories; reject links and traversal before extracting.
  check_archive "$temporary/source.tar.gz"
  source_directory="$temporary/source"
@@ -134,6 +144,7 @@ fi
 prepare_runtime() {
  local archive="$source_directory/runtime/linux-$arch.tar.xz" checksum bundle="$temporary/runtime"
  [[ -f "$archive" ]]||return 1
+ vr_step "Verify $arch runtime" "بررسی بستهٔ آمادهٔ $arch"
  [[ -f "$source_directory/runtime/SHA256SUMS" && -f "$source_directory/scripts/build-runtime.sh" ]]||fail 'Runtime checksum or build manifest helper is missing.'
  checksum="$(awk -v name="linux-$arch.tar.xz" '$2==name {print $1}' "$source_directory/runtime/SHA256SUMS")"
  verify "$checksum" "$archive"
