@@ -12,6 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       GOMAXPROCS: '4'
+      GITHUB_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5

@@ -26,7 +26,9 @@ while IFS=$'\t' read -r module directory;do
 done <"$temporary/modules"
 xray_version="${VELORAY_XRAY_VERSION:-v26.3.27}"
 [[ "$xray_version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]||{ echo 'Invalid Xray version' >&2;exit 2; }
-curl --proto '=https' --proto-redir '=https' -fsSL --retry 3 "https://api.github.com/repos/XTLS/Xray-core/releases/tags/$xray_version" -o "$temporary/xray-release.json"
+github_headers=()
+if [[ -n "${GITHUB_TOKEN:-}" ]];then github_headers=(-H "Authorization: Bearer $GITHUB_TOKEN");fi
+curl --proto '=https' --proto-redir '=https' -fsSL --retry 3 "${github_headers[@]}" "https://api.github.com/repos/XTLS/Xray-core/releases/tags/$xray_version" -o "$temporary/xray-release.json"
 for arch in amd64 arm64;do
  bash scripts/build.sh "$arch"
  mkdir -p "$temporary/$arch/bin" "$temporary/$arch/frontend"
