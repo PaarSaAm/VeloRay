@@ -1,3 +1,5 @@
+import { tx } from "@/lib/i18n";
+import { t, useLocale } from "@/lib/i18n";
 import { LogOut, Menu, Monitor, Moon, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "@/components/theme/theme-provider";
@@ -17,6 +19,7 @@ export function Header({
   onMenu: () => void;
   onLogout: () => void;
 }) {
+  const { locale, setLocale } = useLocale();
   const { theme, setTheme } = useTheme();
   const next =
     theme === "dark" ? "light" : theme === "light" ? "system" : "dark";
@@ -28,7 +31,7 @@ export function Header({
           variant="ghost"
           size="icon"
           className="lg:hidden"
-          aria-label="Open navigation"
+          aria-label={t("Open navigation")}
           onClick={onMenu}
         >
           <Menu className="h-4 w-4" />
@@ -47,7 +50,15 @@ export function Header({
       </div>
       <div className="flex shrink-0 items-center gap-1.5">
         <Button
-          title={`Theme: ${theme}`}
+          variant="ghost"
+          size="sm"
+          aria-label={t("Change language")}
+          onClick={() => setLocale(locale === "en" ? "fa" : "en")}
+        >
+          {locale === "en" ? t("Persian") : "انگلیسی"}
+        </Button>
+        <Button
+          title={tx("Theme: {0}", t(theme))}
           variant="ghost"
           size="icon"
           onClick={() => setTheme(next)}
@@ -63,7 +74,12 @@ export function Header({
             {user.username}
           </div>
         </div>
-        <Button title="Sign out" variant="ghost" size="icon" onClick={onLogout}>
+        <Button
+          title={t("Sign out")}
+          variant="ghost"
+          size="icon"
+          onClick={onLogout}
+        >
           <LogOut className="h-4 w-4" />
         </Button>
       </div>

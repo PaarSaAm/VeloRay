@@ -204,6 +204,7 @@ func buildConfig(ctx context.Context, q Query, node Data) (Data, error) {
 	l0 := obj(levels, "0")
 	l0["statsUserUplink"] = true
 	l0["statsUserDownlink"] = true
+	l0["statsUserOnline"] = true
 	levels["0"] = l0
 	policy["levels"] = levels
 	system := obj(policy, "system")

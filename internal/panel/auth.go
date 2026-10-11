@@ -94,11 +94,11 @@ func (s *Server) authorize(ctx context.Context, a Actor, method, path string) er
 	if a.SessionHash == "" && strings.HasPrefix(path, "auth/2fa/") {
 		return fail(403, "use a browser session to manage two-factor authentication")
 	}
-	return nil
+	return s.roleAuthorize(a, method, path)
 }
 func (s *Server) sessionView(ctx context.Context, a Actor) Data {
 	cfg, _ := settings(ctx, s.Store.Pool)
-	return Data{"id": num(a.User, "id"), "username": str(a.User, "username"), "is_staff": flag(a.User, "is_staff"), "is_superuser": flag(a.User, "is_superuser"), "two_factor_setup_required": flag(cfg, "require_2fa_for_admins") && (!flag(a.User, "_totp_enabled") || !a.SecondFactor)}
+	return Data{"role": accountRole(a.User), "permissions": permissions(a.User), "own_clients_only": ownClients(a.User), "id": num(a.User, "id"), "username": str(a.User, "username"), "is_staff": flag(a.User, "is_staff"), "is_superuser": flag(a.User, "is_superuser"), "two_factor_setup_required": flag(cfg, "require_2fa_for_admins") && (!flag(a.User, "_totp_enabled") || !a.SecondFactor)}
 }
 func (s *Server) cookie(w http.ResponseWriter, name, value string, maxAge int, httpOnly bool) {
 	http.SetCookie(w, &http.Cookie{Name: name, Value: value, Path: "/", Secure: s.Config.SecureCookies, HttpOnly: httpOnly, SameSite: http.SameSiteStrictMode, MaxAge: maxAge})

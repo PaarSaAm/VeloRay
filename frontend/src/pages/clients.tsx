@@ -1,5 +1,8 @@
+import { t } from "@/lib/i18n";
+import { useLocale, tx } from "@/lib/i18n";
+import { can, useSession } from "@/lib/session";
 import { Dialog } from "@/components/common/dialog";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState, useRef } from "react";
 import {
   Check,
   Copy,
@@ -30,8 +33,8 @@ import { PageHeader } from "@/components/common/page-header";
 import { FaIcon } from "@/components/ui/fa-icon";
 
 const fmt = (b: number) => {
-  if (!b) return "0 B";
-  const u = ["B", "KB", "MB", "GB", "TB"];
+  if (!b) return t("0 B");
+  const u = ["B", t("KB"), t("MB"), t("GB"), t("TB")];
   const i = Math.max(
     0,
     Math.min(Math.floor(Math.log(b) / Math.log(1024)), u.length - 1),
@@ -47,22 +50,26 @@ const toLocalInput = (value: string | null) =>
         .slice(0, 16)
     : "";
 const expiry = (value: string | null) => {
-  if (!value) return "Never";
+  if (!value) return t("Never");
   const d = new Date(value),
     days = Math.ceil((d.getTime() - Date.now()) / 86400000);
-  if (days < 0) return "Expired";
-  if (days === 0) return "Today";
-  if (days === 1) return "1 day";
-  return `${days} days`;
+  if (days < 0) return t("Expired");
+  if (days === 0) return t("Today");
+  if (days === 1) return t("1 day");
+  return tx("{0} days", days);
 };
 const clientState = (client: ClientItem) =>
   client.enabled
-    ? "Active"
+    ? client.online === true
+      ? t("Online")
+      : client.online === false
+        ? t("Offline")
+        : t("Unknown")
     : client.disabled_reason === "quota"
-      ? "Quota reached"
+      ? t("Quota reached")
       : client.disabled_reason === "expired"
-        ? "Expired"
-        : "Disabled";
+        ? t("Expired")
+        : t("Disabled");
 
 type Editor = {
   id?: number;
@@ -74,6 +81,7 @@ type Editor = {
   expiry: string;
   renewal: string;
   multiplier: string;
+  owner_id?: number;
   note: string;
 };
 const blank = (
@@ -93,6 +101,8 @@ const blank = (
 });
 
 export function ClientsPage() {
+  useLocale();
+  const session = useSession();
   const [inbounds, setInbounds] = useState<InboundItem[]>([]),
     [items, setItems] = useState<ClientItem[]>([]),
     [cfg, setCfg] = useState<AppSettings | null>(null),
@@ -105,6 +115,16 @@ export function ClientsPage() {
     [editor, setEditor] = useState<Editor | null>(null),
     [busy, setBusy] = useState(false),
     [menu, setMenu] = useState<number | null>(null);
+  const [owners, setOwners] = useState<import("@/lib/api").AdminUser[]>([]);
+  useEffect(() => {
+    if (session?.is_superuser)
+      api<import("@/lib/api").AdminUser[]>("/admin/users/")
+        .then(setOwners)
+        .catch(() => {});
+  }, [session]);
+  const polling = useRef(false);
+  const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
+  const [liveError, setLiveError] = useState(false);
   const load = async () => {
     const [i, c, s] = await Promise.all([
       api<InboundItem[]>("/inbounds/"),
@@ -114,11 +134,48 @@ export function ClientsPage() {
     const clientInbounds = i.filter((x) => x.supports_clients !== false);
     setInbounds(clientInbounds);
     setItems(c);
+    setUpdatedAt(new Date());
+    setLiveError(false);
     setCfg(s);
     return { i: clientInbounds, c };
   };
   useEffect(() => {
-    load().catch((e) => setMsg(e.message));
+    let active = true;
+    const controller = new AbortController();
+    load().catch((e) => {
+      if (active) setMsg(e.message);
+    });
+    const poll = async () => {
+      if (polling.current || document.hidden) return;
+      polling.current = true;
+      try {
+        const c = await api<ClientItem[]>("/clients/", {
+          signal: controller.signal,
+        });
+        if (active) {
+          setItems(c);
+          setUpdatedAt(new Date());
+          setLiveError(false);
+          setSelected((previous) => {
+            const ids = new Set(c.map((item) => item.id));
+            const next = new Set([...previous].filter((id) => ids.has(id)));
+            return next.size === previous.size ? previous : next;
+          });
+        }
+      } catch {
+        if (active) setLiveError(true);
+      } finally {
+        polling.current = false;
+      }
+    };
+    const interval = setInterval(poll, 5000);
+    document.addEventListener("visibilitychange", poll);
+    return () => {
+      active = false;
+      controller.abort();
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", poll);
+    };
   }, []);
   const filtered = useMemo(
     () =>
@@ -128,7 +185,20 @@ export function ClientsPage() {
           `${c.name} ${c.inbound_name} ${c.node_name} ${c.credential}`.toLowerCase();
         const okq = !q || text.includes(q);
         const oks =
-          status === "all" || (status === "active" ? c.enabled : !c.enabled);
+          status === "all" ||
+          (status === "active" && c.enabled) ||
+          (status === "disabled" && !c.enabled) ||
+          (status === "online" && c.online === true) ||
+          (status === "offline" && c.online === false && c.enabled) ||
+          (status === "expiring" &&
+            c.enabled &&
+            !!c.expires_at &&
+            new Date(c.expires_at).getTime() > Date.now() &&
+            new Date(c.expires_at).getTime() - Date.now() <= 7 * 86400000) ||
+          (status === "near-quota" &&
+            c.enabled &&
+            c.traffic_limit_bytes > 0 &&
+            c.used_traffic_bytes / c.traffic_limit_bytes >= 0.8);
         const oki =
           inboundFilter === "all" || String(c.inbound) === inboundFilter;
         return okq && oks && oki;
@@ -232,6 +302,7 @@ export function ClientsPage() {
   function openEdit(c: ClientItem) {
     setEditor({
       id: c.id,
+      owner_id: c.owner_id,
       name: c.name,
       inbound: String(c.inbound),
       limit: c.traffic_limit_bytes
@@ -257,13 +328,8 @@ export function ClientsPage() {
         !selectedInbound ||
         !["http", "socks", "tunnel", "tun"].includes(selectedInbound.protocol);
       const multiplier = Number(editor.multiplier);
-      if (
-        !Number.isFinite(multiplier) ||
-        multiplier < -1 ||
-        multiplier > 3 ||
-        editor.multiplier.trim() === ""
-      )
-        throw new Error("Traffic multiplier must be between -1 and 3.");
+      if (!Number.isFinite(multiplier) || editor.multiplier.trim() === "")
+        throw new Error(t("Enter a valid traffic multiplier."));
       const body: any = {
         name: editor.name,
         inbound: Number(editor.inbound),
@@ -274,6 +340,9 @@ export function ClientsPage() {
           ? Math.max(0, Number(editor.renewal) || 0)
           : 0,
         traffic_multiplier: Number(editor.multiplier),
+        ...(session?.is_superuser && editor.owner_id
+          ? { owner_id: editor.owner_id }
+          : {}),
         note: editor.note,
       };
       if (editor.id) {
@@ -284,7 +353,7 @@ export function ClientsPage() {
           method: "PATCH",
           body: JSON.stringify(body),
         });
-        setMsg("Client updated and Xray redeployed.");
+        setMsg(t("Client updated and Xray redeployed."));
       } else {
         const d = Math.max(0, Number(editor.days) || 0);
         body.expires_at =
@@ -307,10 +376,10 @@ export function ClientsPage() {
       await refresh();
       setMsg(
         editor.count !== undefined
-          ? `${editor.count} clients created in one deployment.`
+          ? tx("{0} clients created in one deployment.", editor.count)
           : editor.id
-            ? "Client updated and Xray redeployed."
-            : "Client created and Xray redeployed.",
+            ? t("Client updated and Xray redeployed.")
+            : t("Client created and Xray redeployed."),
       );
     } catch (e: any) {
       setMsg(e.message);
@@ -335,7 +404,7 @@ export function ClientsPage() {
     }
   }
   async function remove(c: ClientItem) {
-    if (!confirm(`Delete ${c.name}?`)) return;
+    if (!confirm(tx("Delete {0}?", c.name))) return;
     try {
       await api(`/clients/${c.id}/`, { method: "DELETE" });
       await refresh();
@@ -348,20 +417,22 @@ export function ClientsPage() {
     if (!targets.length) return;
     if (
       action === "delete" &&
-      !confirm(`Delete ${targets.length} selected clients?`)
+      !confirm(tx("Delete {0} selected clients?", targets.length))
     )
       return;
     setBusy(true);
     try {
       if (targets.length > 200)
-        throw new Error("Select up to 200 clients per operation.");
+        throw new Error(t("Select up to 200 clients per operation."));
       await api("/clients/bulk", {
         method: "POST",
         body: JSON.stringify({ ids: targets.map((c) => c.id), action }),
       });
       setSelected(new Set());
       await refresh();
-      setMsg(`${targets.length} clients updated in one deployment per node.`);
+      setMsg(
+        tx("{0} clients updated in one deployment per node.", targets.length),
+      );
     } catch (e: any) {
       setMsg(e.message);
     } finally {
@@ -371,8 +442,10 @@ export function ClientsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Clients"
-        description="Manage credentials, quotas, expiry, renewals and subscriptions."
+        title={t("Clients")}
+        description={t(
+          "Manage credentials, quotas, expiry, renewals and subscriptions.",
+        )}
         actions={
           <div className="flex flex-wrap gap-2">
             <Button
@@ -380,18 +453,24 @@ export function ClientsPage() {
               onClick={exportUsage}
               disabled={!filtered.length}
             >
-              <FaIcon icon="download" /> Export usage
+              <FaIcon icon="download" /> {t("Export usage")}
             </Button>
             <Button
               variant="outline"
               onClick={openBatch}
-              disabled={!inbounds.some((i) => i.protocol !== "shadowsocks")}
+              disabled={
+                !can(session, "clients.write") ||
+                !inbounds.some((i) => i.protocol !== "shadowsocks")
+              }
             >
-              <Users className="h-3.5 w-3.5" /> Batch create
+              <Users className="h-3.5 w-3.5" /> {t("Batch create")}
             </Button>
-            <Button onClick={openCreate} disabled={!inbounds.length}>
+            <Button
+              onClick={openCreate}
+              disabled={!inbounds.length || !can(session, "clients.write")}
+            >
               <Plus className="h-3.5 w-3.5" />
-              Add client
+              {t("Add client")}
             </Button>
           </div>
         }
@@ -407,44 +486,63 @@ export function ClientsPage() {
       )}
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Mini
-          title="Total clients"
+          title={t("Total clients")}
           value={String(items.length)}
-          detail={`${active} active`}
+          detail={tx("{0} active", active)}
           icon="users"
         />
         <Mini
-          title="Recorded traffic"
+          title={t("Recorded traffic")}
           value={fmt(total)}
-          detail={`${distinctAccounts(items).length} accounts · ${fmt(distinctAccounts(items).reduce((sum, c) => sum + (c.raw_used_traffic_bytes ?? c.used_traffic_bytes), 0))} actual`}
+          detail={tx(
+            "{0} accounts · {1} actual",
+            distinctAccounts(items).length,
+            fmt(
+              distinctAccounts(items).reduce(
+                (sum, c) =>
+                  sum + (c.raw_used_traffic_bytes ?? c.used_traffic_bytes),
+                0,
+              ),
+            ),
+          )}
           icon="chart-area"
         />
         <Mini
-          title="Quota managed"
+          title={t("Quota managed")}
           value={String(limited)}
-          detail={`${items.length - limited} unlimited`}
+          detail={tx("{0} unlimited", items.length - limited)}
           icon="gauge-high"
         />
         <Mini
-          title="Inbounds"
-          value={String(inbounds.length)}
-          detail="Available client targets"
-          icon="diagram-project"
+          title={t("Online now")}
+          value={String(items.filter((c) => c.online === true).length)}
+          detail={
+            liveError
+              ? "Reconnecting…"
+              : t("Live connections · every 5 seconds")
+          }
+          icon="signal"
         />
       </section>
       <Card>
-        <CardHeader className="gap-3">
+        <CardHeader className="clients-directory-header">
           <div>
-            <CardTitle>Client directory</CardTitle>
+            <CardTitle>{t("Client directory")}</CardTitle>
             <p className="mt-1 text-[11px] text-[var(--muted)]">
-              {filtered.length} of {items.length} clients
+              {filtered.length} {t("of")} {items.length} {t("clients ·")}{" "}
+              {updatedAt?.toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+                second: "2-digit",
+              })}
             </p>
           </div>
-          <div className="flex w-full flex-wrap items-center gap-2 lg:w-auto">
-            <div className="relative min-w-[210px] flex-1 lg:w-64 lg:flex-none">
-              <Search className="pointer-events-none absolute left-3 top-2.5 h-3.5 w-3.5 text-[var(--muted)]" />
+          <div className="client-filters">
+            <div className="search-field">
+              <Search className="search-icon h-3.5 w-3.5 text-[var(--muted)]" />
               <input
                 className="input h-9 pl-8"
-                placeholder="Search clients..."
+                placeholder={t("Search clients...")}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
               />
@@ -454,16 +552,20 @@ export function ClientsPage() {
               value={status}
               onChange={(e) => setStatus(e.target.value)}
             >
-              <option value="all">All status</option>
-              <option value="active">Active</option>
-              <option value="disabled">Disabled</option>
+              <option value="all">{t("All status")}</option>
+              <option value="online">{t("Online")}</option>
+              <option value="offline">{t("Offline")}</option>
+              <option value="active">{t("Active")}</option>
+              <option value="expiring">{t("Expiring within 7 days")}</option>
+              <option value="near-quota">{t("Usage above 80%")}</option>
+              <option value="disabled">{t("Disabled")}</option>
             </select>
             <select
               className="input h-9 w-auto min-w-[150px]"
               value={inboundFilter}
               onChange={(e) => setInboundFilter(e.target.value)}
             >
-              <option value="all">All inbounds</option>
+              <option value="all">{t("All inbounds")}</option>
               {inbounds.map((i) => (
                 <option key={i.id} value={i.id}>
                   {i.name}
@@ -475,7 +577,7 @@ export function ClientsPage() {
         {selected.size > 0 && (
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--border)] bg-[var(--surface-2)] px-4 py-2.5">
             <div className="text-[11px] font-medium">
-              {selected.size} selected
+              {selected.size} {t("selected")}
             </div>
             <div className="flex flex-wrap gap-1.5">
               <Button
@@ -485,7 +587,7 @@ export function ClientsPage() {
                 disabled={busy}
               >
                 <Play className="h-3.5 w-3.5" />
-                Enable
+                {t("Enable")}
               </Button>
               <Button
                 size="sm"
@@ -494,7 +596,7 @@ export function ClientsPage() {
                 disabled={busy}
               >
                 <Pause className="h-3.5 w-3.5" />
-                Disable
+                {t("Disable")}
               </Button>
               <Button
                 size="sm"
@@ -503,7 +605,7 @@ export function ClientsPage() {
                 disabled={busy}
               >
                 <RotateCcw className="h-3.5 w-3.5" />
-                Reset usage
+                {t("Reset usage")}
               </Button>
               <Button
                 size="sm"
@@ -512,7 +614,7 @@ export function ClientsPage() {
                 disabled={busy}
               >
                 <Trash2 className="h-3.5 w-3.5" />
-                Delete
+                {t("Delete")}
               </Button>
             </div>
           </div>
@@ -525,17 +627,17 @@ export function ClientsPage() {
                   <th className="w-10">
                     <input
                       type="checkbox"
-                      aria-label="Select all visible clients"
+                      aria-label={t("Select all visible clients")}
                       checked={allVisible}
                       onChange={toggleAll}
                     />
                   </th>
-                  <th>Client</th>
-                  <th>Inbound</th>
-                  <th>Traffic</th>
-                  <th>Expiry</th>
-                  <th>Status</th>
-                  <th>Subscription</th>
+                  <th>{t("Client")}</th>
+                  <th>{t("Inbound")}</th>
+                  <th>{t("Traffic")}</th>
+                  <th>{t("Expiry")}</th>
+                  <th>{t("Status")}</th>
+                  <th>{t("Subscription")}</th>
                   <th className="w-12"></th>
                 </tr>
               </thead>
@@ -552,7 +654,7 @@ export function ClientsPage() {
                       <td>
                         <input
                           type="checkbox"
-                          aria-label={`Select ${c.name}`}
+                          aria-label={tx("Select {0}", c.name)}
                           checked={selected.has(c.id)}
                           onChange={() => toggleSelect(c.id)}
                         />
@@ -579,7 +681,9 @@ export function ClientsPage() {
                         <div className="mt-0.5 flex items-center gap-1 text-[9px] text-[var(--muted)]">
                           <span>{c.protocol?.toUpperCase()}</span>
                           <span>·</span>
-                          <span>ID {c.inbound}</span>
+                          <span>
+                            {t("ID")} {c.inbound}
+                          </span>
                         </div>
                       </td>
                       <td>
@@ -587,12 +691,12 @@ export function ClientsPage() {
                           <div className="min-w-[150px]">
                             <div className="flex justify-between gap-3 text-[10px]">
                               <span className="font-medium text-[var(--fg)]">
-                                {fmt(c.used_traffic_bytes)} billed
+                                {fmt(c.used_traffic_bytes)} {t("billed")}
                               </span>
                               <span>
                                 {c.traffic_limit_bytes
                                   ? fmt(c.traffic_limit_bytes)
-                                  : "Unlimited"}
+                                  : t("Unlimited")}
                               </span>
                             </div>
                             <div className="mt-1 text-[9px] text-[var(--muted)]">
@@ -600,9 +704,14 @@ export function ClientsPage() {
                                 c.raw_used_traffic_bytes ??
                                   c.used_traffic_bytes,
                               )}{" "}
-                              actual · {c.effective_traffic_multiplier ?? 1}x
+                              {t("actual ·")}{" "}
+                              {c.effective_traffic_multiplier ?? 1}
+                              {t("x")}
                               {c.account_id
-                                ? ` · Shared across ${c.account_connections} connections`
+                                ? tx(
+                                    " · Shared across {0} connections",
+                                    c.account_connections,
+                                  )
                                 : ""}
                             </div>
                             {c.traffic_limit_bytes > 0 ? (
@@ -618,7 +727,7 @@ export function ClientsPage() {
                           </div>
                         ) : (
                           <div className="text-[10px] text-[var(--muted)]">
-                            Not metered per user
+                            {t("Not metered per user")}
                           </div>
                         )}
                       </td>
@@ -629,18 +738,26 @@ export function ClientsPage() {
                         <div className="mt-0.5 text-[9px] text-[var(--muted)]">
                           {c.expires_at
                             ? new Date(c.expires_at).toLocaleDateString()
-                            : "No expiry"}
+                            : t("No expiry")}
                         </div>
                       </td>
                       <td>
-                        <Badge tone={c.enabled ? "green" : "amber"}>
+                        <Badge
+                          tone={
+                            c.online === true
+                              ? "green"
+                              : c.enabled
+                                ? "neutral"
+                                : "amber"
+                          }
+                        >
                           {clientState(c)}
                         </Badge>
                       </td>
                       <td>
                         <div className="flex gap-1">
                           <Button
-                            title="Copy subscription"
+                            title={t("Copy subscription")}
                             variant="outline"
                             size="icon"
                             onClick={() => copy(c)}
@@ -652,7 +769,7 @@ export function ClientsPage() {
                             )}
                           </Button>
                           <Button
-                            title="Open subscription portal"
+                            title={t("Open subscription portal")}
                             variant="ghost"
                             size="icon"
                             onClick={() =>
@@ -671,7 +788,7 @@ export function ClientsPage() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          aria-label={`Actions for ${c.name}`}
+                          aria-label={tx("Actions for {0}", c.name)}
                           onClick={() => setMenu(menu === c.id ? null : c.id)}
                         >
                           <MoreHorizontal className="h-4 w-4" />
@@ -680,7 +797,8 @@ export function ClientsPage() {
                           <div className="absolute right-3 top-10 z-20 w-44 overflow-hidden rounded-md border border-[var(--border)] bg-[var(--card)] p-1 shadow-xl">
                             <MenuItem
                               icon="pen"
-                              label="Edit"
+                              disabled={!can(session, "clients.write")}
+                              label={t("Edit")}
                               onClick={() => {
                                 setMenu(null);
                                 openEdit(c);
@@ -688,7 +806,8 @@ export function ClientsPage() {
                             />
                             <MenuItem
                               icon={c.enabled ? "pause" : "play"}
-                              label={c.enabled ? "Disable" : "Enable"}
+                              disabled={!can(session, "clients.write")}
+                              label={c.enabled ? t("Disable") : t("Enable")}
                               onClick={() => {
                                 setMenu(null);
                                 toggle(c);
@@ -696,7 +815,8 @@ export function ClientsPage() {
                             />
                             <MenuItem
                               icon="rotate-left"
-                              label="Reset usage"
+                              disabled={!can(session, "clients.write")}
+                              label={t("Reset usage")}
                               onClick={() => {
                                 setMenu(null);
                                 reset(c);
@@ -705,7 +825,8 @@ export function ClientsPage() {
                             <div className="my-1 h-px bg-[var(--border)]" />
                             <MenuItem
                               icon="trash"
-                              label="Delete"
+                              disabled={!can(session, "clients.delete")}
+                              label={t("Delete")}
                               danger
                               onClick={() => {
                                 setMenu(null);
@@ -740,7 +861,15 @@ export function ClientsPage() {
                         {c.node_name} · {c.inbound_name}
                       </div>
                     </div>
-                    <Badge tone={c.enabled ? "green" : "amber"}>
+                    <Badge
+                      tone={
+                        c.online === true
+                          ? "green"
+                          : c.enabled
+                            ? "neutral"
+                            : "amber"
+                      }
+                    >
                       {clientState(c)}
                     </Badge>
                   </div>
@@ -752,15 +881,16 @@ export function ClientsPage() {
                           <span>
                             {c.traffic_limit_bytes
                               ? fmt(c.traffic_limit_bytes)
-                              : "Unlimited"}
+                              : t("Unlimited")}
                           </span>
                         </div>
                         <div className="mt-1 text-[10px] text-[var(--muted)]">
-                          Actual:{" "}
+                          {t("Actual:")}{" "}
                           {fmt(
                             c.raw_used_traffic_bytes ?? c.used_traffic_bytes,
                           )}{" "}
-                          · {c.effective_traffic_multiplier ?? 1}x
+                          · {c.effective_traffic_multiplier ?? 1}
+                          {t("x")}
                         </div>
                         <div className="mt-2 h-1.5 rounded-full bg-[var(--surface-3)]">
                           <div
@@ -773,22 +903,23 @@ export function ClientsPage() {
                       </>
                     ) : (
                       <div className="rounded-md bg-[var(--surface-2)] px-3 py-2 text-[10px] text-[var(--muted)]">
-                        This protocol is not metered per managed account.
+                        {t("This protocol is not metered per managed account.")}
                       </div>
                     )}
                   </div>
                   <div className="mt-4 flex flex-wrap gap-2">
                     <Button size="sm" variant="outline" onClick={() => copy(c)}>
                       <Copy className="h-3.5 w-3.5" />
-                      Copy sub
+                      {t("Copy sub")}
                     </Button>
                     <Button
                       size="sm"
                       variant="outline"
+                      disabled={!can(session, "clients.write")}
                       onClick={() => openEdit(c)}
                     >
                       <Pencil className="h-3.5 w-3.5" />
-                      Edit
+                      {t("Edit")}
                     </Button>
                     <Button size="sm" variant="ghost" onClick={() => toggle(c)}>
                       {c.enabled ? (
@@ -796,7 +927,7 @@ export function ClientsPage() {
                       ) : (
                         <Play className="h-3.5 w-3.5" />
                       )}
-                      {c.enabled ? "Disable" : "Enable"}
+                      {c.enabled ? t("Disable") : t("Enable")}
                     </Button>
                   </div>
                 </div>
@@ -806,9 +937,11 @@ export function ClientsPage() {
           {!filtered.length && (
             <div className="grid place-items-center p-12 text-center">
               <Users className="mb-3 h-6 w-6 text-[var(--muted)]" />
-              <div className="text-[13px] font-medium">No clients found</div>
+              <div className="text-[13px] font-medium">
+                {t("No clients found")}
+              </div>
               <div className="mt-1 text-[11px] text-[var(--muted)]">
-                Change the filters or create your first client.
+                {t("Change the filters or create your first client.")}
               </div>
             </div>
           )}
@@ -819,6 +952,7 @@ export function ClientsPage() {
           editor={editor}
           setEditor={setEditor}
           inbounds={inbounds}
+          owners={owners}
           onSubmit={save}
           busy={busy}
         />
@@ -838,6 +972,7 @@ function Mini({
   detail: string;
   icon: string;
 }) {
+  useLocale();
   return (
     <Card>
       <CardContent className="flex items-center justify-between p-4">
@@ -860,16 +995,20 @@ function MenuItem({
   label,
   onClick,
   danger = false,
+  disabled = false,
 }: {
   icon: string;
   label: string;
   onClick: () => void;
   danger?: boolean;
+  disabled?: boolean;
 }) {
+  useLocale();
   return (
     <button
+      disabled={disabled}
       onClick={onClick}
-      className={`flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-[11px] ${danger ? "text-red-500 hover:bg-red-500/8" : "text-[var(--muted-strong)] hover:bg-[var(--surface-2)] hover:text-[var(--fg)]"}`}
+      className={`disabled:opacity-40 disabled:cursor-not-allowed flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-[11px] ${danger ? "text-red-500 hover:bg-red-500/8" : "text-[var(--muted-strong)] hover:bg-[var(--surface-2)] hover:text-[var(--fg)]"}`}
     >
       <FaIcon icon={icon} className="text-[10px]" />
       {label}
@@ -880,16 +1019,21 @@ function ClientModal({
   editor,
   setEditor,
   inbounds,
+  owners,
   onSubmit,
   busy,
 }: {
   editor: Editor;
   setEditor: (e: Editor | null) => void;
   inbounds: InboundItem[];
+  owners: import("@/lib/api").AdminUser[];
   onSubmit: (e: FormEvent) => void;
   busy: boolean;
 }) {
-  const set = (k: keyof Editor, v: string) => setEditor({ ...editor, [k]: v });
+  useLocale();
+  const session = useSession();
+  const set = (k: keyof Editor, v: string | number) =>
+    setEditor({ ...editor, [k]: v });
   const ib = inbounds.find((i) => String(i.id) === editor.inbound);
   const usageMetered =
     !ib || !["http", "socks", "tunnel", "tun"].includes(ib.protocol);
@@ -897,10 +1041,10 @@ function ClientModal({
     <Dialog
       label={
         editor.count !== undefined
-          ? "Batch create clients"
+          ? t("Batch create clients")
           : editor.id
-            ? "Edit client"
-            : "Add client"
+            ? t("Edit client")
+            : t("Add client")
       }
       onClose={() => {
         if (!busy) setEditor(null);
@@ -910,13 +1054,13 @@ function ClientModal({
         <div>
           <div className="text-[14px] font-semibold">
             {editor.count !== undefined
-              ? "Batch create clients"
+              ? t("Batch create clients")
               : editor.id
-                ? "Edit client"
-                : "Add client"}
+                ? t("Edit client")
+                : t("Add client")}
           </div>
           <div className="mt-1 text-[10px] text-[var(--muted)]">
-            Changes are validated and deployed to Xray automatically.
+            {t("Changes are validated and deployed to Xray automatically.")}
           </div>
         </div>
         <Button variant="ghost" size="icon" onClick={() => setEditor(null)}>
@@ -926,18 +1070,18 @@ function ClientModal({
       <form onSubmit={onSubmit}>
         <div className="grid gap-4 p-5 sm:grid-cols-2">
           <label className="label sm:col-span-2">
-            {editor.count !== undefined ? "Name prefix" : "Client name"}
+            {editor.count !== undefined ? t("Name prefix") : t("Client name")}
             <input
               className="input"
               value={editor.name}
               onChange={(e) => set("name", e.target.value)}
-              placeholder="e.g. Arman - iPhone"
+              placeholder={t("e.g. Arman - iPhone")}
               required
             />
           </label>
           {editor.count !== undefined && (
             <label className="label sm:col-span-2">
-              Number of clients
+              {t("Number of clients")}
               <input
                 className="input"
                 type="number"
@@ -948,21 +1092,22 @@ function ClientModal({
                 required
               />
               <span className="mt-1 text-[10px] font-normal text-[var(--muted)]">
-                Names use prefix-001, prefix-002… Each account gets separate
-                credentials and a subscription address.
+                {t(
+                  "Names use prefix-001, prefix-002… Each account gets separate credentials and a subscription address.",
+                )}
               </span>
             </label>
           )}
           <label className="label sm:col-span-2">
-            Inbound
+            {t("Inbound")}
             <select
               className="input"
-              aria-label="Inbound"
+              aria-label={t("Inbound")}
               value={editor.inbound}
               onChange={(e) => set("inbound", e.target.value)}
               required
             >
-              <option value="">Select inbound</option>
+              <option value="">{t("Select inbound")}</option>
               {inbounds
                 .filter(
                   (i) =>
@@ -978,12 +1123,13 @@ function ClientModal({
           </label>
           {!usageMetered && (
             <div className="sm:col-span-2 rounded-lg border border-amber-500/20 bg-amber-500/8 px-3 py-2.5 text-[10px] leading-5 text-amber-600 dark:text-amber-400">
-              Per-client traffic is unavailable for this protocol. Use unlimited
-              traffic and no quota renewal.
+              {t(
+                "Per-client traffic is unavailable for this protocol. Use unlimited traffic and no quota renewal.",
+              )}
             </div>
           )}
           <label className="label">
-            Traffic limit (GB)
+            {t("Traffic limit (GB)")}
             <input
               className="input"
               type="number"
@@ -995,13 +1141,13 @@ function ClientModal({
             />
             <span className="mt-1.5 block text-[9px] font-normal text-[var(--muted)]">
               {usageMetered
-                ? "0 means unlimited."
-                : "Per-user metering unavailable for this protocol."}
+                ? t("0 means unlimited.")
+                : t("Per-user metering unavailable for this protocol.")}
             </span>
           </label>
           {editor.id ? (
             <label className="label">
-              Expires at
+              {t("Expires at")}
               <input
                 className="input"
                 type="datetime-local"
@@ -1011,7 +1157,7 @@ function ClientModal({
             </label>
           ) : (
             <label className="label">
-              Expiry after (days)
+              {t("Expiry after (days)")}
               <input
                 className="input"
                 type="number"
@@ -1020,12 +1166,12 @@ function ClientModal({
                 onChange={(e) => set("days", e.target.value)}
               />
               <span className="mt-1.5 block text-[9px] font-normal text-[var(--muted)]">
-                0 means no expiry.
+                {t("0 means no expiry.")}
               </span>
             </label>
           )}
           <label className="label">
-            Quota renewal (days)
+            {t("Quota renewal (days)")}
             <input
               className="input"
               type="number"
@@ -1036,53 +1182,64 @@ function ClientModal({
             />
             <span className="mt-1.5 block text-[9px] font-normal text-[var(--muted)]">
               {usageMetered
-                ? "Reset used traffic automatically."
-                : "Disabled without per-user metering."}
+                ? t("Reset used traffic automatically.")
+                : t("Disabled without per-user metering.")}
             </span>
           </label>
           <label className="label sm:col-span-2">
-            Traffic multiplier / ضریب مصرف
+            {t("Traffic multiplier")}
             <input
               className="input"
               type="number"
-              min="-1"
-              max="3"
               step="0.001"
               value={editor.multiplier}
               onChange={(e) => set("multiplier", e.target.value)}
               required
               disabled={!usageMetered}
               aria-describedby="multiplier-help"
-              aria-label="Traffic multiplier / ضریب مصرف"
+              aria-label={t("Traffic multiplier")}
             />
             <span
               id="multiplier-help"
               className="mt-1 block text-[11px] font-normal leading-6 text-[var(--muted)]"
             >
               {Number.isFinite(Number(editor.multiplier))
-                ? `1 GB actual → ${Math.max(0, effectiveMultiplier(Number(editor.multiplier))).toFixed(3)} GB billed.`
-                : "Enter a number."}{" "}
-              Maximum 3. Negative values are discounts: -0.5 = 50% billed, -0.25
-              = 75% billed. Changes apply to future traffic.
-              <span className="block" dir="rtl">
-                ضریب ۱ مصرف عادی؛ ۳ سه‌برابر؛ ‎-۰٫۵ نصف مصرف؛ ‎-۰٫۲۵ یعنی ۲۵٪
-                تخفیف. مصرف واقعی جدا ثبت می‌شود.
-              </span>
+                ? tx(
+                    "1G => {0}G",
+                    Math.max(0, effectiveMultiplier(Number(editor.multiplier))),
+                  )
+                : t("Enter a number.")}
             </span>
           </label>
+          {session?.is_superuser && (
+            <label className="label sm:col-span-2">
+              {t("Owner")}
+              <select
+                className="input"
+                value={editor.owner_id || session.id}
+                onChange={(e) => set("owner_id", Number(e.target.value))}
+              >
+                {owners.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.username} · {t(u.role)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <label className="label sm:col-span-2">
-            Note
+            {t("Note")}
             <textarea
               className="input"
               value={editor.note}
               onChange={(e) => set("note", e.target.value)}
-              placeholder="Optional internal note"
+              placeholder={t("Optional internal note")}
             />
           </label>
         </div>
         <div className="flex justify-end gap-2 border-t border-[var(--border)] px-5 py-4">
           <Button variant="outline" onClick={() => setEditor(null)}>
-            Cancel
+            {t("Cancel")}
           </Button>
           <Button
             type="submit"
@@ -1091,10 +1248,10 @@ function ClientModal({
             {busy
               ? "Saving…"
               : editor.count !== undefined
-                ? "Create clients"
+                ? t("Create clients")
                 : editor.id
-                  ? "Save changes"
-                  : "Create client"}
+                  ? t("Save changes")
+                  : t("Create client")}
           </Button>
         </div>
       </form>

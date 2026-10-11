@@ -1,3 +1,4 @@
+import { useLocale, t } from "@/lib/i18n";
 import { useEffect, useState, type FormEvent } from "react";
 import {
   CheckCircle2,
@@ -17,7 +18,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/common/page-header";
 
-const bytes = (n: number) => `${(n / 1024 ** 3).toFixed(3)} GB`;
+const bytes = (n: number) => `${(n / 1024 ** 3).toFixed(3)} ${t("GB")}`;
 
 export function ImportsPage() {
   const [nodes, setNodes] = useState<NodeItem[]>([]);
@@ -30,8 +31,8 @@ export function ImportsPage() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [acknowledged, setAcknowledged] = useState(false);
-  const [fa, setFa] = useState(false);
-  const t = (en: string, persian: string) => (fa ? persian : en);
+  const { locale } = useLocale();
+  const fa = locale === "fa";
   useEffect(() => {
     let current = true;
     api<NodeItem[]>("/nodes/")
@@ -139,15 +140,6 @@ export function ImportsPage() {
           "Migrate clients, shared quotas and inbounds with a review before importing.",
           "انتقال کلاینت‌ها، مصرف و سهمیه‌های مشترک و اینباندها با پیش‌نمایش.",
         )}
-        actions={
-          <Button
-            variant="outline"
-            onClick={() => setFa((v) => !v)}
-            aria-label="Change import language"
-          >
-            {fa ? "English" : "فارسی"}
-          </Button>
-        }
       />
       <div className="grid gap-3 sm:grid-cols-3">
         {[
@@ -213,7 +205,6 @@ export function ImportsPage() {
                 <Database className="h-4 w-4" />
                 {t("Backup source", "فایل مبدا")}
               </CardTitle>
-              <Badge>3x-ui · PasarGuard</Badge>
             </CardHeader>
             <CardContent>
               <form
@@ -242,24 +233,28 @@ export function ImportsPage() {
                 </label>
                 <label className="label">
                   {t("Backup file", "فایل بکاپ")}
-                  <input
-                    className="input"
-                    type="file"
-                    accept=".db,.sqlite,.sqlite3,.json"
-                    disabled={busy}
-                    onChange={(e) => {
-                      setFile(e.target.files?.[0] || null);
-                      clearPreview();
-                    }}
-                    required
-                  />
+                  <span className="backup-file-field">
+                    <span className="backup-file-button">
+                      {t("Choose file", "انتخاب فایل")}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-center">
+                      {file?.name ||
+                        t("No file selected", "فایلی انتخاب نشده است")}
+                    </span>
+                    <input
+                      className="backup-file-input"
+                      aria-label={t("Backup file", "فایل بکاپ")}
+                      type="file"
+                      accept=".db,.sqlite,.sqlite3,.json"
+                      disabled={busy}
+                      onChange={(e) => {
+                        setFile(e.target.files?.[0] || null);
+                        clearPreview();
+                      }}
+                      required
+                    />
+                  </span>
                 </label>
-                <div className="sm:col-span-2 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-4 text-[12px] leading-6 text-[var(--muted)]">
-                  {t(
-                    "SQLite backups from 3x-ui and PasarGuard, or a PasarGuard tables JSON export. Maximum 64 MiB. Previewing a backup makes no changes to clients or running services.",
-                    "بکاپ SQLite از 3x-ui و پاسارگارد، یا خروجی JSON جداول پاسارگارد. حداکثر ۶۴ مگابایت. مشاهدهٔ پیش‌نمایش تغییری در کلاینت‌ها یا سرویس‌های فعال ایجاد نمی‌کند.",
-                  )}
-                </div>
                 <div className="sm:col-span-2 flex flex-wrap items-center justify-between gap-3">
                   <span className="text-[11px] text-[var(--muted)]">
                     {file
@@ -305,7 +300,6 @@ export function ImportsPage() {
                   <CardTitle>
                     {t("Review inbounds", "بررسی اینباندها")}
                   </CardTitle>
-                  <Badge>{preview.source}</Badge>
                 </CardHeader>
                 <CardContent className="space-y-3 p-4">
                   {preview.inbounds.map((i) => (
@@ -380,7 +374,7 @@ export function ImportsPage() {
                       {(i.warnings.length > 0 || i.port_owner) && (
                         <ul className="mt-3 space-y-1 border-t border-[var(--border)] pt-3 text-[11px] leading-5 text-[var(--muted)]">
                           {i.warnings.map((warning, index) => (
-                            <li key={index}>{warning}</li>
+                            <li key={index}>{t(warning)}</li>
                           ))}
                           {i.port_owner && (
                             <li>
@@ -404,7 +398,7 @@ export function ImportsPage() {
                       </p>
                       <ul className="space-y-1 text-[var(--muted)]">
                         {preview.warnings.map((warning, index) => (
-                          <li key={index}>{warning}</li>
+                          <li key={index}>{t(warning)}</li>
                         ))}
                       </ul>
                     </div>

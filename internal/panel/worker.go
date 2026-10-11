@@ -64,6 +64,7 @@ func (s *Server) reconcileNode(ctx context.Context, id int64) error {
 		return e
 	}
 	n["status"] = "degraded"
+	n["_online_available"] = false
 	n["last_seen_at"] = stamp()
 	n["xray_version"] = str(obj(health, "xray"), "version")
 	if flag(obj(health, "xray"), "running") {
@@ -96,6 +97,13 @@ func (s *Server) reconcileNode(ctx context.Context, id int64) error {
 		return e
 	}
 	dirty := false
+	if flag(n, "_online_tracking_required") {
+		var pending bool
+		if e = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM vr_jobs WHERE node_id=$1)`, id).Scan(&pending); e != nil {
+			return e
+		}
+		dirty = !pending
+	}
 	for _, c := range cs {
 		changed := false
 		now := time.Now().UTC()
@@ -208,10 +216,25 @@ func (s *Server) runJob(ctx context.Context, id int64) error {
 	return e
 }
 func (s *Server) Worker(ctx context.Context) {
-	ticker := time.NewTicker(15 * time.Second)
+	// Network-dependent housekeeping cannot delay live client telemetry.
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for {
+			if e := s.maintain(ctx); e != nil && ctx.Err() == nil {
+				s.Logger.Warn("housekeeping failed", "error", e)
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
+	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 	for {
-		if e := s.Reconcile(ctx); e != nil && ctx.Err() == nil {
+		if e := s.reconcileNodes(ctx); e != nil && ctx.Err() == nil {
 			s.Logger.Warn("reconciliation failed", "error", e)
 		}
 		select {
@@ -222,6 +245,12 @@ func (s *Server) Worker(ctx context.Context) {
 	}
 }
 func (s *Server) Reconcile(ctx context.Context) error {
+	if err := s.reconcileNodes(ctx); err != nil {
+		return err
+	}
+	return s.maintain(ctx)
+}
+func (s *Server) reconcileNodes(ctx context.Context) error {
 	if e := s.RecoverOperations(ctx); e != nil {
 		return e
 	}
@@ -240,6 +269,9 @@ func (s *Server) Reconcile(ctx context.Context) error {
 			s.Logger.Warn("node deployment pending", "node", num(n, "id"), "error", e)
 		}
 	}
+	return nil
+}
+func (s *Server) maintain(ctx context.Context) error {
 	cfg, e := settings(ctx, s.Store.Pool)
 	if e != nil {
 		return e
@@ -253,6 +285,10 @@ func (s *Server) Reconcile(ctx context.Context) error {
 		return e
 	}
 	_, e = s.Store.Pool.Exec(ctx, `DELETE FROM vr_traffic_windows WHERE at<now()-$1*interval '1 day'`, num(cfg, "traffic_history_days"))
+	if e != nil {
+		return e
+	}
+	_, e = s.Store.Pool.Exec(ctx, `DELETE FROM vr_owner_traffic_windows WHERE at<now()-$1*interval '1 day'`, num(cfg, "traffic_history_days"))
 	if e != nil {
 		return e
 	}

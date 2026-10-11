@@ -243,9 +243,13 @@ type Counter struct {
 	Value int64  `json:"value"`
 }
 type Snapshot struct {
-	Stat       []Counter `json:"stat"`
-	Accounting string    `json:"accounting"`
-	LedgerID   string    `json:"ledger_id"`
+	Stat                   []Counter `json:"stat"`
+	Accounting             string    `json:"accounting"`
+	LedgerID               string    `json:"ledger_id"`
+	OnlineUsers            []string  `json:"online_users"`
+	OnlineAvailable        bool      `json:"online_available"`
+	OnlineTrackingRequired bool      `json:"online_tracking_required"`
+	ObservedAt             string    `json:"observed_at"`
 }
 type counterState struct {
 	Raw   int64  `json:"raw"`
@@ -420,12 +424,46 @@ func (m *Manager) observe(ctx context.Context) error {
 func (m *Manager) Stats(ctx context.Context) (Snapshot, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.status(ctx).Running {
+	running := m.status(ctx).Running
+	if running {
 		if err := m.observe(ctx); err != nil {
 			return Snapshot{}, err
 		}
 	}
-	s := Snapshot{Accounting: "durable-v1", LedgerID: m.state.ID, Stat: []Counter{}}
+	s := Snapshot{Accounting: "durable-v1", LedgerID: m.state.ID, Stat: []Counter{}, OnlineUsers: []string{}, ObservedAt: time.Now().UTC().Format(time.RFC3339Nano)}
+	if !running {
+		s.OnlineAvailable = true
+	} else {
+		var cfg struct {
+			Policy struct {
+				Levels map[string]struct {
+					StatsUserOnline bool `json:"statsUserOnline"`
+				} `json:"levels"`
+			} `json:"policy"`
+		}
+		raw, err := os.ReadFile(m.ConfigPath)
+		if err == nil && json.Unmarshal(raw, &cfg) == nil {
+			s.OnlineTrackingRequired = !cfg.Policy.Levels["0"].StatsUserOnline
+			if !s.OnlineTrackingRequired {
+				onlineCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+				defer cancel()
+				out, err := m.Runtime.Run(onlineCtx, m.Binary, "api", "statsgetallonlineusers", "--server=127.0.0.1:10085", "--timeout=2")
+				var users struct {
+					Users []string `json:"users"`
+				}
+				if err == nil && json.Unmarshal(out, &users) == nil {
+					s.OnlineAvailable = true
+					for _, name := range users.Users {
+						parts := strings.Split(name, ">>>")
+						if len(parts) == 3 && parts[0] == "user" && parts[2] == "online" {
+							name = parts[1]
+						}
+						s.OnlineUsers = append(s.OnlineUsers, name)
+					}
+				}
+			}
+		}
+	}
 	for k, v := range m.state.Counters {
 		s.Stat = append(s.Stat, Counter{k, v.Total})
 	}

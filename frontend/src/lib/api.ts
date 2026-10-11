@@ -1,3 +1,4 @@
+import { t, localeName } from "./i18n";
 const API_BASE = import.meta.env.VITE_API_URL || "/api";
 
 export type PortReport = {
@@ -90,7 +91,7 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     if (code === "two_factor_setup_required")
       window.dispatchEvent(new Event("veloray:session-update"));
     throw new APIError(
-      errorMessage(data, `${res.status} ${res.statusText}`),
+      localizeError(errorMessage(data, `${res.status} ${res.statusText}`)),
       res.status,
       code,
     );
@@ -117,6 +118,9 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 export type Session = {
+  role?: string;
+  permissions?: string[];
+  own_clients_only?: boolean;
   id: number;
   username: string;
   is_staff?: boolean;
@@ -186,6 +190,10 @@ export type InboundItem = {
   supports_clients: boolean;
 };
 export type ClientItem = {
+  owner_id: number;
+  online: boolean | null;
+  connection_status: string;
+  telemetry_at?: string;
   id: number;
   inbound: number;
   inbound_name: string;
@@ -254,6 +262,14 @@ export type AppSettings = {
   telegram_alert_cooldown_minutes: number;
 };
 export type AdminUser = {
+  role: "administrator" | "reseller" | "viewer" | "custom";
+  permissions: string[];
+  allowed_inbounds: number[];
+  own_clients_only: boolean;
+  max_clients: number;
+  traffic_budget_bytes: number;
+  clients_count: number;
+  allocated_traffic_bytes: number;
   id: number;
   username: string;
   email: string;
@@ -355,3 +371,10 @@ export type TelegramStatus = {
   last_success: string;
   last_error: string;
 };
+
+function localizeError(message: string): string {
+  if (localeName() !== "fa-IR") return message;
+  const translated = t(message);
+  if (translated !== message) return translated;
+  return "درخواست انجام نشد. ورودی‌ها و دسترسی حساب را بررسی کنید.";
+}

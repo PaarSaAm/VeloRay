@@ -1,3 +1,4 @@
+import { useLocale, t } from "@/lib/i18n";
 import { FormEvent, useEffect, useState } from "react";
 import {
   Check,
@@ -13,6 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/common/page-header";
 type Status = { enabled: boolean; recovery_codes_remaining: number };
 export function SecurityPage() {
+  useLocale();
   const [status, setStatus] = useState<Status | null>(null),
     [setup, setSetup] = useState<any>(null),
     [code, setCode] = useState(""),
@@ -28,7 +30,7 @@ export function SecurityPage() {
   async function begin() {
     try {
       setSetup(await api("/auth/2fa/setup", { method: "POST" }));
-      setMsg("Add the secret to your authenticator, then confirm a code.");
+      setMsg(t("Add the secret to your authenticator, then confirm a code."));
     } catch (e: any) {
       setMsg(e.message);
     }
@@ -45,7 +47,9 @@ export function SecurityPage() {
       setCode("");
       await load();
       window.dispatchEvent(new Event("veloray:session-update"));
-      setMsg("Two-factor authentication enabled. Save the recovery codes now.");
+      setMsg(
+        t("Two-factor authentication enabled. Save the recovery codes now."),
+      );
     } catch (e: any) {
       setMsg(e.message);
     }
@@ -62,7 +66,7 @@ export function SecurityPage() {
       setRecovery([]);
       await load();
       window.dispatchEvent(new Event("veloray:session-update"));
-      setMsg("Two-factor authentication disabled.");
+      setMsg(t("Two-factor authentication disabled."));
     } catch (e: any) {
       setMsg(e.message);
     }
@@ -75,8 +79,8 @@ export function SecurityPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Security"
-        description="Protect your account with two-factor authentication."
+        title={t("Security")}
+        description={t("Protect your account with two-factor authentication.")}
       />
       {msg && (
         <div
@@ -95,9 +99,9 @@ export function SecurityPage() {
                 <ShieldCheck className="h-4 w-4 text-emerald-500" />
               </div>
               <div>
-                <CardTitle>Two-factor authentication</CardTitle>
+                <CardTitle>{t("Two-factor authentication")}</CardTitle>
                 <p className="mt-1 text-[11px] text-[var(--muted)]">
-                  TOTP with single-use recovery codes
+                  {t("TOTP with single-use recovery codes")}
                 </p>
               </div>
             </div>
@@ -106,8 +110,8 @@ export function SecurityPage() {
             {status?.enabled ? (
               <div className="space-y-4">
                 <div className="rounded-lg border border-emerald-500/15 bg-emerald-500/8 p-3 text-[12px] text-emerald-500">
-                  Enabled · {status.recovery_codes_remaining} recovery codes
-                  remaining
+                  {t("Enabled ·")} {status.recovery_codes_remaining}{" "}
+                  {t("recovery codes remaining")}
                 </div>
                 <form
                   onSubmit={disable}
@@ -116,20 +120,20 @@ export function SecurityPage() {
                   <input
                     className="input"
                     type="password"
-                    placeholder="Current password"
+                    placeholder={t("Current password")}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
                   />
                   <input
                     className="input"
-                    placeholder="Authenticator / recovery code"
+                    placeholder={t("Authenticator / recovery code")}
                     value={disableCode}
                     onChange={(e) => setDisableCode(e.target.value)}
                     required
                   />
                   <Button type="submit" variant="outline">
-                    Disable 2FA
+                    {t("Disable 2FA")}
                   </Button>
                 </form>
               </div>
@@ -137,7 +141,7 @@ export function SecurityPage() {
               <form onSubmit={confirm} className="space-y-4">
                 <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-4">
                   <div className="text-[10px] uppercase tracking-wider text-[var(--muted)]">
-                    Authenticator secret
+                    {t("Authenticator secret")}
                   </div>
                   <div className="mt-2 break-all mono text-[13px]">
                     {setup.secret}
@@ -149,18 +153,18 @@ export function SecurityPage() {
                 <div className="flex flex-col gap-2 sm:flex-row">
                   <input
                     className="input"
-                    placeholder="6-digit code"
+                    placeholder={t("6-digit code")}
                     value={code}
                     onChange={(e) => setCode(e.target.value)}
                     required
                   />
-                  <Button type="submit">Confirm & enable</Button>
+                  <Button type="submit">{t("Confirm & enable")}</Button>
                 </div>
               </form>
             ) : (
               <Button onClick={begin}>
                 <KeyRound className="h-3.5 w-3.5" />
-                Set up 2FA
+                {t("Set up 2FA")}
               </Button>
             )}
             {recovery.length > 0 && (
@@ -168,10 +172,10 @@ export function SecurityPage() {
                 <div className="flex items-center justify-between">
                   <div>
                     <div className="text-[12px] font-semibold text-amber-500">
-                      Recovery codes
+                      {t("Recovery codes")}
                     </div>
                     <div className="mt-1 text-[10px] text-[var(--muted)]">
-                      Store these offline. Each code works once.
+                      {t("Store these offline. Each code works once.")}
                     </div>
                   </div>
                   <Button size="sm" variant="outline" onClick={copy}>
@@ -180,7 +184,7 @@ export function SecurityPage() {
                     ) : (
                       <Copy className="h-3.5 w-3.5" />
                     )}
-                    Copy
+                    {t("Copy")}
                   </Button>
                 </div>
                 <div className="mt-3 grid grid-cols-2 gap-2 mono text-[11px] sm:grid-cols-5">
@@ -196,18 +200,20 @@ export function SecurityPage() {
           {[
             [
               KeyRound,
-              "Node credentials",
-              "Agent bearer tokens are encrypted at rest.",
+              t("Node credentials"),
+              t("Agent bearer tokens are encrypted at rest."),
             ],
             [
               LockKeyhole,
-              "Agent transport",
-              "Local Agent stays loopback-only; remote Agents require TLS.",
+              t("Agent transport"),
+              t("Local Agent stays loopback-only; remote Agents require TLS."),
             ],
             [
               Database,
-              "Recovery",
-              "Backup, restore and admin recovery remain available through the host CLI.",
+              t("Recovery"),
+              t(
+                "Backup, restore and admin recovery remain available through the host CLI.",
+              ),
             ],
           ].map(([I, a, b]: any) => (
             <Card key={a}>

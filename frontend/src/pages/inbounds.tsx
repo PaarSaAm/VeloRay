@@ -1,3 +1,5 @@
+import { t } from "@/lib/i18n";
+import { useLocale, tx } from "@/lib/i18n";
 import { Dialog } from "@/components/common/dialog";
 import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
 import {
@@ -66,7 +68,7 @@ type FormState = {
 };
 const fresh = (node = ""): FormState => ({
   node,
-  name: "Main",
+  name: t("Main"),
   listen: "0.0.0.0",
   port: "443",
   protocol: "vless",
@@ -113,9 +115,10 @@ function Field({
   children: ReactNode;
   className?: string;
 }) {
+  useLocale();
   return (
     <label className={`label ${className}`}>
-      {label}
+      {t(label)}
       {children}
     </label>
   );
@@ -133,6 +136,7 @@ function Choice({
   disabled?: boolean;
   onClick: (v: string) => void;
 }) {
+  useLocale();
   return (
     <button
       type="button"
@@ -146,7 +150,7 @@ function Choice({
         "disabled:cursor-not-allowed disabled:opacity-35",
       )}
     >
-      {label}
+      {t(label)}
     </button>
   );
 }
@@ -173,6 +177,7 @@ const transportOptions = [
 ] as const;
 
 export function InboundsPage() {
+  useLocale();
   const [nodes, setNodes] = useState<NodeItem[]>([]),
     [items, setItems] = useState<InboundItem[]>([]),
     [form, setForm] = useState<FormState>(fresh()),
@@ -201,23 +206,23 @@ export function InboundsPage() {
     if (!value) return;
     const next = fresh(form.node);
     if (value === "reality") {
-      next.name = "VLESS REALITY";
+      next.name = t("VLESS REALITY");
       next.port = "2053";
     } else if (value === "websocket") {
-      next.name = "VLESS WebSocket";
+      next.name = t("VLESS WebSocket");
       next.port = "2083";
       next.transport = "ws";
       next.security = "tls";
       next.flow = "";
       next.path = "/vpn";
     } else if (value === "trojan") {
-      next.name = "Trojan TLS";
+      next.name = t("Trojan TLS");
       next.port = "2087";
       next.protocol = "trojan";
       next.security = "tls";
       next.flow = "";
     } else if (value === "wireguard") {
-      next.name = "WireGuard";
+      next.name = t("WireGuard");
       next.port = "51820";
       next.protocol = "wireguard";
       next.security = "none";
@@ -234,8 +239,8 @@ export function InboundsPage() {
     setPortResult("");
     setMsg(
       next.security === "tls"
-        ? "Set the server name and certificate paths, then check the port."
-        : "Generate the server keypair, then check the port.",
+        ? t("Set the server name and certificate paths, then check the port.")
+        : t("Generate the server keypair, then check the port."),
     );
   }
   async function checkPort() {
@@ -259,11 +264,13 @@ export function InboundsPage() {
                   `${p.network.toUpperCase()} :${p.port} — ${p.owner || "occupied"}`,
               )
               .join(" · ")
-          : "Port check passed. Availability is checked again before deployment.",
+          : t(
+              "Port check passed. Availability is checked again before deployment.",
+            ),
       );
     } catch (error: unknown) {
       setPortResult(
-        error instanceof Error ? error.message : "Port check failed.",
+        error instanceof Error ? error.message : t("Port check failed."),
       );
     } finally {
       setPortBusy(false);
@@ -340,7 +347,7 @@ export function InboundsPage() {
         reality_private_key: k.private_key,
         reality_public_key: k.public_key,
       }));
-      setMsg("REALITY key pair generated.");
+      setMsg(t("REALITY key pair generated."));
     } catch (e: any) {
       setMsg(e.message);
     } finally {
@@ -359,7 +366,7 @@ export function InboundsPage() {
         wg_secret_key: k.private_key,
         wg_public_key: k.public_key,
       }));
-      setMsg("WireGuard server key pair generated.");
+      setMsg(t("WireGuard server key pair generated."));
     } catch (e: any) {
       setMsg(e.message);
     } finally {
@@ -452,13 +459,13 @@ export function InboundsPage() {
           method: "PATCH",
           body: JSON.stringify(payload()),
         });
-        setMsg("Inbound updated, validated and deployed.");
+        setMsg(t("Inbound updated, validated and deployed."));
       } else {
         await api("/inbounds/", {
           method: "POST",
           body: JSON.stringify(payload()),
         });
-        setMsg("Inbound created, validated and deployed.");
+        setMsg(t("Inbound created, validated and deployed."));
       }
       const keep = form.node;
       setEditing(null);
@@ -530,7 +537,7 @@ export function InboundsPage() {
     try {
       setMsg("Deploying…");
       await api(`/nodes/${i.node}/deploy/`, { method: "POST" });
-      setMsg(`${i.node_name} validated and deployed.`);
+      setMsg(tx("{0} validated and deployed.", i.node_name));
     } catch (e: any) {
       setMsg(e.message);
     }
@@ -547,7 +554,7 @@ export function InboundsPage() {
     }
   }
   async function remove(i: InboundItem) {
-    if (!confirm(`Delete inbound ${i.name}?`)) return;
+    if (!confirm(tx("Delete inbound {0}?", i.name))) return;
     try {
       await api(`/inbounds/${i.id}/`, { method: "DELETE" });
       await load();
@@ -561,7 +568,7 @@ export function InboundsPage() {
     setClonePort(
       i.protocol === "tun" ? "0" : String(Math.min(65535, i.port + 1)),
     );
-    setCloneName(`${i.name} copy`);
+    setCloneName(tx("{0} copy", i.name));
   }
   async function clone() {
     if (!cloning || cloneBusy) return;
@@ -600,8 +607,8 @@ export function InboundsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Inbounds"
-        description="Connection protocols, ports and server credentials."
+        title={t("Inbounds")}
+        description={t("Connection protocols, ports and server credentials.")}
       />
       {msg && (
         <div
@@ -626,7 +633,7 @@ export function InboundsPage() {
               </span>
             </div>
             <div className="mt-2 truncate text-[9px] text-[var(--muted)]">
-              {label}
+              {t(label)}
             </div>
           </div>
         ))}
@@ -635,9 +642,11 @@ export function InboundsPage() {
         <Card>
           <CardHeader>
             <div>
-              <CardTitle>{editing ? "Edit inbound" : "New inbound"}</CardTitle>
+              <CardTitle>
+                {editing ? t("Edit inbound") : t("New inbound")}
+              </CardTitle>
               <p className="mt-1 text-[11px] text-[var(--muted)]">
-                Only combinations validated by VeloRay are deployable.
+                {t("Only combinations validated by VeloRay are deployable.")}
               </p>
             </div>
             {editing && (
@@ -650,34 +659,40 @@ export function InboundsPage() {
             <form onSubmit={save} className="space-y-5">
               {!editing && (
                 <label className="label">
-                  Connection preset
+                  {t("Connection preset")}
                   <select
                     className="input"
-                    aria-label="Connection preset"
+                    aria-label={t("Connection preset")}
                     value=""
                     onChange={(e) => preset(e.target.value)}
                     disabled={busy}
                   >
-                    <option value="">Choose a starting point</option>
-                    <option value="reality">VLESS · REALITY · Vision</option>
-                    <option value="websocket">VLESS · WebSocket · TLS</option>
-                    <option value="trojan">Trojan · TLS</option>
-                    <option value="wireguard">WireGuard · UDP</option>
-                    <option value="hysteria">Hysteria2 · UDP · TLS</option>
+                    <option value="">{t("Choose a starting point")}</option>
+                    <option value="reality">
+                      {t("VLESS · REALITY · Vision")}
+                    </option>
+                    <option value="websocket">
+                      {t("VLESS · WebSocket · TLS")}
+                    </option>
+                    <option value="trojan">{t("Trojan · TLS")}</option>
+                    <option value="wireguard">{t("WireGuard · UDP")}</option>
+                    <option value="hysteria">
+                      {t("Hysteria2 · UDP · TLS")}
+                    </option>
                   </select>
                 </label>
               )}
               <section>
-                <div className="panel-section-title mb-3">Listener</div>
+                <div className="panel-section-title mb-3">{t("Listener")}</div>
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <Field label="Node" className="sm:col-span-2">
+                  <Field label={t("Node")} className="sm:col-span-2">
                     <select
                       className="input"
                       value={form.node}
                       onChange={(e) => set("node", e.target.value)}
                       required
                     >
-                      <option value="">Select node</option>
+                      <option value="">{t("Select node")}</option>
                       {nodes.map((n) => (
                         <option key={n.id} value={n.id}>
                           {n.is_local ? "★ " : ""}
@@ -686,7 +701,7 @@ export function InboundsPage() {
                       ))}
                     </select>
                   </Field>
-                  <Field label="Name">
+                  <Field label={t("Name")}>
                     <input
                       className="input"
                       value={form.name}
@@ -695,7 +710,9 @@ export function InboundsPage() {
                     />
                   </Field>
                   <Field
-                    label={form.protocol === "tun" ? "Port (not used)" : "Port"}
+                    label={
+                      form.protocol === "tun" ? t("Port (not used)") : t("Port")
+                    }
                   >
                     <input
                       className="input"
@@ -709,17 +726,21 @@ export function InboundsPage() {
                     />
                   </Field>
                   {form.protocol !== "tun" && (
-                    <Field label="Listen address" className="sm:col-span-2">
+                    <Field
+                      label={t("Listen address")}
+                      className="sm:col-span-2"
+                    >
                       <input
                         className="input"
                         value={form.listen}
                         onChange={(e) => set("listen", e.target.value)}
-                        placeholder="0.0.0.0 or ::"
+                        placeholder={t("0.0.0.0 or ::")}
                         required
                       />
                       <span className="mt-1 text-[10px] font-normal text-[var(--muted)]">
-                        Use 0.0.0.0 for IPv4 or :: for IPv6. Enter a specific IP
-                        to restrict the listener.
+                        {t(
+                          "Use 0.0.0.0 for IPv4 or :: for IPv6. Enter a specific IP to restrict the listener.",
+                        )}
                       </span>
                     </Field>
                   )}
@@ -733,7 +754,7 @@ export function InboundsPage() {
                       disabled={portBusy || busy || !form.node}
                     >
                       <FaIcon icon="shield-halved" />
-                      {portBusy ? "Checking port…" : "Check port"}
+                      {portBusy ? t("Checking port…") : t("Check port")}
                     </Button>
                     {portResult && portSignature === signature && (
                       <p
@@ -747,7 +768,7 @@ export function InboundsPage() {
                 )}
               </section>
               <section>
-                <div className="panel-section-title mb-3">Protocol</div>
+                <div className="panel-section-title mb-3">{t("Protocol")}</div>
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                   {protocolOptions.map(([v, l]) => (
                     <Choice
@@ -761,19 +782,22 @@ export function InboundsPage() {
                 </div>
                 {plaintext && (
                   <div className="mt-3 rounded-lg border border-amber-500/20 bg-amber-500/7 px-3 py-2 text-[10px] leading-5 text-amber-500">
-                    HTTP and SOCKS are plaintext proxy protocols. Prefer
-                    local/LAN use or place them behind a protected transport.
+                    {t(
+                      "HTTP and SOCKS are plaintext proxy protocols. Prefer local/LAN use or place them behind a protected transport.",
+                    )}
                   </div>
                 )}
               </section>
               {!["wireguard", "tunnel", "tun"].includes(form.protocol) && (
                 <section>
-                  <div className="panel-section-title mb-3">Transport</div>
+                  <div className="panel-section-title mb-3">
+                    {t("Transport")}
+                  </div>
                   {form.protocol === "hysteria" ? (
                     <div className="grid grid-cols-2">
                       <Choice
                         value="hysteria"
-                        label="Hysteria2 / QUIC"
+                        label={t("Hysteria2 / QUIC")}
                         active
                         onClick={() => {}}
                       />
@@ -798,21 +822,21 @@ export function InboundsPage() {
                   )}
                   {["ws", "xhttp", "httpupgrade"].includes(form.transport) && (
                     <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                      <Field label="Path">
+                      <Field label={t("Path")}>
                         <input
                           className="input"
                           value={form.path}
                           onChange={(e) => set("path", e.target.value)}
-                          placeholder="/veloray"
+                          placeholder={t("/veloray")}
                         />
                       </Field>
                       {["ws", "httpupgrade"].includes(form.transport) && (
-                        <Field label="Host header">
+                        <Field label={t("Host header")}>
                           <input
                             className="input"
                             value={form.host_header}
                             onChange={(e) => set("host_header", e.target.value)}
-                            placeholder="cdn.example.com"
+                            placeholder={t("cdn.example.com")}
                           />
                         </Field>
                       )}
@@ -820,12 +844,12 @@ export function InboundsPage() {
                   )}
                   {form.transport === "grpc" && (
                     <div className="mt-3">
-                      <Field label="gRPC service">
+                      <Field label={t("gRPC service")}>
                         <input
                           className="input"
                           value={form.service_name}
                           onChange={(e) => set("service_name", e.target.value)}
-                          placeholder="veloray-grpc"
+                          placeholder={t("veloray-grpc")}
                         />
                       </Field>
                     </div>
@@ -834,12 +858,14 @@ export function InboundsPage() {
               )}
               {!["wireguard", "tunnel", "tun"].includes(form.protocol) && (
                 <section>
-                  <div className="panel-section-title mb-3">Security</div>
+                  <div className="panel-section-title mb-3">
+                    {t("Security")}
+                  </div>
                   <div className="grid grid-cols-3 gap-2">
                     {[
-                      ["none", "None"],
-                      ["tls", "TLS"],
-                      ["reality", "REALITY"],
+                      ["none", t("None")],
+                      ["tls", t("TLS")],
+                      ["reality", t("REALITY")],
                     ].map(([v, l]) => (
                       <Choice
                         key={v}
@@ -863,44 +889,50 @@ export function InboundsPage() {
                   </div>
                   {vision && (
                     <div className="mt-3">
-                      <Field label="VLESS flow">
+                      <Field label={t("VLESS flow")}>
                         <select
                           className="input"
                           value={form.flow}
                           onChange={(e) => set("flow", e.target.value)}
                         >
-                          <option value="xtls-rprx-vision">XTLS Vision</option>
-                          <option value="">None</option>
+                          <option value="xtls-rprx-vision">
+                            {t("XTLS Vision")}
+                          </option>
+                          <option value="">{t("None")}</option>
                         </select>
                       </Field>
                     </div>
                   )}
                   {tls && (
                     <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                      <Field label="TLS certificate">
+                      <Field label={t("TLS certificate")}>
                         <input
                           className="input"
                           value={form.tls_cert_file}
                           onChange={(e) => set("tls_cert_file", e.target.value)}
-                          placeholder="/etc/letsencrypt/live/.../fullchain.pem"
+                          placeholder={t(
+                            "/etc/letsencrypt/live/.../fullchain.pem",
+                          )}
                         />
                       </Field>
-                      <Field label="TLS private key">
+                      <Field label={t("TLS private key")}>
                         <input
                           className="input"
                           value={form.tls_key_file}
                           onChange={(e) => set("tls_key_file", e.target.value)}
-                          placeholder="/etc/letsencrypt/live/.../privkey.pem"
+                          placeholder={t(
+                            "/etc/letsencrypt/live/.../privkey.pem",
+                          )}
                         />
                       </Field>
-                      <Field label="Server name" className="sm:col-span-2">
+                      <Field label={t("Server name")} className="sm:col-span-2">
                         <input
                           className="input"
                           value={form.tls_server_name}
                           onChange={(e) =>
                             set("tls_server_name", e.target.value)
                           }
-                          placeholder="vpn.example.com"
+                          placeholder={t("vpn.example.com")}
                         />
                       </Field>
                     </div>
@@ -910,10 +942,10 @@ export function InboundsPage() {
                       <div className="flex items-center justify-between rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2">
                         <div>
                           <div className="text-[11px] font-semibold">
-                            REALITY identity
+                            {t("REALITY identity")}
                           </div>
                           <div className="mt-0.5 text-[9px] text-[var(--muted)]">
-                            Generate X25519 keys on the selected node.
+                            {t("Generate X25519 keys on the selected node.")}
                           </div>
                         </div>
                         <Button
@@ -923,11 +955,11 @@ export function InboundsPage() {
                           disabled={busy}
                         >
                           <KeyRound className="h-3.5 w-3.5" />
-                          Generate
+                          {t("Generate")}
                         </Button>
                       </div>
                       <div className="grid gap-3 sm:grid-cols-2">
-                        <Field label="Destination">
+                        <Field label={t("Destination")}>
                           <input
                             className="input"
                             value={form.reality_dest}
@@ -936,7 +968,7 @@ export function InboundsPage() {
                             }
                           />
                         </Field>
-                        <Field label="Server name">
+                        <Field label={t("Server name")}>
                           <input
                             className="input"
                             value={form.reality_server_name}
@@ -945,7 +977,7 @@ export function InboundsPage() {
                             }
                           />
                         </Field>
-                        <Field label="Private key">
+                        <Field label={t("Private key")}>
                           <input
                             className="input mono"
                             value={form.reality_private_key}
@@ -954,7 +986,7 @@ export function InboundsPage() {
                             }
                           />
                         </Field>
-                        <Field label="Public key">
+                        <Field label={t("Public key")}>
                           <input
                             className="input mono"
                             value={form.reality_public_key}
@@ -970,14 +1002,16 @@ export function InboundsPage() {
               )}
               {form.protocol === "wireguard" && (
                 <section>
-                  <div className="panel-section-title mb-3">WireGuard</div>
+                  <div className="panel-section-title mb-3">
+                    {t("WireGuard")}
+                  </div>
                   <div className="flex items-center justify-between rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2">
                     <div>
                       <div className="text-[11px] font-semibold">
-                        Server key pair
+                        {t("Server key pair")}
                       </div>
                       <div className="mt-0.5 text-[9px] text-[var(--muted)]">
-                        Generated by Xray on the selected node.
+                        {t("Generated by Xray on the selected node.")}
                       </div>
                     </div>
                     <Button
@@ -987,25 +1021,25 @@ export function InboundsPage() {
                       disabled={busy}
                     >
                       <KeyRound className="h-3.5 w-3.5" />
-                      Generate
+                      {t("Generate")}
                     </Button>
                   </div>
                   <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                    <Field label="Private key">
+                    <Field label={t("Private key")}>
                       <input
                         className="input mono"
                         value={form.wg_secret_key}
                         onChange={(e) => set("wg_secret_key", e.target.value)}
                       />
                     </Field>
-                    <Field label="Public key">
+                    <Field label={t("Public key")}>
                       <input
                         className="input mono"
                         value={form.wg_public_key}
                         onChange={(e) => set("wg_public_key", e.target.value)}
                       />
                     </Field>
-                    <Field label="MTU">
+                    <Field label={t("MTU")}>
                       <input
                         className="input"
                         type="number"
@@ -1015,7 +1049,7 @@ export function InboundsPage() {
                         onChange={(e) => set("wg_mtu", e.target.value)}
                       />
                     </Field>
-                    <Field label="Client DNS">
+                    <Field label={t("Client DNS")}>
                       <input
                         className="input"
                         value={form.wg_dns}
@@ -1027,9 +1061,11 @@ export function InboundsPage() {
               )}
               {form.protocol === "socks" && (
                 <section>
-                  <div className="panel-section-title mb-3">SOCKS options</div>
+                  <div className="panel-section-title mb-3">
+                    {t("SOCKS options")}
+                  </div>
                   <label className="flex items-center justify-between rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2.5 text-[11px]">
-                    <span>Enable UDP relay</span>
+                    <span>{t("Enable UDP relay")}</span>
                     <input
                       type="checkbox"
                       checked={form.socks_udp}
@@ -1040,16 +1076,18 @@ export function InboundsPage() {
               )}
               {form.protocol === "shadowsocks" && (
                 <section>
-                  <div className="panel-section-title mb-3">Shadowsocks</div>
-                  <Field label="Cipher">
+                  <div className="panel-section-title mb-3">
+                    {t("Shadowsocks")}
+                  </div>
+                  <Field label={t("Cipher")}>
                     <select
                       className="input"
                       value={form.ss_method}
                       onChange={(e) => set("ss_method", e.target.value)}
                     >
-                      <option value="aes-256-gcm">AES-256-GCM</option>
+                      <option value="aes-256-gcm">{t("AES-256-GCM")}</option>
                       <option value="chacha20-poly1305">
-                        ChaCha20-Poly1305
+                        {t("ChaCha20-Poly1305")}
                       </option>
                     </select>
                   </Field>
@@ -1057,9 +1095,11 @@ export function InboundsPage() {
               )}
               {form.protocol === "hysteria" && (
                 <section>
-                  <div className="panel-section-title mb-3">Hysteria2</div>
+                  <div className="panel-section-title mb-3">
+                    {t("Hysteria2")}
+                  </div>
                   <div className="grid gap-3 sm:grid-cols-2">
-                    <Field label="UDP idle timeout">
+                    <Field label={t("UDP idle timeout")}>
                       <input
                         className="input"
                         type="number"
@@ -1068,12 +1108,12 @@ export function InboundsPage() {
                         onChange={(e) => set("hy_udp_idle", e.target.value)}
                       />
                     </Field>
-                    <Field label="Masquerade URL">
+                    <Field label={t("Masquerade URL")}>
                       <input
                         className="input"
                         value={form.hy_masquerade}
                         onChange={(e) => set("hy_masquerade", e.target.value)}
-                        placeholder="https://example.com"
+                        placeholder={t("https://example.com")}
                       />
                     </Field>
                   </div>
@@ -1082,29 +1122,29 @@ export function InboundsPage() {
               {form.protocol === "tunnel" && (
                 <section>
                   <div className="panel-section-title mb-3">
-                    Tunnel / port forwarding
+                    {t("Tunnel / port forwarding")}
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2">
-                    <Field label="Allowed network">
+                    <Field label={t("Allowed network")}>
                       <select
                         className="input"
                         value={form.tunnel_network}
                         onChange={(e) => set("tunnel_network", e.target.value)}
                       >
-                        <option value="tcp">TCP</option>
-                        <option value="udp">UDP</option>
-                        <option value="tcp,udp">TCP + UDP</option>
+                        <option value="tcp">{t("TCP")}</option>
+                        <option value="udp">{t("UDP")}</option>
+                        <option value="tcp,udp">{t("TCP + UDP")}</option>
                       </select>
                     </Field>
-                    <Field label="Rewrite address">
+                    <Field label={t("Rewrite address")}>
                       <input
                         className="input"
                         value={form.tunnel_address}
                         onChange={(e) => set("tunnel_address", e.target.value)}
-                        placeholder="target.example.com"
+                        placeholder={t("target.example.com")}
                       />
                     </Field>
-                    <Field label="Rewrite port">
+                    <Field label={t("Rewrite port")}>
                       <input
                         className="input"
                         type="number"
@@ -1115,7 +1155,7 @@ export function InboundsPage() {
                       />
                     </Field>
                     <label className="flex items-center justify-between rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2.5 text-[11px]">
-                      <span>Follow redirected destination</span>
+                      <span>{t("Follow redirected destination")}</span>
                       <input
                         type="checkbox"
                         checked={form.tunnel_redirect}
@@ -1129,21 +1169,23 @@ export function InboundsPage() {
               )}
               {form.protocol === "tun" && (
                 <section>
-                  <div className="panel-section-title mb-3">TUN interface</div>
+                  <div className="panel-section-title mb-3">
+                    {t("TUN interface")}
+                  </div>
                   <div className="rounded-lg border border-amber-500/20 bg-amber-500/7 px-3 py-2 text-[10px] leading-5 text-amber-500">
-                    TUN changes host routing. VeloRay validates the Xray config,
-                    but route design should still be tested carefully to avoid
-                    loops.
+                    {t(
+                      "TUN changes host routing. VeloRay validates the Xray config, but route design should still be tested carefully to avoid loops.",
+                    )}
                   </div>
                   <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                    <Field label="Interface name">
+                    <Field label={t("Interface name")}>
                       <input
                         className="input"
                         value={form.tun_name}
                         onChange={(e) => set("tun_name", e.target.value)}
                       />
                     </Field>
-                    <Field label="MTU">
+                    <Field label={t("MTU")}>
                       <input
                         className="input"
                         type="number"
@@ -1153,7 +1195,7 @@ export function InboundsPage() {
                         onChange={(e) => set("tun_mtu", e.target.value)}
                       />
                     </Field>
-                    <Field label="Gateway CIDRs">
+                    <Field label={t("Gateway CIDRs")}>
                       <input
                         className="input"
                         value={form.tun_gateway}
@@ -1161,7 +1203,7 @@ export function InboundsPage() {
                         placeholder="10.66.0.1/16"
                       />
                     </Field>
-                    <Field label="DNS servers">
+                    <Field label={t("DNS servers")}>
                       <input
                         className="input"
                         value={form.tun_dns}
@@ -1170,22 +1212,25 @@ export function InboundsPage() {
                       />
                     </Field>
                     <Field
-                      label="Automatic route CIDRs"
+                      label={t("Automatic route CIDRs")}
                       className="sm:col-span-2"
                     >
                       <input
                         className="input"
                         value={form.tun_routes}
                         onChange={(e) => set("tun_routes", e.target.value)}
-                        placeholder="0.0.0.0/0, ::/0 (optional)"
+                        placeholder={t("0.0.0.0/0, ::/0 (optional)")}
                       />
                     </Field>
-                    <Field label="Outbound interface" className="sm:col-span-2">
+                    <Field
+                      label={t("Outbound interface")}
+                      className="sm:col-span-2"
+                    >
                       <input
                         className="input"
                         value={form.tun_interface}
                         onChange={(e) => set("tun_interface", e.target.value)}
-                        placeholder="auto"
+                        placeholder={t("auto")}
                       />
                     </Field>
                   </div>
@@ -1193,15 +1238,15 @@ export function InboundsPage() {
               )}
               <details className="rounded-lg border border-[var(--border)] p-3">
                 <summary className="cursor-pointer text-[12px] font-medium">
-                  Advanced stream settings
+                  {t("Advanced stream settings")}
                 </summary>
                 <p className="mt-2 text-[11px] leading-5 text-[var(--muted)]">
-                  Configure transport, ALPN, socket and TLS options. Ports,
-                  credentials and security mode use the fields above. Xray
-                  validates changes before applying them.
+                  {t(
+                    "Configure transport, ALPN, socket and TLS options. Ports, credentials and security mode use the fields above. Xray validates changes before applying them.",
+                  )}
                 </p>
                 <label className="label mt-3">
-                  Stream settings JSON
+                  {t("Stream settings JSON")}
                   <textarea
                     className="input min-h-40 font-mono text-[11px]"
                     value={form.stream_json}
@@ -1219,8 +1264,8 @@ export function InboundsPage() {
                 {busy
                   ? "Saving…"
                   : editing
-                    ? "Save & deploy"
-                    : "Create & deploy"}
+                    ? t("Save & deploy")
+                    : t("Create & deploy")}
               </Button>
             </form>
           </CardContent>
@@ -1228,26 +1273,27 @@ export function InboundsPage() {
         <Card>
           <CardHeader>
             <div>
-              <CardTitle>Configured inbounds</CardTitle>
+              <CardTitle>{t("Configured inbounds")}</CardTitle>
               <p className="mt-1 text-[11px] text-[var(--muted)]">
-                {items.length} listeners across {nodes.length} nodes
+                {items.length} {t("listeners across")} {nodes.length}{" "}
+                {t("nodes")}
               </p>
             </div>
-            <Badge tone="blue">Xray</Badge>
+            <Badge tone="blue">{t("Xray")}</Badge>
           </CardHeader>
           <CardContent className="p-0">
             <div className="hidden md:block table-wrap">
               <table className="data-table min-w-[940px]">
                 <thead>
                   <tr>
-                    <th>Name</th>
-                    <th>Node</th>
-                    <th>Protocol</th>
-                    <th>Transport</th>
-                    <th>Security</th>
-                    <th>Port</th>
-                    <th>Clients</th>
-                    <th>Status</th>
+                    <th>{t("Name")}</th>
+                    <th>{t("Node")}</th>
+                    <th>{t("Protocol")}</th>
+                    <th>{t("Transport")}</th>
+                    <th>{t("Security")}</th>
+                    <th>{t("Port")}</th>
+                    <th>{t("Clients")}</th>
+                    <th>{t("Status")}</th>
                     <th></th>
                   </tr>
                 </thead>
@@ -1267,14 +1313,14 @@ export function InboundsPage() {
                       </td>
                       <td>
                         {["wireguard", "tunnel", "tun"].includes(i.protocol)
-                          ? "Native"
+                          ? t("Native")
                           : i.transport}
                       </td>
                       <td>
                         {i.protocol === "wireguard"
-                          ? "WireGuard"
+                          ? t("WireGuard")
                           : ["tunnel", "tun"].includes(i.protocol)
-                            ? "Native"
+                            ? t("Native")
                             : i.security}
                       </td>
                       <td className="mono">
@@ -1283,13 +1329,13 @@ export function InboundsPage() {
                       <td>{i.client_count}</td>
                       <td>
                         <Badge tone={i.enabled ? "green" : "neutral"}>
-                          {i.enabled ? "Enabled" : "Paused"}
+                          {i.enabled ? t("Enabled") : t("Paused")}
                         </Badge>
                       </td>
                       <td>
                         <div className="flex justify-end gap-1">
                           <Button
-                            title="Clone"
+                            title={t("Clone")}
                             size="icon"
                             variant="ghost"
                             onClick={() => beginClone(i)}
@@ -1297,7 +1343,7 @@ export function InboundsPage() {
                             <Copy className="h-3.5 w-3.5" />
                           </Button>
                           <Button
-                            title={i.enabled ? "Pause" : "Enable"}
+                            title={i.enabled ? t("Pause") : t("Enable")}
                             size="icon"
                             variant="ghost"
                             onClick={() => toggle(i)}
@@ -1309,7 +1355,7 @@ export function InboundsPage() {
                             )}
                           </Button>
                           <Button
-                            title="Edit"
+                            title={t("Edit")}
                             size="icon"
                             variant="ghost"
                             onClick={() => beginEdit(i)}
@@ -1317,7 +1363,7 @@ export function InboundsPage() {
                             <Pencil className="h-3.5 w-3.5" />
                           </Button>
                           <Button
-                            title="Deploy"
+                            title={t("Deploy")}
                             size="icon"
                             variant="outline"
                             onClick={() => deploy(i)}
@@ -1325,7 +1371,7 @@ export function InboundsPage() {
                             <Rocket className="h-3.5 w-3.5" />
                           </Button>
                           <Button
-                            title="Delete"
+                            title={t("Delete")}
                             size="icon"
                             variant="ghost"
                             onClick={() => remove(i)}
@@ -1341,19 +1387,21 @@ export function InboundsPage() {
             </div>
             {!items.length && (
               <div className="p-12 text-center text-[11px] text-[var(--muted)]">
-                Create your first listener on Local Node.
+                {t("Create your first listener on Local Node.")}
               </div>
             )}
           </CardContent>
         </Card>
       </div>
       {cloning && (
-        <Dialog label="Clone inbound" onClose={() => setCloning(null)}>
+        <Dialog label={t("Clone inbound")} onClose={() => setCloning(null)}>
           <div className="flex items-center justify-between border-b border-[var(--border)] px-5 py-4">
             <div>
-              <div className="text-[14px] font-semibold">Clone inbound</div>
+              <div className="text-[14px] font-semibold">
+                {t("Clone inbound")}
+              </div>
               <div className="mt-1 text-[10px] text-[var(--muted)]">
-                Duplicate {cloning.name} to another node or port.
+                {t("Duplicate")} {cloning.name} {t("to another node or port.")}
               </div>
             </div>
             <Button
@@ -1365,14 +1413,14 @@ export function InboundsPage() {
             </Button>
           </div>
           <div className="grid gap-3 p-5">
-            <Field label="Name">
+            <Field label={t("Name")}>
               <input
                 className="input"
                 value={cloneName}
                 onChange={(e) => setCloneName(e.target.value)}
               />
             </Field>
-            <Field label="Node">
+            <Field label={t("Node")}>
               <select
                 className="input"
                 value={cloneNode}
@@ -1385,7 +1433,7 @@ export function InboundsPage() {
                 ))}
               </select>
             </Field>
-            <Field label="Port">
+            <Field label={t("Port")}>
               <input
                 className="input"
                 type="number"
@@ -1397,10 +1445,10 @@ export function InboundsPage() {
           </div>
           <div className="flex justify-end gap-2 border-t border-[var(--border)] px-5 py-4">
             <Button variant="outline" onClick={() => setCloning(null)}>
-              Cancel
+              {t("Cancel")}
             </Button>
             <Button onClick={clone} disabled={cloneBusy}>
-              {cloneBusy ? "Cloning…" : "Clone & deploy"}
+              {cloneBusy ? "Cloning…" : t("Clone & deploy")}
             </Button>
           </div>
         </Dialog>

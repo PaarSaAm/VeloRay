@@ -1,6 +1,8 @@
+import { useLocale } from "@/lib/i18n";
 import type { HTMLAttributes, PropsWithChildren } from "react";
 import { cn } from "@/lib/cn";
 export function Card({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
+  useLocale();
   return (
     <div
       className={cn(
@@ -15,6 +17,7 @@ export function CardHeader({
   className,
   ...props
 }: HTMLAttributes<HTMLDivElement>) {
+  useLocale();
   return (
     <div
       className={cn(
@@ -29,6 +32,7 @@ export function CardContent({
   className,
   ...props
 }: HTMLAttributes<HTMLDivElement>) {
+  useLocale();
   return <div className={cn("min-w-0 p-5", className)} {...props} />;
 }
 export function CardTitle({
@@ -36,6 +40,7 @@ export function CardTitle({
   children,
   ...props
 }: PropsWithChildren<HTMLAttributes<HTMLHeadingElement>>) {
+  useLocale();
   return (
     <h3
       className={cn(

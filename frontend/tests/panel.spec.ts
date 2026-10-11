@@ -29,15 +29,13 @@ test("login, navigation, client dialog, mobile menu and logout", async ({
     "Nodes",
     "Inbounds",
     "Clients",
-    "Subscriptions",
     "Import data",
     "Traffic",
     "Xray Core",
-    "Audit log",
     "Security",
     "API",
     "Settings",
-    "Administration",
+    "Accounts",
   ]) {
     await page.getByRole("button", { name, exact: true }).first().click();
     await expect(page.locator("#main-content")).toBeVisible();
@@ -166,7 +164,7 @@ test("bundled fonts, black surfaces and visible compact navigation icons", async
         };
       }),
     );
-  expect(icons.length).toBeGreaterThanOrEqual(13);
+  expect(icons.length).toBe(11);
   for (const icon of icons) {
     expect(icon.width).toBe(18);
     expect(icon.height).toBe(18);
@@ -278,9 +276,9 @@ test("live port checks, batch creation and usage export", async ({ page }) => {
   await page.getByRole("button", { name: "Batch create", exact: true }).click();
   await page.getByLabel("Name prefix", { exact: true }).fill("browser-batch");
   await page.getByLabel("Number of clients").fill("3");
-  await page.getByLabel("Traffic multiplier / ضریب مصرف").fill("-0.5");
+  await page.getByLabel("Traffic multiplier").fill("-0.5");
   await expect(page.locator("#multiplier-help")).toContainText(
-    "0.500 GB billed",
+    "1G => 0.5G",
   );
   await page
     .getByRole("button", { name: "Create clients", exact: true })
@@ -317,7 +315,7 @@ test("live port checks, batch creation and usage export", async ({ page }) => {
   await page.getByRole("button", { name: "Enable", exact: true }).click();
   await expect(
     page.getByRole("row").filter({ hasText: "browser-batch-001" }),
-  ).toContainText("Active");
+  ).toContainText(/Online|Offline|Unknown/);
   await page
     .getByRole("button", { name: "Xray Core", exact: true })
     .first()
@@ -369,10 +367,10 @@ test("negative multiplier creation, editing and mobile explanation", async ({
   await page
     .getByLabel("Inbound", { exact: true })
     .selectOption(String(inbound.find((i: any) => i.name === "main").id));
-  const multiplier = page.getByLabel("Traffic multiplier / ضریب مصرف");
+  const multiplier = page.getByLabel("Traffic multiplier");
   await multiplier.fill("-0.5");
   await expect(page.locator("#multiplier-help")).toContainText(
-    "1 GB actual → 0.500 GB billed",
+    "1G => 0.5G",
   );
   await page.screenshot({
     path: "test-results/multiplier-desktop.png",
@@ -405,14 +403,14 @@ test("negative multiplier creation, editing and mobile explanation", async ({
     await multiplier.evaluate(
       (input: HTMLInputElement) => input.validity.rangeOverflow,
     ),
-  ).toBe(true);
-  await multiplier.fill("3");
+  ).toBe(false);
+  await multiplier.fill("25");
   await page.getByRole("button", { name: "Save changes", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   const clients = await (await page.request.get("/api/clients/")).json();
   expect(
     clients.find((c: any) => c.name === "browser-discount").traffic_multiplier,
-  ).toBe(3);
+  ).toBe(25);
 });
 
 test("backup preview and disabled import preserve a shared account", async ({
@@ -459,7 +457,7 @@ test("backup preview and disabled import preserve a shared account", async ({
     fullPage: true,
   });
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.getByRole("button", { name: "Change import language" }).click();
+  await page.getByRole("button", { name: "Change language" }).click();
   await expect(
     page.getByRole("heading", { name: "واردسازی داده‌ها" }),
   ).toBeVisible();
@@ -472,7 +470,7 @@ test("backup preview and disabled import preserve a shared account", async ({
     path: "test-results/import-preview-mobile-fa.png",
     fullPage: true,
   });
-  await page.getByRole("button", { name: "Change import language" }).click();
+  await page.getByRole("button", { name: "تغییر زبان" }).click();
   await page
     .getByRole("checkbox", {
       name: "I reviewed the warnings. Save selected inbounds disabled so I can verify them before activation.",
@@ -492,4 +490,46 @@ test("backup preview and disabled import preserve a shared account", async ({
   expect(new Set(members.map((c: any) => c.account_id)).size).toBe(1);
   expect(new Set(members.map((c: any) => c.subscription_url)).size).toBe(1);
   expect(members.every((c: any) => c.used_traffic_bytes === 0)).toBe(true);
+});
+
+test("global language, black layout and chart tooltip stay consistent", async ({page})=>{
+ await page.route("**/api/traffic-history?**",route=>route.fulfill({json:[
+  {at:new Date(Date.now()-3600000).toISOString(),used_traffic_bytes:0,bytes:0},
+  {at:new Date(Date.now()-1800000).toISOString(),used_traffic_bytes:5242880,bytes:5242880},
+  {at:new Date().toISOString(),used_traffic_bytes:8388608,bytes:3145728}
+ ]}));
+ await page.goto("/dashboard");await page.getByLabel("Username",{exact:true}).fill("admin");await page.getByLabel("Password",{exact:true}).fill(process.env.VELORAY_E2E_PASSWORD||"Test-password-very-long");await page.getByRole("button",{name:"Login",exact:true}).click();
+ await expect(page.locator("body")).not.toContainText("Network control");
+ await expect(page.locator("nav").getByRole("button",{name:"Subscriptions",exact:true})).toHaveCount(0);
+ await expect(page.locator("nav").getByRole("button",{name:"Audit log",exact:true})).toHaveCount(0);
+ const chart=page.locator(".chart-shell svg");const chartBox=await chart.boundingBox();await chart.hover({position:{x:chartBox!.width-20,y:12}});await expect(page.locator(".chart-tooltip")).toBeVisible();
+ const shell=await page.locator(".chart-shell").boundingBox(),tip=await page.locator(".chart-tooltip").boundingBox();expect(tip!.y).toBeGreaterThanOrEqual(shell!.y);expect(tip!.y+tip!.height).toBeLessThanOrEqual(shell!.y+shell!.height);
+ expect(await chart.locator('path[fill="none"]').getAttribute("d")).toContain(" C ");
+ await page.getByRole("button",{name:"Change language"}).click();await expect(page.locator("html")).toHaveAttribute("dir","rtl");await expect(page.getByRole("heading",{name:"داشبورد",exact:true})).toBeVisible();
+ await page.getByRole("button",{name:"کلاینت‌ها",exact:true}).first().click();await expect(page.getByRole("heading",{name:"کلاینت‌ها",exact:true})).toBeVisible();await expect(page.getByPlaceholder("جست‌وجوی کلاینت‌ها…")).toBeVisible();
+ await page.getByRole("button",{name:"افزودن کلاینت",exact:true}).click();await expect(page.getByLabel("ضریب مصرف",{exact:true})).toBeVisible();await expect(page.getByRole("dialog")).not.toContainText("Traffic multiplier");await page.getByRole("button",{name:"لغو",exact:true}).click();
+ await page.reload();await expect(page.locator("html")).toHaveAttribute("lang","fa");
+ await page.getByRole("button",{name:"تغییر زبان"}).click();await expect(page.getByRole("heading",{name:"Clients",exact:true})).toBeVisible();await expect(page.locator("nav").getByRole("button",{name:"Accounts",exact:true})).toBeVisible();
+ await expect(page.locator("#main-content")).not.toContainText("ضریب");
+ const navBox=await page.locator("aside").boundingBox(),contentBox=await page.locator("#main-content").boundingBox();expect(contentBox!.x).toBeGreaterThanOrEqual(navBox!.x+navBox!.width);
+ await page.screenshot({path:"test-results/clients-live-desktop.png",fullPage:true});
+});
+
+test("client usage refreshes automatically and filter controls fit",async({page})=>{
+ await page.goto("/clients");await page.getByLabel("Username",{exact:true}).fill("admin");await page.getByLabel("Password",{exact:true}).fill(process.env.VELORAY_E2E_PASSWORD||"Test-password-very-long");await page.getByRole("button",{name:"Login",exact:true}).click();
+ await expect(page.getByRole("heading",{name:"Clients",exact:true})).toBeVisible();
+ const source=await(await page.request.get("/api/clients/")).json();expect(source.length).toBeGreaterThan(0);let polls=0;
+ await page.route("**/api/clients/**",async route=>{if(route.request().method()!=="GET")return route.continue();polls++;await route.fulfill({json:source.map((c:any,i:number)=>i===0?{...c,enabled:true,online:true,used_traffic_bytes:polls*1024**3,raw_used_traffic_bytes:polls*1024**3}:c)})});
+ const row=page.getByRole("row").filter({hasText:source[0].name});await expect.poll(()=>polls,{timeout:12000}).toBeGreaterThanOrEqual(1);await expect(row).toContainText("Online");await expect.poll(()=>polls,{timeout:12000}).toBeGreaterThanOrEqual(2);await expect(row).toContainText("2.00 GB");
+ const search=await page.getByPlaceholder("Search clients...").boundingBox();const selectors=await page.locator(".client-filters select").all();for(const select of selectors){const box=await select.boundingBox();expect(Math.abs(box!.y-search!.y)).toBeLessThan(2)}
+ await page.setViewportSize({width:390,height:844});await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await page.screenshot({path:"test-results/clients-live-mobile.png",fullPage:true});
+});
+
+test("Accounts creates a reseller with enforced isolation",async({page})=>{
+ await page.goto("/accounts");await page.getByLabel("Username",{exact:true}).fill("admin");await page.getByLabel("Password",{exact:true}).fill(process.env.VELORAY_E2E_PASSWORD||"Test-password-very-long");await page.getByRole("button",{name:"Login",exact:true}).click();
+ await page.getByRole("button",{name:"Add account",exact:true}).click();const dialog=page.getByRole("dialog");await dialog.getByLabel("Username",{exact:true}).fill("browser-reseller");await dialog.getByLabel("Password",{exact:true}).fill("Reseller-test-password-42");await dialog.getByLabel("Role",{exact:true}).selectOption("reseller");await dialog.getByLabel("Client limit",{exact:true}).fill("1");await dialog.getByLabel("Traffic budget (GB)",{exact:true}).fill("10");await dialog.getByRole("checkbox").filter({hasNot:page.locator("[disabled]")}).last().check();await dialog.getByRole("button",{name:"Save account",exact:true}).click();await expect(dialog).toHaveCount(0);await expect(page.getByRole("row").filter({hasText:"browser-reseller"})).toContainText("Reseller");
+ await page.getByRole("button",{name:"Sign out"}).click();await page.getByLabel("Username",{exact:true}).fill("browser-reseller");await page.getByLabel("Password",{exact:true}).fill("Reseller-test-password-42");await page.getByRole("button",{name:"Login",exact:true}).click();
+ await expect(page.locator("header").getByText("browser-reseller",{exact:true})).toBeVisible();
+ expect((await page.request.get("/api/admin/users/")).status()).toBe(403);expect((await page.request.get("/api/nodes/")).status()).toBe(403);expect(await(await page.request.get("/api/clients/")).json()).toEqual([]);
+ await expect(page.locator("nav").getByRole("button",{name:"Accounts",exact:true})).toHaveCount(0);await page.getByRole("button",{name:"Clients",exact:true}).first().click();await expect(page.getByText("No clients found",{exact:true})).toBeVisible();
 });

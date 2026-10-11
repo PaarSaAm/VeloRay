@@ -1,3 +1,5 @@
+import { t } from "@/lib/i18n";
+import { useLocale, tx } from "@/lib/i18n";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, type NodeItem, type PortReport } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -15,6 +17,7 @@ type XrayStatus = {
 };
 
 export function XrayPage() {
+  useLocale();
   const [nodes, setNodes] = useState<NodeItem[]>([]);
   const [nodeId, setNodeId] = useState("");
   const [preview, setPreview] = useState<Preview | null>(null);
@@ -81,21 +84,21 @@ export function XrayPage() {
       try {
         parsed = JSON.parse(patch || "{}");
       } catch {
-        throw new Error("Advanced patch must be valid JSON.");
+        throw new Error(t("Advanced patch must be valid JSON."));
       }
       if (
         Array.isArray(parsed) ||
         parsed === null ||
         typeof parsed !== "object"
       )
-        throw new Error("Advanced patch must be a JSON object.");
+        throw new Error(t("Advanced patch must be a JSON object."));
       await api(`/nodes/${selected.id}/`, {
         method: "PATCH",
         body: JSON.stringify({ config_patch: parsed }),
       });
       await loadNodes();
       await refresh(String(selected.id));
-      setMsg("Advanced patch saved, validated and deployed.");
+      setMsg(t("Advanced patch saved, validated and deployed."));
     } catch (e: any) {
       setMsg(e.message);
     } finally {
@@ -108,7 +111,7 @@ export function XrayPage() {
     try {
       await api(`/nodes/${selected.id}/deploy/`, { method: "POST" });
       await refresh();
-      setMsg("Configuration deployed.");
+      setMsg(t("Configuration deployed."));
     } catch (e: any) {
       setMsg(e.message);
     } finally {
@@ -119,7 +122,10 @@ export function XrayPage() {
     if (!selected) return;
     if (
       !confirm(
-        `Restart Xray on ${selected.name}? Active connections may briefly reconnect.`,
+        tx(
+          "Restart Xray on {0}? Active connections may briefly reconnect.",
+          selected.name,
+        ),
       )
     )
       return;
@@ -127,7 +133,7 @@ export function XrayPage() {
     try {
       await api(`/nodes/${selected.id}/xray-restart/`, { method: "POST" });
       await refresh();
-      setMsg("Xray restarted.");
+      setMsg(t("Xray restarted."));
     } catch (e: any) {
       setMsg(e.message);
     } finally {
@@ -139,7 +145,7 @@ export function XrayPage() {
     setBusy(true);
     try {
       await api(`/nodes/${selected.id}/config-validate/`, { method: "POST" });
-      setMsg("Configuration is valid. The running service was not changed.");
+      setMsg(t("Configuration is valid. The running service was not changed."));
     } catch (e: any) {
       setMsg(e.message);
     } finally {
@@ -152,9 +158,11 @@ export function XrayPage() {
       await navigator.clipboard.writeText(
         JSON.stringify(preview.config, null, 2),
       );
-      setMsg("Configuration copied.");
+      setMsg(t("Configuration copied."));
     } catch {
-      setMsg("Clipboard is unavailable. Download the configuration instead.");
+      setMsg(
+        t("Clipboard is unavailable. Download the configuration instead."),
+      );
     }
   }
   function downloadConfig() {
@@ -166,14 +174,14 @@ export function XrayPage() {
     );
     const link = document.createElement("a");
     link.href = url;
-    link.download = `veloray-node-${nodeId}.json`;
+    link.download = tx("veloray-node-{0}.json", nodeId);
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
   function downloadDiagnostics() {
     if (!selected) return;
     const data = {
-      version: "0.1.0",
+      version: "0.2.0",
       at: new Date().toISOString(),
       node: { id: selected.id, name: selected.name },
       runtime: status,
@@ -184,7 +192,7 @@ export function XrayPage() {
     );
     const link = document.createElement("a");
     link.href = url;
-    link.download = `veloray-diagnostics-${selected.id}.json`;
+    link.download = tx("veloray-diagnostics-{0}.json", selected.id);
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
@@ -192,8 +200,10 @@ export function XrayPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Xray Core"
-        description="Service health, connection configuration and deployment."
+        title={t("Xray Core")}
+        description={t(
+          "Service health, connection configuration and deployment.",
+        )}
         actions={
           <div className="flex flex-wrap gap-2">
             <Button
@@ -202,7 +212,7 @@ export function XrayPage() {
               disabled={busy || !nodeId}
             >
               <FaIcon icon="rotate" />
-              Refresh
+              {t("Refresh")}
             </Button>
             <Button
               variant="outline"
@@ -210,18 +220,18 @@ export function XrayPage() {
               disabled={busy || !nodeId}
             >
               <FaIcon icon="shield-halved" />
-              Validate
+              {t("Validate")}
             </Button>
             <Button onClick={deploy} disabled={busy || !nodeId}>
               <FaIcon icon="rocket" />
-              Deploy
+              {t("Deploy")}
             </Button>
             <Button
               variant="outline"
               onClick={downloadDiagnostics}
               disabled={busy || !status}
             >
-              <FaIcon icon="download" /> Diagnostics
+              <FaIcon icon="download" /> {t("Diagnostics")}
             </Button>
           </div>
         }
@@ -241,29 +251,31 @@ export function XrayPage() {
           className="rounded-xl border border-red-500/25 bg-red-500/5 p-4 text-[12px] leading-6"
         >
           <div className="font-semibold text-red-500">
-            Xray is {status.installed ? "stopped" : "not installed"} on{" "}
-            {selected?.name}.
+            {t("Xray is")} {status.installed ? "stopped" : t("not installed")}{" "}
+            {t("on")} {selected?.name}.
           </div>
           <p className="text-[var(--muted-strong)]">
-            Review the listener checks below. Resolve conflicting ports in
-            Inbounds, then deploy or restart Xray.
+            {t(
+              "Review the listener checks below. Resolve conflicting ports in Inbounds, then deploy or restart Xray.",
+            )}
           </p>
         </div>
       )}
       <Card>
         <CardHeader>
           <div>
-            <CardTitle>Listener checks</CardTitle>
+            <CardTitle>{t("Listener checks")}</CardTitle>
             <p className="mt-1 text-[11px] text-[var(--muted)]">
-              Current socket owners for this configuration. Refresh after
-              changing a port.
+              {t(
+                "Current socket owners for this configuration. Refresh after changing a port.",
+              )}
             </p>
           </div>
           <a
             href="/inbounds"
             className="text-[11px] font-semibold text-[var(--brand)]"
           >
-            Manage inbounds →
+            {t("Manage inbounds →")}
           </a>
         </CardHeader>
         <CardContent>
@@ -273,17 +285,17 @@ export function XrayPage() {
             </p>
           ) : !ports ? (
             <p className="text-[12px] text-[var(--muted)]">
-              Checking listeners…
+              {t("Checking listeners…")}
             </p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-left text-[11px]">
                 <thead className="text-[var(--muted)]">
                   <tr>
-                    <th className="pb-3">Inbound</th>
-                    <th className="pb-3">Listener</th>
-                    <th className="pb-3">Status</th>
-                    <th className="pb-3">Owner</th>
+                    <th className="pb-3">{t("Inbound")}</th>
+                    <th className="pb-3">{t("Listener")}</th>
+                    <th className="pb-3">{t("Status")}</th>
+                    <th className="pb-3">{t("Owner")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -309,10 +321,10 @@ export function XrayPage() {
                           }
                         >
                           {p.state === "conflict"
-                            ? "Conflict"
+                            ? t("Conflict")
                             : p.state === "xray"
-                              ? "In use by Xray"
-                              : "Available"}
+                              ? t("In use by Xray")
+                              : t("Available")}
                         </span>
                       </td>
                       <td className="py-3 break-all text-[var(--muted)]">
@@ -324,7 +336,7 @@ export function XrayPage() {
               </table>
               {ports.ports.length === 0 && (
                 <p className="text-[12px] text-[var(--muted)]">
-                  No configured IP listeners.
+                  {t("No configured IP listeners.")}
                 </p>
               )}
             </div>
@@ -336,16 +348,16 @@ export function XrayPage() {
           <Card>
             <CardHeader>
               <div>
-                <CardTitle>Runtime</CardTitle>
+                <CardTitle>{t("Runtime")}</CardTitle>
                 <p className="mt-1 text-[11px] text-[var(--muted)]">
-                  Select a node.
+                  {t("Select a node.")}
                 </p>
               </div>
               <FaIcon icon="microchip" className="text-[var(--muted)]" />
             </CardHeader>
             <CardContent className="space-y-4">
               <label className="label">
-                Node
+                {t("Node")}
                 <select
                   className="input"
                   value={nodeId}
@@ -362,7 +374,7 @@ export function XrayPage() {
               <div className="grid grid-cols-2 gap-2">
                 <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-3">
                   <div className="text-[9px] uppercase tracking-wider text-[var(--muted)]">
-                    Service
+                    {t("Service")}
                   </div>
                   <div className="mt-2">
                     <Badge
@@ -372,15 +384,15 @@ export function XrayPage() {
                     >
                       {status
                         ? status.running
-                          ? "Running"
-                          : "Stopped"
+                          ? t("Running")
+                          : t("Stopped")
                         : "Checking…"}
                     </Badge>
                   </div>
                 </div>
                 <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-3">
                   <div className="text-[9px] uppercase tracking-wider text-[var(--muted)]">
-                    Version
+                    {t("Version")}
                   </div>
                   <div className="mt-2 truncate text-[11px] font-semibold">
                     {status?.version || "—"}
@@ -394,17 +406,18 @@ export function XrayPage() {
                 disabled={!selected || busy}
               >
                 <FaIcon icon="power-off" />
-                Restart Xray
+                {t("Restart Xray")}
               </Button>
             </CardContent>
           </Card>
           <Card>
             <CardHeader>
               <div>
-                <CardTitle>Advanced merge patch</CardTitle>
+                <CardTitle>{t("Advanced merge patch")}</CardTitle>
                 <p className="mt-1 text-[11px] text-[var(--muted)]">
-                  Add DNS, routing and outbound settings. Xray validates the
-                  result before applying it.
+                  {t(
+                    "Add DNS, routing and outbound settings. Xray validates the result before applying it.",
+                  )}
                 </p>
               </div>
               <FaIcon icon="code" className="text-[var(--info)]" />
@@ -421,8 +434,9 @@ export function XrayPage() {
                   icon="triangle-exclamation"
                   className="mr-1 text-amber-500"
                 />
-                The patch is merged into VeloRay's generated config. The local
-                stats API and traffic counters stay enabled.
+                {t(
+                  "The patch is merged into VeloRay's generated config. The local stats API and traffic counters stay enabled.",
+                )}
               </div>
               <Button
                 className="mt-3 w-full"
@@ -430,7 +444,7 @@ export function XrayPage() {
                 disabled={!selected || busy}
               >
                 <FaIcon icon="floppy-disk" />
-                Save, validate & deploy
+                {t("Save, validate & deploy")}
               </Button>
             </CardContent>
           </Card>
@@ -438,10 +452,11 @@ export function XrayPage() {
         <Card>
           <CardHeader>
             <div>
-              <CardTitle>Generated config preview</CardTitle>
+              <CardTitle>{t("Generated config preview")}</CardTitle>
               <p className="mt-1 text-[11px] text-[var(--muted)]">
-                Configuration for the selected node. Downloads contain private
-                connection credentials.
+                {t(
+                  "Configuration for the selected node. Downloads contain private connection credentials.",
+                )}
               </p>
             </div>
             <div className="flex flex-wrap gap-1">
@@ -452,7 +467,7 @@ export function XrayPage() {
                 disabled={!preview}
               >
                 <FaIcon icon="copy" family="regular" />
-                Copy
+                {t("Copy")}
               </Button>
               <Button
                 variant="outline"
@@ -461,7 +476,7 @@ export function XrayPage() {
                 disabled={!preview}
               >
                 <FaIcon icon="download" />
-                Download
+                {t("Download")}
               </Button>
             </div>
           </CardHeader>
@@ -470,7 +485,7 @@ export function XrayPage() {
               <code>
                 {preview
                   ? JSON.stringify(preview.config, null, 2)
-                  : "Select a node to preview configuration."}
+                  : t("Select a node to preview configuration.")}
               </code>
             </pre>
           </CardContent>

@@ -1,3 +1,4 @@
+import { useLocale } from "@/lib/i18n";
 import type { HTMLAttributes } from "react";
 import {
   Activity,
@@ -48,6 +49,7 @@ import { cn } from "@/lib/cn";
 const icons: Record<string, LucideIcon> = {
   "gauge-high": Gauge,
   "chart-line": Activity,
+  signal: Activity,
   "chart-area": ChartArea,
   "diagram-project": Network,
   users: Users,
@@ -103,6 +105,7 @@ export function FaIcon({
   className,
   ...props
 }: Props) {
+  useLocale();
   const Icon = icons[icon] || Info;
   return (
     <span

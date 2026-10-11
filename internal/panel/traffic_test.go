@@ -9,7 +9,7 @@ func TestTrafficMultiplierAndFractionalPolling(t *testing.T) {
 	for _, tc := range []struct {
 		factor string
 		billed int64
-	}{{"-0.5", 500}, {"-0.25", 750}, {"-1", 0}, {"0", 0}, {"1", 1000}, {"2.345", 2345}, {"3", 3000}} {
+	}{{"-0.5", 500}, {"-0.25", 750}, {"-1", 0}, {"0", 0}, {"1", 1000}, {"2.345", 2345}, {"3", 3000}, {"3.001", 3001}, {"25", 25000}, {"-2", 0}} {
 		t.Run(tc.factor, func(t *testing.T) {
 			c := defaults("clients")
 			c["traffic_multiplier"] = json.Number(tc.factor)
@@ -29,7 +29,7 @@ func TestTrafficMultiplierAndFractionalPolling(t *testing.T) {
 	}
 }
 func TestInvalidMultipliersAndOverflow(t *testing.T) {
-	for _, factor := range []string{"3.001", "-1.001", "NaN", "Infinity", "1.0001", "abc"} {
+	for _, factor := range []string{"NaN", "Infinity", "1.0001", "abc"} {
 		if _, e := multiplierMilli(Data{"traffic_multiplier": json.Number(factor)}); e == nil {
 			t.Fatalf("accepted invalid multiplier %s", factor)
 		}

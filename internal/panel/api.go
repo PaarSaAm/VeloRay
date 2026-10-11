@@ -16,8 +16,8 @@ import (
 var editable = map[string]string{
 	"nodes":    "name public_host agent_url agent_token enabled verify_tls config_patch",
 	"inbounds": "name node listen port protocol transport security flow path host_header service_name tls_server_name tls_cert_file tls_key_file reality_dest reality_server_name reality_private_key reality_public_key reality_short_id protocol_settings stream_settings enabled",
-	"clients":  "inbound name credential protocol_settings subscription_token enabled expires_at traffic_limit_bytes renewal_interval_days next_renewal_at traffic_multiplier note",
-	"users":    "username email is_active is_staff is_superuser password",
+	"clients":  "owner_id inbound name credential protocol_settings subscription_token enabled expires_at traffic_limit_bytes renewal_interval_days next_renewal_at traffic_multiplier note",
+	"users":    "username email is_active is_staff is_superuser password role permissions allowed_inbounds own_clients_only max_clients traffic_budget_bytes",
 	"api_keys": "name scope enabled expires_at user",
 }
 
@@ -26,6 +26,13 @@ func (s *Server) view(ctx context.Context, q Query, kind string, d Data) (Data, 
 	switch kind {
 	case "users":
 		out["two_factor_enabled"] = flag(d, "_totp_enabled")
+		out["role"] = accountRole(d)
+		out["permissions"] = permissions(d)
+		var count, allocated int64
+		if e := q.QueryRow(ctx, `SELECT count(*), COALESCE(sum(quota),0)::bigint FROM (SELECT DISTINCT COALESCE(account_id,-id) AS account, COALESCE((SELECT data->>'traffic_limit_bytes' FROM vr_accounts WHERE id=vr_clients.account_id),vr_clients.data->>'traffic_limit_bytes','0')::bigint AS quota FROM vr_clients WHERE `+ownerExpression+`=$1) accounts`, num(d, "id")).Scan(&count, &allocated); e != nil {
+			return nil, e
+		}
+		out["clients_count"], out["allocated_traffic_bytes"] = count, allocated
 	case "api_keys":
 		u, e := get(ctx, q, "users", num(d, "user"))
 		if e != nil {
@@ -59,6 +66,20 @@ func (s *Server) view(ctx context.Context, q Query, kind string, d Data) (Data, 
 		out["inbound_name"] = str(i, "name")
 		out["node_name"] = str(n, "name")
 		out["usage_metered"] = metered(str(i, "protocol"))
+		out["online"] = nil
+		out["connection_status"] = "unknown"
+		out["telemetry_at"] = n["_telemetry_at"]
+		if !flag(d, "enabled") {
+			out["online"] = false
+			out["connection_status"] = "disabled"
+		} else if observed, err := timestamp(n, "_telemetry_at"); err == nil && time.Since(observed) < 20*time.Second && flag(n, "_online_available") && oneOf(str(i, "protocol"), "vless", "vmess", "trojan", "hysteria") {
+			connected := flag(obj(n, "_online_clients"), strconv.FormatInt(num(d, "id"), 10))
+			out["online"] = connected
+			out["connection_status"] = "offline"
+			if connected {
+				out["connection_status"] = "online"
+			}
+		}
 		out["account_id"] = num(d, "_account")
 		if num(d, "_account") > 0 {
 			var token string
@@ -71,8 +92,8 @@ func (s *Server) view(ctx context.Context, q Query, kind string, d Data) (Data, 
 			}
 			out["subscription_token"], out["account_connections"] = token, count
 		}
-		rate, _ := multiplierMilli(d)
-		out["effective_traffic_multiplier"] = float64(rate) / 1000
+		rate := effectiveTrafficMultiplier(d)
+		out["effective_traffic_multiplier"] = rate
 		out["share_link"] = shareLink(d, i, n)
 		out["profile_text"] = profile(d, i, n)
 		out["subscription_url"] = strings.TrimRight(s.Config.PublicURL, "/") + "/sub/" + str(out, "subscription_token")
@@ -103,13 +124,35 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request, path string, a Acto
 		if r.Method != "GET" {
 			return nil, 0, fail(405, "method not allowed")
 		}
-		out, e := s.overview(ctx)
+		out, e := s.overviewForActor(ctx, a)
 		return out, 200, e
+	case "traffic/clients":
+		if r.Method != "GET" {
+			return nil, 0, fail(405, "method not allowed")
+		}
+		where, args := actorClientWhere(a)
+		clients, err := list(ctx, s.Store.Pool, "clients", where, args...)
+		if err != nil {
+			return nil, 0, err
+		}
+		output := []Data{}
+		for _, client := range clients {
+			v, err := s.view(ctx, s.Store.Pool, "clients", client)
+			if err != nil {
+				return nil, 0, err
+			}
+			safe := Data{}
+			for _, key := range []string{"id", "name", "inbound", "inbound_name", "node_name", "enabled", "expires_at", "traffic_limit_bytes", "used_traffic_bytes", "raw_used_traffic_bytes", "raw_lifetime_traffic_bytes", "traffic_multiplier", "effective_traffic_multiplier", "renewal_interval_days", "next_renewal_at", "disabled_reason", "account_id"} {
+				safe[key] = v[key]
+			}
+			output = append(output, safe)
+		}
+		return output, 200, nil
 	case "system-info":
 		out, e := s.systemInfo(ctx)
 		return out, 200, e
 	case "traffic-history":
-		out, e := s.trafficHistory(ctx, r)
+		out, e := s.trafficHistoryForActor(ctx, r, a)
 		return out, 200, e
 	}
 	kind := parts[0]
@@ -128,6 +171,9 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request, path string, a Acto
 			return nil, 0, fail(404, "not found")
 		}
 	}
+	if e = s.entityAccess(ctx, a, kind, id); e != nil {
+		return nil, 0, e
+	}
 	if len(parts) > 2 {
 		return s.action(w, r, kind, id, parts[2], a)
 	}
@@ -138,6 +184,11 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request, path string, a Acto
 				return nil, 0, e
 			}
 			v, e := s.view(ctx, s.Store.Pool, kind, d)
+			if kind == "inbounds" && !permitted(a.User, "inbounds.write") {
+				for _, key := range []string{"reality_private_key", "tls_key_file", "protocol_settings", "stream_settings"} {
+					delete(v, key)
+				}
+			}
 			return v, 200, e
 		}
 		limit := 250
@@ -154,11 +205,25 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request, path string, a Acto
 				return nil, 0, fail(400, "offset must be nonnegative")
 			}
 		}
-		where := "ORDER BY id"
+		filter := ""
+		args := []any{limit, offset}
+		if kind == "clients" && ownClients(a.User) {
+			filter = "WHERE " + ownerExpression + "=$3 "
+			args = append(args, num(a.User, "id"))
+		}
+		if kind == "inbounds" && !flag(a.User, "is_superuser") && (str(a.User, "role") == "reseller" || len(array(a.User, "allowed_inbounds")) > 0) {
+			assigned := []int64{}
+			for _, v := range array(a.User, "allowed_inbounds") {
+				assigned = append(assigned, num(Data{"id": v}, "id"))
+			}
+			filter = "WHERE id=ANY($3::bigint[]) "
+			args = append(args, assigned)
+		}
+		where := filter + "ORDER BY id"
 		if kind == "audit" {
 			where = "ORDER BY id DESC"
 		}
-		rows, e := list(ctx, s.Store.Pool, kind, where+" LIMIT $1 OFFSET $2", limit, offset)
+		rows, e := list(ctx, s.Store.Pool, kind, where+" LIMIT $1 OFFSET $2", args...)
 		if e != nil {
 			return nil, 0, e
 		}
@@ -168,10 +233,16 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request, path string, a Acto
 			if e != nil {
 				return nil, 0, e
 			}
+			if kind == "inbounds" && !flag(a.User, "is_superuser") && !permitted(a.User, "inbounds.write") {
+				for _, key := range []string{"reality_private_key", "tls_key_file", "protocol_settings", "stream_settings"} {
+					delete(v, key)
+				}
+			}
 			out = append(out, v)
 		}
 		var total int64
-		e = s.Store.Pool.QueryRow(ctx, "SELECT count(*) FROM "+tables[kind]).Scan(&total)
+		countFilter := strings.ReplaceAll(filter, "$3", "$1")
+		e = s.Store.Pool.QueryRow(ctx, "SELECT count(*) FROM "+tables[kind]+" "+countFilter, args[2:]...).Scan(&total)
 		if e != nil {
 			return nil, 0, e
 		}
@@ -228,6 +299,11 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request, path string, a Acto
 			d, e = get(ctx, tx, kind, id)
 			if e != nil {
 				return nil, e
+			}
+		}
+		if kind == "clients" && id > 0 {
+			if err := clientAccess(a, d); err != nil {
+				return nil, err
 			}
 		}
 		if r.Method == "DELETE" {
@@ -296,6 +372,12 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request, path string, a Acto
 				return nil, fail(400, e.Error())
 			}
 		case "clients":
+			if !flag(a.User, "is_superuser") && input["owner_id"] != nil && num(input, "owner_id") != num(prior, "owner_id") {
+				return nil, fail(403, "only administrators can assign client owners")
+			}
+			if err := validateClientOwner(ctx, tx, a, d, id == 0); err != nil {
+				return nil, err
+			}
 			inbound, err := get(ctx, tx, "inbounds", num(d, "inbound"))
 			if err != nil {
 				return nil, fail(400, "inbound does not exist")
@@ -340,6 +422,9 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request, path string, a Acto
 				return nil, fail(400, e.Error())
 			}
 		case "users":
+			if err := validateAccount(ctx, tx, d, prior, input); err != nil {
+				return nil, err
+			}
 			if e := require(d, "username", 150); e != nil {
 				return nil, fail(400, e.Error())
 			}
@@ -462,6 +547,12 @@ func (s *Server) settingsAPI(w http.ResponseWriter, r *http.Request, a Actor) (a
 	if r.Method == "GET" {
 		d, e := settings(ctx, s.Store.Pool)
 		out := public(d)
+		if !flag(a.User, "is_superuser") {
+			out = Data{}
+			for _, key := range []string{"site_name", "accent", "default_locale", "default_client_days", "default_traffic_gb", "default_renewal_days", "dashboard_refresh_seconds"} {
+				out[key] = d[key]
+			}
+		}
 		out["telegram_configured"] = str(d, "_telegram_token") != ""
 		return out, 200, e
 	}
@@ -688,6 +779,9 @@ func (s *Server) action(w http.ResponseWriter, r *http.Request, kind string, id 
 		}
 		out, e := s.change(ctx, []int64{node}, a, "client."+action, str(d, "name"), func(tx pgx.Tx) (any, error) {
 			c, e := get(ctx, tx, "clients", id)
+			if e == nil {
+				e = clientAccess(a, c)
+			}
 			if e != nil {
 				return nil, e
 			}
@@ -828,7 +922,7 @@ func (s *Server) batchClients(w http.ResponseWriter, r *http.Request, a Actor) (
 	if err != nil {
 		return nil, 0, err
 	}
-	if err = allowed(input, "name inbound count expires_at traffic_limit_bytes traffic_multiplier renewal_interval_days note"); err != nil {
+	if err = allowed(input, "owner_id name inbound count expires_at traffic_limit_bytes traffic_multiplier renewal_interval_days note"); err != nil {
 		return nil, 0, fail(400, err.Error())
 	}
 	template := defaults("clients")
@@ -856,6 +950,12 @@ func (s *Server) batchClients(w http.ResponseWriter, r *http.Request, a Actor) (
 				if k != "count" {
 					d[k] = v
 				}
+			}
+			if !flag(a.User, "is_superuser") && num(input, "owner_id") != 0 && num(input, "owner_id") != num(a.User, "id") {
+				return nil, fail(403, "only administrators can assign client owners")
+			}
+			if err := validateClientOwner(ctx, tx, a, d, true); err != nil {
+				return nil, err
 			}
 			d["name"] = fmt.Sprintf("%s-%03d", strings.TrimSpace(str(input, "name")), index)
 			if err := validateClient(ctx, tx, d); err != nil {
@@ -912,6 +1012,9 @@ func (s *Server) bulkClients(w http.ResponseWriter, r *http.Request, a Actor) (a
 		return nil, 0, fail(400, err.Error())
 	}
 	action := str(input, "action")
+	if action == "delete" && !permitted(a.User, "clients.delete") {
+		return nil, 0, fail(403, "permission required: clients.delete")
+	}
 	values := array(input, "ids")
 	if !oneOf(action, "enable", "disable", "reset", "delete") || len(values) < 1 || len(values) > 200 {
 		return nil, 0, fail(400, "choose enable, disable, reset or delete and 1–200 client IDs")
@@ -931,6 +1034,9 @@ func (s *Server) bulkClients(w http.ResponseWriter, r *http.Request, a Actor) (a
 		}
 		seen[id] = true
 		client, err := get(ctx, s.Store.Pool, "clients", id)
+		if err == nil {
+			err = clientAccess(a, client)
+		}
 		if err != nil {
 			return nil, 0, err
 		}
@@ -945,6 +1051,9 @@ func (s *Server) bulkClients(w http.ResponseWriter, r *http.Request, a Actor) (a
 	out, err := s.change(ctx, nodes, a, "clients.bulk-"+action, fmt.Sprintf("%d accounts", len(ids)), func(tx pgx.Tx) (any, error) {
 		for _, id := range ids {
 			client, err := get(ctx, tx, "clients", id)
+			if err == nil {
+				err = clientAccess(a, client)
+			}
 			if err != nil {
 				return nil, err
 			}

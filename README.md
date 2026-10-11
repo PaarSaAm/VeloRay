@@ -6,7 +6,7 @@ VeloRay brings server management, client provisioning and subscription delivery 
 
 Built with a Go backend, a Go node agent and a React interface, VeloRay keeps infrastructure management separate from VPN traffic. Xray handles connections directly; the panel manages configuration, accounts and service policies.
 
-**Version:** `0.1.0` · **Backend:** Go · **Interface:** React / TypeScript · **Database:** PostgreSQL · **License:** MIT
+**Version:** `0.2.0` · **Backend:** Go · **Interface:** React / TypeScript · **Database:** PostgreSQL · **License:** MIT
 
 ## Built for everyday operations
 
@@ -14,7 +14,7 @@ Built with a Go backend, a Go node agent and a React interface, VeloRay keeps in
 - **Client lifecycle.** Create individual credentials, traffic allowances, expiry dates and scheduled renewals. Set a traffic multiplier or discount while retaining separate actual and billed counters. Provision up to 100 accounts in one atomic deployment, with distinct credentials and subscription addresses. Enable or disable access, export usage as CSV and reset quota periods while retaining recorded traffic history.
 - **Migration.** Preview a 3x-ui or PasarGuard database backup, select inbounds and change conflicting ports. Import accounts, available traffic counters, credentials and supported connection settings as disabled entries. Shared accounts retain one quota across their connections and one subscription feed.
 - **Subscription delivery.** Give each client a private subscription address and a browser portal with usage, expiry and a QR code. English and Persian portals support Base64, raw URI, JSON, Clash/Mihomo and WireGuard exports where supported.
-- **Administrative control.** Administrator roles, TOTP two-factor authentication, recovery codes, scoped API keys and audit records help control access and trace changes.
+- **Accounts and access.** Administrator, reseller, viewer and custom roles; reseller client isolation, assigned inbounds, client limits and traffic budgets; TOTP recovery codes and scoped API keys. Audit records are available to root through `sudo veloray audit [LIMIT]`.
 - **Operational visibility.** Review host metrics, node health, socket conflicts and client traffic. Download a diagnostic report that excludes account credentials and agent tokens. Telegram owner commands and resource alerts provide an additional management channel.
 - **Recovery tools.** Persistent accounting, configuration journals, retries and rollback handling support recovery from node failures. An interactive host menu handles service management, certificates, scheduled backups and restore.
 
@@ -154,9 +154,17 @@ In **Clients → Batch create**, enter a prefix, account count, inbound, expiry 
 
 **Clients → Export usage** downloads the filtered directory without passwords or subscription tokens. **Xray Core → Diagnostics** downloads runtime state and listener ownership without the complete VPN configuration. Full configuration downloads contain credentials and should remain private.
 
+### Live clients and account access
+
+The Clients directory refreshes usage and connection state every five seconds while the tab is visible. Online status comes from Xray's active user connections, rather than whether an account is enabled. VLESS, VMess, Trojan and Hysteria support native connection reporting. Older agents, unsupported protocols or telemetry older than 20 seconds show **Unknown**. Install the matching panel and agent update together; existing local policies automatically enable online tracking on their next reconciliation.
+
+**Accounts** manages administrators, resellers, viewers and custom permissions. Resellers see and modify only their own clients, use assigned inbounds and stay within their client count and allocated traffic budgets. Zero account limits mean unlimited; a finite traffic budget requires finite client quotas. Administrators can assign client ownership from the client editor. Shared connection accounts retain one owner and one quota. Role and access changes revoke existing browser sessions. Client lists, direct actions, batches and bulk operations enforce access on the server, including API keys.
+
+Language selection applies throughout the panel and persists across sessions. Persian uses right-to-left layout and Vazirmatn. Subscription controls remain in Clients. Audit events are available from the server with `sudo veloray audit 100`; the web panel has no audit page.
+
 ### Traffic multipliers and discounts
 
-**Clients → Add client / Batch create / Edit** accepts `traffic_multiplier` from `-1` to `3`, with at most three decimal places. The default is `1`. Positive values multiply actual traffic directly; negative values specify a discount, so the effective rate is `1 + traffic_multiplier`.
+**Clients → Add client / Batch create / Edit** accepts any finite `traffic_multiplier`, with at most three decimal places. The default is `1`. Positive values multiply actual traffic directly; negative values specify a discount, so the effective rate is `max(0, 1 + traffic_multiplier)`.
 
 | Entered value | Billed for 1 GB of actual traffic |
 | --- | --- |

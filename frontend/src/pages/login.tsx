@@ -1,3 +1,4 @@
+import { useLocale, type Locale } from "@/lib/i18n";
 import { FormEvent, useMemo, useState } from "react";
 import {
   ArrowLeft,
@@ -15,8 +16,6 @@ import { VeloRayMark } from "@/components/brand/veloray-mark";
 import { login } from "@/lib/api";
 import { useTheme } from "@/components/theme/theme-provider";
 
-type Locale = "en" | "fa";
-
 const copy = {
   en: {
     title: "Login to your account",
@@ -29,7 +28,7 @@ const copy = {
     back: "Back to login",
     loading: "Please wait…",
     secure: "Secure administrator access",
-    version: "VeloRay v0.1.0",
+    version: "VeloRay v0.2.0",
     usernamePlaceholder: "Username",
     passwordPlaceholder: "Password",
     codePlaceholder: "000000",
@@ -48,7 +47,7 @@ const copy = {
     back: "بازگشت به ورود",
     loading: "لطفاً صبر کنید…",
     secure: "دسترسی امن مدیر سیستم",
-    version: "VeloRay v0.1.0",
+    version: "VeloRay v0.2.0",
     usernamePlaceholder: "نام کاربری",
     passwordPlaceholder: "رمز عبور",
     codePlaceholder: "000000",
@@ -66,9 +65,7 @@ export function LoginPage({ onSuccess }: { onSuccess: () => void }) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [locale, setLocale] = useState<Locale>(() =>
-    localStorage.getItem("veloray-login-locale") === "fa" ? "fa" : "en",
-  );
+  const { locale, setLocale } = useLocale();
   const { resolved, setTheme } = useTheme();
 
   const t = copy[locale];
@@ -130,7 +127,7 @@ export function LoginPage({ onSuccess }: { onSuccess: () => void }) {
             className="inline-flex h-9 min-w-9 items-center justify-center rounded-md border border-[var(--border)] bg-[var(--card)] px-2.5 text-[11px] font-medium text-[var(--muted-strong)] shadow-sm transition hover:bg-[var(--surface-2)] hover:text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
             aria-label="Change login language"
           >
-            {locale === "en" ? "FA" : "EN"}
+            {locale === "en" ? "Persian" : "انگلیسی"}
           </button>
 
           <button

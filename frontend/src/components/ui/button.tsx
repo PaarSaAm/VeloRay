@@ -1,3 +1,4 @@
+import { useLocale } from "@/lib/i18n";
 import type { ButtonHTMLAttributes } from "react";
 import { cn } from "@/lib/cn";
 type Props = ButtonHTMLAttributes<HTMLButtonElement> & {
@@ -11,6 +12,7 @@ export function Button({
   type = "button",
   ...props
 }: Props) {
+  useLocale();
   const variants = {
     default:
       "border border-[var(--primary)] bg-[var(--primary)] text-[var(--primary-fg)] shadow-sm hover:opacity-90",

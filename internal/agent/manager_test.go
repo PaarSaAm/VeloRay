@@ -22,6 +22,8 @@ type fakeRuntime struct {
 	reject, restartFail bool
 	restarts            int
 	sockets             string
+	onlineUsers         []string
+	onlineError         bool
 }
 
 func (f *fakeRuntime) Run(_ context.Context, name string, args ...string) ([]byte, error) {
@@ -35,6 +37,13 @@ func (f *fakeRuntime) Run(_ context.Context, name string, args ...string) ([]byt
 		case "version":
 			return []byte("Xray 26.10.1"), nil
 		case "api":
+			if args[1] == "statsgetallonlineusers" {
+				if f.onlineError {
+					return nil, errors.New("unsupported API")
+				}
+				b, _ := json.Marshal(map[string]any{"users": f.onlineUsers})
+				return b, nil
+			}
 			b, _ := json.Marshal(map[string]any{"stat": []Counter{{"user>>>veloray:1:alice>>>traffic>>>uplink", f.value}}})
 			return b, nil
 		case "run":
@@ -247,5 +256,35 @@ func TestCorruptLedgerFailsClosed(t *testing.T) {
 	_ = os.WriteFile(p, []byte("invalid"), 0600)
 	if _, e := NewManager("xray", filepath.Join(d, "config"), "xray", p, nil); e == nil {
 		t.Fatal("corrupt ledger accepted")
+	}
+}
+
+func TestOnlineSnapshotDoesNotChangeDurableAccounting(t *testing.T) {
+	m, f := testManager(t)
+	f.value = 100
+	f.onlineUsers = []string{"user>>>veloray:1:alice>>>online"}
+	if err := os.WriteFile(m.ConfigPath, []byte(`{"policy":{"levels":{"0":{"statsUserOnline":true}}}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := m.Stats(context.Background())
+	if err != nil || !snapshot.OnlineAvailable || len(snapshot.OnlineUsers) != 1 || snapshot.OnlineUsers[0] != "veloray:1:alice" || snapshot.OnlineTrackingRequired || snapshot.Stat[0].Value != 100 {
+		t.Fatal(snapshot, err)
+	}
+	f.onlineError = true
+	snapshot, err = m.Stats(context.Background())
+	if err != nil || snapshot.OnlineAvailable || snapshot.Stat[0].Value != 100 {
+		t.Fatal("online failure broke billing", snapshot, err)
+	}
+	f.running = false
+	snapshot, err = m.Stats(context.Background())
+	if err != nil || !snapshot.OnlineAvailable || len(snapshot.OnlineUsers) != 0 {
+		t.Fatal(snapshot, err)
+	}
+}
+func TestOnlineTrackingUpgradeDetection(t *testing.T) {
+	m, _ := testManager(t)
+	snapshot, err := m.Stats(context.Background())
+	if err != nil || !snapshot.OnlineTrackingRequired || snapshot.OnlineAvailable {
+		t.Fatal(snapshot, err)
 	}
 }

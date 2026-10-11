@@ -5,11 +5,12 @@ ENV_FILE="${VELORAY_ENV_FILE:-/etc/veloray/veloray.env}"
 command="${1:-menu}"; shift || true
 if [[ "$command" == help || "$command" == --help ]];then
  cat <<'HELP'
-VeloRay 0.1.0 · Server management
+VeloRay 0.2.0 · Server management
   veloray                         Interactive menu
   veloray status | doctor | url
   veloray start | stop | restart
   veloray logs [web|agent|xray|install]
+  veloray audit [LIMIT]
   veloray reset [USERNAME]
   veloray domain HOST | port PORT | ssl EMAIL
   veloray backup [FILE] | restore FILE
@@ -31,7 +32,7 @@ AGENT=veloray-agent.service
 trap 'vr_error "$LINENO" "$?"' ERR
 VR_STEP="$(vr_text 'Server management' 'مدیریت سرور')"
 summary() {
- printf '\nVeloRay 0.1.0\n'
+ printf '\nVeloRay 0.2.0\n'
  vr_say "Panel: $VELORAY_PUBLIC_URL" "آدرس پنل: $VELORAY_PUBLIC_URL"
  local unit state label
  for unit in "$WEB" "$AGENT" xray.service;do
@@ -122,6 +123,7 @@ case "$command" in
  status) summary;;
  url) printf '%s\n' "$VELORAY_PUBLIC_URL";;
  ports) status=0;vr_ports_check||status=$?;if [[ -n "${VR_PORTS_REPORT:-}" ]];then jq -r '.ports[]|"\(.network) \(.listen):\(.port)  \(.tag)  \(.state)  \(.owner // "")"' <<<"$VR_PORTS_REPORT";fi;exit "$status";;
+ audit) [[ $# -le 1 ]]||{ echo 'Usage: sudo veloray audit [LIMIT]' >&2;exit 2; };veloray host-audit "${1:-100}";;
  inbounds) veloray host-inbounds|jq -r '.[]|"ID=\(.id)  \(.name)  \(.listen):\(.port)  \(.protocol)  enabled=\(.enabled)"';;
  inbound-port) [[ $# -eq 2 ]]||{ echo 'Usage: sudo veloray inbound-port ID PORT' >&2;exit 2; };veloray host-inbound-port "$1" "$2";vr_say 'Inbound port deployed. Refresh client subscriptions to receive the new port.' 'پورت اتصال اعمال شد؛ اشتراک کاربران را برای دریافت پورت جدید به‌روزرسانی کنید.';;
  doctor) doctor;;

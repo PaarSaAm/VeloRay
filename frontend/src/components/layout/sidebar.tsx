@@ -1,3 +1,5 @@
+import { can, useSession } from "@/lib/session";
+import { useLocale, t } from "@/lib/i18n";
 import { ChevronLeft, ExternalLink, X } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { VeloRayWordmark } from "@/components/brand/veloray-mark";
@@ -7,14 +9,12 @@ export type RouteKey =
   | "clients"
   | "inbounds"
   | "nodes"
-  | "subscriptions"
   | "traffic"
   | "xray"
-  | "audit"
   | "security"
   | "settings"
   | "api"
-  | "admin"
+  | "accounts"
   | "imports";
 const groups = [
   {
@@ -29,7 +29,6 @@ const groups = [
     items: [
       { key: "clients", label: "Clients", icon: "users" },
       { key: "inbounds", label: "Inbounds", icon: "diagram-project" },
-      { key: "subscriptions", label: "Subscriptions", icon: "rss" },
       { key: "imports", label: "Import data", icon: "download" },
     ],
   },
@@ -43,10 +42,9 @@ const groups = [
   {
     label: "System",
     items: [
-      { key: "audit", label: "Audit log", icon: "clock-rotate-left" },
       { key: "security", label: "Security", icon: "shield-halved" },
       { key: "api", label: "API", icon: "code" },
-      { key: "admin", label: "Administration", icon: "user-shield" },
+      { key: "accounts", label: "Accounts", icon: "user-shield" },
       { key: "settings", label: "Settings", icon: "gear" },
     ],
   },
@@ -68,12 +66,23 @@ export function Sidebar({
   setMobileOpen: (v: boolean) => void;
   isSuperuser?: boolean;
 }) {
+  useLocale();
+  const session = useSession();
+  const access: Record<string, string> = {
+    dashboard: "dashboard.read",
+    clients: "clients.read",
+    inbounds: "inbounds.read",
+    nodes: "nodes.read",
+    traffic: "traffic.read",
+    xray: "xray.read",
+    api: "api.read",
+  };
   const body = (compact: boolean) => (
     <>
       <div className="flex h-16 items-center justify-between px-4">
         <VeloRayWordmark compact={compact} />
         <button
-          aria-label="Close menu"
+          aria-label={t("Close menu")}
           className="grid h-8 w-8 place-items-center rounded-md text-[var(--muted)] hover:bg-[var(--surface-2)] lg:hidden"
           onClick={() => setMobileOpen(false)}
         >
@@ -83,26 +92,28 @@ export function Sidebar({
       <div className="mx-3 h-px bg-[var(--border-subtle)]" />
       <nav className="scrollbar-none flex-1 overflow-y-auto px-3 py-4">
         {groups.map((g) => (
-          <div key={g.label} className="mb-5">
+          <div key={t(g.label)} className="mb-5">
             {!compact && (
               <div className="mb-1.5 px-2 text-[9px] font-medium text-[var(--muted)]">
-                {g.label}
+                {t(g.label)}
               </div>
             )}
             <div className="space-y-1">
               {g.items
                 .filter(
                   (item) =>
-                    !["admin", "imports"].includes(item.key) || isSuperuser,
+                    (!["accounts", "imports"].includes(item.key) ||
+                      isSuperuser) &&
+                    (!access[item.key] || can(session, access[item.key])),
                 )
                 .map((item) => {
                   const active = route === item.key;
                   return (
                     <button
                       key={item.key}
-                      aria-label={item.label}
+                      aria-label={t(item.label)}
                       aria-current={active ? "page" : undefined}
-                      title={compact ? item.label : undefined}
+                      title={compact ? t(item.label) : undefined}
                       onClick={() => {
                         setRoute(item.key);
                         setMobileOpen(false);
@@ -125,7 +136,7 @@ export function Sidebar({
                         )}
                       />
                       {!compact && (
-                        <span className="truncate">{item.label}</span>
+                        <span className="truncate">{t(item.label)}</span>
                       )}
                     </button>
                   );
@@ -147,7 +158,9 @@ export function Sidebar({
           </a>
         )}
         <button
-          aria-label={compact ? "Expand navigation" : "Collapse navigation"}
+          aria-label={
+            compact ? t("Expand navigation") : t("Collapse navigation")
+          }
           onClick={() => setCollapsed(!collapsed)}
           className="hidden h-8 w-full items-center justify-center rounded-md text-[var(--muted)] hover:bg-[var(--surface-2)] lg:flex"
         >
@@ -174,7 +187,7 @@ export function Sidebar({
       {mobileOpen && (
         <div className="fixed inset-0 z-50 lg:hidden">
           <button
-            aria-label="Close menu"
+            aria-label={t("Close menu")}
             onClick={() => setMobileOpen(false)}
             className="absolute inset-0 bg-black/55 backdrop-blur-[3px]"
           />

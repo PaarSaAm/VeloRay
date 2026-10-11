@@ -1,3 +1,5 @@
+import { t } from "@/lib/i18n";
+import { useLocale, tx } from "@/lib/i18n";
 import { FormEvent, useEffect, useState } from "react";
 import {
   ChevronUp,
@@ -26,6 +28,7 @@ const initial = {
 };
 
 export function NodesPage() {
+  useLocale();
   const [nodes, setNodes] = useState<NodeItem[]>([]);
   const [form, setForm] = useState({ ...initial });
   const [open, setOpen] = useState(false);
@@ -46,7 +49,7 @@ export function NodesPage() {
       await api("/nodes/", { method: "POST", body: JSON.stringify(form) });
       setForm({ ...initial });
       setOpen(false);
-      setMsg("Remote node saved. Probe it before deploying traffic.");
+      setMsg(t("Remote node saved. Probe it before deploying traffic."));
       await load();
     } catch (e: any) {
       setMsg(e.message);
@@ -58,7 +61,7 @@ export function NodesPage() {
     setBusy(n.id);
     try {
       await api(`/nodes/${n.id}/probe/`, { method: "POST" });
-      setMsg(`${n.name} responded successfully.`);
+      setMsg(tx("{0} responded successfully.", n.name));
       await load();
     } catch (e: any) {
       setMsg(e.message);
@@ -70,7 +73,7 @@ export function NodesPage() {
     setBusy(n.id);
     try {
       await api(`/nodes/${n.id}/deploy/`, { method: "POST" });
-      setMsg(`Validated config deployed to ${n.name}.`);
+      setMsg(tx("Validated config deployed to {0}.", n.name));
       await load();
     } catch (e: any) {
       setMsg(e.message);
@@ -80,11 +83,15 @@ export function NodesPage() {
   }
   async function remove(n: NodeItem) {
     if (n.is_local) return;
-    if (!confirm(`Delete node ${n.name}? Remove this node's inbounds first.`))
+    if (
+      !confirm(
+        tx("Delete node {0}? Remove this node's inbounds first.", n.name),
+      )
+    )
       return;
     try {
       await api(`/nodes/${n.id}/`, { method: "DELETE" });
-      setMsg(`${n.name} deleted.`);
+      setMsg(tx("{0} deleted.", n.name));
       await load();
     } catch (e: any) {
       setMsg(e.message);
@@ -122,7 +129,7 @@ export function NodesPage() {
       });
       setEditing(null);
       setForm({ ...initial });
-      setMsg("Remote node updated.");
+      setMsg(t("Remote node updated."));
       await load();
     } catch (e: any) {
       setMsg(e.message);
@@ -140,12 +147,12 @@ export function NodesPage() {
       <CardHeader>
         <div>
           <CardTitle>
-            {editingMode ? "Edit remote node" : "Remote node"}
+            {editingMode ? t("Edit remote node") : t("Remote node")}
           </CardTitle>
           <p className="mt-1 text-[11px] text-[var(--muted)]">
             {editingMode
-              ? "Leave the token blank to keep the current secret."
-              : "Paste the credentials printed by the node installer."}
+              ? t("Leave the token blank to keep the current secret.")
+              : t("Paste the credentials printed by the node installer.")}
           </p>
         </div>
         {editingMode && (
@@ -160,20 +167,20 @@ export function NodesPage() {
           className="grid gap-3 md:grid-cols-2 xl:grid-cols-4"
         >
           <label className="label">
-            Node name
+            {t("Node name")}
             <input
               className="input"
-              placeholder="Frankfurt 01"
+              placeholder={t("Frankfurt 01")}
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
               required
             />
           </label>
           <label className="label">
-            Public host
+            {t("Public host")}
             <input
               className="input"
-              placeholder="node.example.com"
+              placeholder={t("node.example.com")}
               value={form.public_host}
               onChange={(e) =>
                 setForm({ ...form, public_host: e.target.value })
@@ -182,21 +189,23 @@ export function NodesPage() {
             />
           </label>
           <label className="label">
-            Agent URL
+            {t("Agent URL")}
             <input
               className="input"
-              placeholder="https://node.example.com:9191"
+              placeholder={t("https://node.example.com:9191")}
               value={form.agent_url}
               onChange={(e) => setForm({ ...form, agent_url: e.target.value })}
               required
             />
           </label>
           <label className="label">
-            Agent token
+            {t("Agent token")}
             <input
               className="input mono"
               type="password"
-              placeholder={editingMode ? "Unchanged when empty" : "Paste token"}
+              placeholder={
+                editingMode ? t("Unchanged when empty") : t("Paste token")
+              }
               value={form.agent_token}
               onChange={(e) =>
                 setForm({ ...form, agent_token: e.target.value })
@@ -212,23 +221,23 @@ export function NodesPage() {
                 setForm({ ...form, verify_tls: e.target.checked })
               }
             />
-            Verify the Agent TLS certificate
+            {t("Verify the Agent TLS certificate")}
           </label>
           <div className="col-span-full flex justify-end gap-2">
             {editingMode && (
               <Button type="button" variant="ghost" onClick={closeEditor}>
-                Cancel
+                {t("Cancel")}
               </Button>
             )}
             <Button type="submit" disabled={formBusy}>
               {formBusy ? (
                 "Saving…"
               ) : editingMode ? (
-                "Save changes"
+                t("Save changes")
               ) : (
                 <>
                   <Plus className="h-3.5 w-3.5" />
-                  Save node
+                  {t("Save node")}
                 </>
               )}
             </Button>
@@ -241,8 +250,8 @@ export function NodesPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Nodes"
-        description="Manage the local server and your remote nodes."
+        title={t("Nodes")}
+        description={t("Manage the local server and your remote nodes.")}
         actions={
           <Button
             variant="outline"
@@ -257,7 +266,7 @@ export function NodesPage() {
             ) : (
               <Plus className="h-3.5 w-3.5" />
             )}
-            {open ? "Close" : "Add remote node"}
+            {open ? t("Close") : t("Add remote node")}
           </Button>
         }
       />
@@ -275,14 +284,15 @@ export function NodesPage() {
       <Card>
         <CardHeader>
           <div>
-            <CardTitle>Fleet</CardTitle>
+            <CardTitle>{t("Fleet")}</CardTitle>
             <p className="mt-1 text-[11px] text-[var(--muted)]">
-              {nodes.length} registered node{nodes.length === 1 ? "" : "s"}
+              {nodes.length} {t("registered node")}
+              {nodes.length === 1 ? "" : "s"}
             </p>
           </div>
           <Badge tone="green">
             <ShieldCheck className="h-3 w-3" />
-            Agent auth
+            {t("Agent auth")}
           </Badge>
         </CardHeader>
         <CardContent className="p-0">
@@ -290,12 +300,12 @@ export function NodesPage() {
             <table className="data-table min-w-[900px]">
               <thead>
                 <tr>
-                  <th>Node</th>
-                  <th>Public host</th>
-                  <th>Status</th>
-                  <th>Xray</th>
-                  <th>Last seen</th>
-                  <th className="text-right">Actions</th>
+                  <th>{t("Node")}</th>
+                  <th>{t("Public host")}</th>
+                  <th>{t("Status")}</th>
+                  <th>{t("Xray")}</th>
+                  <th>{t("Last seen")}</th>
+                  <th className="text-right">{t("Actions")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -312,7 +322,7 @@ export function NodesPage() {
                               {n.name}
                             </span>
                             {n.is_local && (
-                              <Badge tone="blue">Panel server</Badge>
+                              <Badge tone="blue">{t("Panel server")}</Badge>
                             )}
                           </div>
                           <span className="block max-w-52 truncate text-[9px] text-[var(--muted)]">
@@ -342,7 +352,7 @@ export function NodesPage() {
                         className="mt-1 text-[11px] text-[var(--muted)]"
                         title={n.last_deploy_error}
                       >
-                        Deploy: {n.deploy_state}
+                        {t("Deploy:")} {n.deploy_state}
                       </div>
                     </td>
                     <td>
@@ -353,12 +363,12 @@ export function NodesPage() {
                     <td>
                       {n.last_seen_at
                         ? new Date(n.last_seen_at).toLocaleString()
-                        : "Never"}
+                        : t("Never")}
                     </td>
                     <td>
                       <div className="flex justify-end gap-1">
                         <Button
-                          title="Probe"
+                          title={t("Probe")}
                           variant="ghost"
                           size="icon"
                           disabled={busy === n.id}
@@ -369,7 +379,7 @@ export function NodesPage() {
                           />
                         </Button>
                         <Button
-                          title="Deploy"
+                          title={t("Deploy")}
                           variant="outline"
                           size="icon"
                           disabled={busy === n.id}
@@ -380,7 +390,7 @@ export function NodesPage() {
                         {!n.is_local && (
                           <>
                             <Button
-                              title="Edit"
+                              title={t("Edit")}
                               variant="ghost"
                               size="icon"
                               onClick={() => beginEdit(n)}
@@ -388,7 +398,7 @@ export function NodesPage() {
                               <Pencil className="h-3.5 w-3.5" />
                             </Button>
                             <Button
-                              title="Delete"
+                              title={t("Delete")}
                               variant="ghost"
                               size="icon"
                               onClick={() => remove(n)}
@@ -414,7 +424,7 @@ export function NodesPage() {
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-semibold">{n.name}</span>
-                      {n.is_local && <Badge tone="blue">Local</Badge>}
+                      {n.is_local && <Badge tone="blue">{t("Local")}</Badge>}
                       <Badge
                         tone={
                           n.status === "ok"
@@ -435,11 +445,11 @@ export function NodesPage() {
                 <div className="mt-3 grid grid-cols-2 gap-2">
                   <Button variant="outline" size="sm" onClick={() => probe(n)}>
                     <RefreshCw className="h-3.5 w-3.5" />
-                    Probe
+                    {t("Probe")}
                   </Button>
                   <Button size="sm" onClick={() => deploy(n)}>
                     <Rocket className="h-3.5 w-3.5" />
-                    Deploy
+                    {t("Deploy")}
                   </Button>
                   {!n.is_local && (
                     <>
@@ -449,7 +459,7 @@ export function NodesPage() {
                         onClick={() => beginEdit(n)}
                       >
                         <Pencil className="h-3.5 w-3.5" />
-                        Edit
+                        {t("Edit")}
                       </Button>
                       <Button
                         size="sm"
@@ -457,7 +467,7 @@ export function NodesPage() {
                         onClick={() => remove(n)}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
-                        Delete
+                        {t("Delete")}
                       </Button>
                     </>
                   )}
@@ -467,7 +477,9 @@ export function NodesPage() {
           </div>
           {!nodes.length && (
             <div className="p-10 text-center text-[12px] text-[var(--muted)]">
-              No nodes yet. Add a remote node or check the local installation.
+              {t(
+                "No nodes yet. Add a remote node or check the local installation.",
+              )}
             </div>
           )}
         </CardContent>

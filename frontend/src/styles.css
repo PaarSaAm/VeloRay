@@ -485,3 +485,100 @@ pre {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* Form controls use a predictable grid at every viewport size. */
+.clients-directory-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: center;
+}
+.client-filters {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.5rem;
+  width: 100%;
+  min-width: 0;
+}
+.search-field {
+  position: relative;
+  min-width: 0;
+}
+.search-icon {
+  pointer-events: none;
+  position: absolute;
+  inset-inline-start: 0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
+}
+.search-field .input,
+.relative:has(> .lucide-search) .input {
+  padding-inline-start: 2.25rem;
+}
+.client-filters .input {
+  width: 100%;
+  min-width: 0;
+}
+.backup-file-field {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 2.65rem;
+  padding: 0 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--input);
+  font-weight: 400;
+}
+.backup-file-button {
+  flex-shrink: 0;
+  padding: 0.35rem 0.5rem;
+  border-radius: 0.3rem;
+  background: var(--surface-2);
+}
+.backup-file-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+.backup-file-field:focus-within {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.chart-shell {
+  isolation: isolate;
+}
+.chart-tooltip {
+  z-index: 20;
+}
+@media (min-width: 640px) {
+  .client-filters {
+    grid-template-columns: minmax(180px, 1fr) minmax(130px, 0.55fr) minmax(
+        130px,
+        0.6fr
+      );
+  }
+}
+@media (min-width: 1200px) {
+  .clients-directory-header {
+    grid-template-columns: minmax(160px, 0.45fr) minmax(0, 1fr);
+  }
+}
+html[dir="rtl"] .veloray-shell aside {
+  left: auto;
+  right: 0;
+  border-right: 0;
+  border-left: 1px solid var(--border);
+}
+@media (min-width: 1024px) {
+  .shell-content {
+    padding-inline-start: var(--nav-width);
+    padding-inline-end: 0;
+  }
+}
+html[dir="rtl"] .veloray-shell .text-left {
+  text-align: right;
+}

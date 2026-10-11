@@ -102,6 +102,22 @@ func (s *Server) collect(ctx context.Context, q Query, node Data) error {
 		return errors.New("node accounting ledger changed; restore its state before continuing")
 	}
 	node["_ledger_id"] = ledgerID
+	node["_online_available"] = flag(stats, "online_available")
+	node["_online_tracking_required"] = flag(stats, "online_tracking_required")
+	node["_telemetry_at"] = stamp()
+	online := Data{}
+	for _, name := range array(stats, "online_users") {
+		email := fmt.Sprint(name)
+		metric := strings.Split(email, ">>>")
+		if len(metric) == 3 && metric[0] == "user" && metric[2] == "online" {
+			email = metric[1]
+		}
+		parts := strings.SplitN(email, ":", 3)
+		if len(parts) == 3 && parts[0] == "veloray" {
+			online[parts[1]] = true
+		}
+	}
+	node["_online_clients"] = online
 	inbounds, e := list(ctx, q, "inbounds", "WHERE node_id=$1", id)
 	if e != nil {
 		return e
@@ -123,6 +139,7 @@ func (s *Server) collect(ctx context.Context, q Query, node Data) error {
 		}
 	}
 	var totalDelta int64
+	ownerDeltas := map[int64]int64{}
 	chargedClients := map[string]Data{}
 	for _, entry := range array(stats, "stat") {
 		b, _ := json.Marshal(entry)
@@ -185,6 +202,7 @@ func (s *Server) collect(ctx context.Context, q Query, node Data) error {
 			return errors.New("node traffic overflow")
 		}
 		totalDelta += delta
+		ownerDeltas[num(client, "owner_id")] += delta
 	}
 	for _, c := range chargedClients {
 		if e = save(ctx, q, "clients", c); e != nil {
@@ -196,6 +214,15 @@ func (s *Server) collect(ctx context.Context, q Query, node Data) error {
 		_, e = q.Exec(ctx, `INSERT INTO vr_traffic_windows(at,node_id,bytes) VALUES($1,$2,$3) ON CONFLICT(at,node_id) DO UPDATE SET bytes=vr_traffic_windows.bytes+excluded.bytes`, at, id, totalDelta)
 		if e != nil {
 			return e
+		}
+	}
+	for owner, bytes := range ownerDeltas {
+		if owner <= 0 || bytes <= 0 {
+			continue
+		}
+		_, err := q.Exec(ctx, `INSERT INTO vr_owner_traffic_windows(at,owner_id,bytes) VALUES($1,$2,$3) ON CONFLICT(at,owner_id) DO UPDATE SET bytes=vr_owner_traffic_windows.bytes+excluded.bytes`, time.Now().UTC().Truncate(5*time.Minute), owner, bytes)
+		if err != nil {
+			return err
 		}
 	}
 	return save(ctx, q, "nodes", node)

@@ -1,3 +1,4 @@
+import { useLocale } from "@/lib/i18n";
 import { useEffect, useRef, type ReactNode } from "react";
 export function Dialog({
   label,
@@ -8,6 +9,7 @@ export function Dialog({
   onClose: () => void;
   children: ReactNode;
 }) {
+  useLocale();
   const root = useRef<HTMLDivElement>(null),
     close = useRef(onClose);
   close.current = onClose;

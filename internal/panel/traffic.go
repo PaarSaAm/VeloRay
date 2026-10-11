@@ -3,28 +3,36 @@ package panel
 import (
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 	"strconv"
 )
 
 // Negative values are discounts: -0.5 bills 50%, -0.25 bills 75%.
 // Thousandths and a persistent remainder keep small accounting polls exact.
-func multiplierMilli(d Data) (int64, error) {
+func multiplierMilli(d Data) (*big.Int, error) {
 	v, exists := d["traffic_multiplier"]
 	if !exists {
-		return 1000, nil
+		return big.NewInt(1000), nil
 	}
 	r, ok := new(big.Rat).SetString(fmt.Sprint(v))
-	if !ok || r.Cmp(big.NewRat(-1, 1)) < 0 || r.Cmp(big.NewRat(3, 1)) > 0 {
-		return 0, errors.New("traffic multiplier must be between -1 and 3")
+	if !ok {
+		return nil, errors.New("invalid traffic multiplier")
+	}
+	finite, _ := r.Float64()
+	if math.IsInf(finite, 0) || math.IsNaN(finite) {
+		return nil, errors.New("traffic multiplier must be finite")
 	}
 	r.Mul(r, big.NewRat(1000, 1))
 	if !r.IsInt() {
-		return 0, errors.New("traffic multiplier supports at most three decimal places")
+		return nil, errors.New("traffic multiplier supports at most three decimal places")
 	}
-	n := r.Num().Int64()
-	if n < 0 {
-		n += 1000
+	n := new(big.Int).Set(r.Num())
+	if n.Sign() < 0 {
+		n.Add(n, big.NewInt(1000))
+		if n.Sign() < 0 {
+			n.SetInt64(0)
+		}
 	}
 	return n, nil
 }
@@ -52,7 +60,7 @@ func applyTrafficDelta(c Data, delta int64) error {
 	if rem < 0 || rem >= 1000 {
 		return errors.New("invalid traffic remainder")
 	}
-	value := new(big.Int).Mul(big.NewInt(delta), big.NewInt(rate))
+	value := new(big.Int).Mul(big.NewInt(delta), rate)
 	value.Add(value, big.NewInt(rem))
 	charged, remainder := new(big.Int), new(big.Int)
 	charged.QuoRem(value, big.NewInt(1000), remainder)
@@ -79,7 +87,16 @@ func applyTrafficDelta(c Data, delta int64) error {
 	return nil
 }
 
-var accountFields = []string{"enabled", "expires_at", "traffic_limit_bytes", "used_traffic_bytes", "lifetime_traffic_bytes", "raw_used_traffic_bytes", "raw_lifetime_traffic_bytes", "traffic_multiplier", "_charge_remainder", "last_traffic_at", "disabled_reason", "renewal_interval_days", "next_renewal_at"}
+func effectiveTrafficMultiplier(c Data) float64 {
+	rate, err := multiplierMilli(c)
+	if err != nil {
+		return 0
+	}
+	value, _ := new(big.Rat).SetFrac(rate, big.NewInt(1000)).Float64()
+	return value
+}
+
+var accountFields = []string{"owner_id", "enabled", "expires_at", "traffic_limit_bytes", "used_traffic_bytes", "lifetime_traffic_bytes", "raw_used_traffic_bytes", "raw_lifetime_traffic_bytes", "traffic_multiplier", "_charge_remainder", "last_traffic_at", "disabled_reason", "renewal_interval_days", "next_renewal_at"}
 
 func accountKey(c Data) string {
 	if id := num(c, "_account"); id > 0 {

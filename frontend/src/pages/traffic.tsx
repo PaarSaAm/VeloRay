@@ -1,3 +1,5 @@
+import { can, useSession } from "@/lib/session";
+import { useLocale, t } from "@/lib/i18n";
 import { useEffect, useMemo, useState } from "react";
 import { BarChart3, RefreshCw } from "lucide-react";
 import { api, distinctAccounts, type ClientItem } from "@/lib/api";
@@ -6,8 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/common/page-header";
 const fmt = (b: number) => {
-  if (!b) return "0 B";
-  const u = ["B", "KB", "MB", "GB", "TB"];
+  if (!b) return t("0 B");
+  const u = ["B", t("KB"), t("MB"), t("GB"), t("TB")];
   const i = Math.max(
     0,
     Math.min(Math.floor(Math.log(b) / Math.log(1024)), u.length - 1),
@@ -15,12 +17,39 @@ const fmt = (b: number) => {
   return `${(b / 1024 ** i).toFixed(i < 2 ? 0 : 2)} ${u[i]}`;
 };
 export function TrafficPage() {
+  useLocale();
+  const session = useSession();
   const [items, setItems] = useState<ClientItem[]>([]),
     [msg, setMsg] = useState("");
   const load = () =>
-    api<ClientItem[]>("/clients/").then((c) => setItems(distinctAccounts(c)));
+    api<ClientItem[]>("/traffic/clients").then((c) =>
+      setItems(distinctAccounts(c)),
+    );
   useEffect(() => {
-    load().catch((e) => setMsg(e.message));
+    let active = true;
+    let pending = false;
+    const controller = new AbortController();
+    const refresh = async () => {
+      if (pending || document.hidden) return;
+      pending = true;
+      try {
+        const c = await api<ClientItem[]>("/traffic/clients", {
+          signal: controller.signal,
+        });
+        if (active) setItems(distinctAccounts(c));
+      } catch (e) {
+        if (active && !controller.signal.aborted) setMsg((e as Error).message);
+      } finally {
+        pending = false;
+      }
+    };
+    void refresh();
+    const interval = setInterval(refresh, 5000);
+    return () => {
+      active = false;
+      controller.abort();
+      clearInterval(interval);
+    };
   }, []);
   const total = useMemo(
     () => items.reduce((a, c) => a + c.used_traffic_bytes, 0),
@@ -37,12 +66,12 @@ export function TrafficPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Traffic"
-        description="Track usage, quotas and renewal dates."
+        title={t("Traffic")}
+        description={t("Track usage, quotas and renewal dates.")}
         actions={
           <Button variant="outline" onClick={() => load()}>
             <RefreshCw className="h-3.5 w-3.5" />
-            Refresh
+            {t("Refresh")}
           </Button>
         }
       />
@@ -59,7 +88,7 @@ export function TrafficPage() {
         <Card>
           <CardContent className="p-4">
             <div className="text-[10px] uppercase tracking-wider text-[var(--muted)]">
-              Billed traffic
+              {t("Billed traffic")}
             </div>
             <div className="mt-2 text-2xl font-semibold tracking-tight">
               {fmt(total)}
@@ -69,7 +98,7 @@ export function TrafficPage() {
         <Card>
           <CardContent className="p-4">
             <div className="text-[10px] uppercase tracking-wider text-[var(--muted)]">
-              Unique accounts
+              {t("Unique accounts")}
             </div>
             <div className="mt-2 text-2xl font-semibold tracking-tight">
               {items.length}
@@ -79,7 +108,7 @@ export function TrafficPage() {
         <Card>
           <CardContent className="p-4">
             <div className="text-[10px] uppercase tracking-wider text-[var(--muted)]">
-              Quota limited
+              {t("Quota limited")}
             </div>
             <div className="mt-2 text-2xl font-semibold tracking-tight">
               {items.filter((x) => x.traffic_limit_bytes > 0).length}
@@ -90,9 +119,9 @@ export function TrafficPage() {
       <Card>
         <CardHeader>
           <div>
-            <CardTitle>Per-client usage</CardTitle>
+            <CardTitle>{t("Per-client usage")}</CardTitle>
             <p className="mt-1 text-[11px] text-[var(--muted)]">
-              Usage and quotas update every 15 seconds.
+              {t("Usage and quotas update every 5 seconds.")}
             </p>
           </div>
           <BarChart3 className="h-4 w-4 text-[var(--muted)]" />
@@ -122,19 +151,20 @@ export function TrafficPage() {
                   <div className="min-w-0">
                     <div className="flex justify-between gap-3 text-[10px] text-[var(--muted-strong)]">
                       <span>
-                        {fmt(c.used_traffic_bytes)} billed{" "}
+                        {fmt(c.used_traffic_bytes)} {t("billed")}{" "}
                         <small className="text-[var(--muted)]">
                           ·{" "}
                           {fmt(
                             c.raw_used_traffic_bytes ?? c.used_traffic_bytes,
                           )}{" "}
-                          actual · {c.effective_traffic_multiplier ?? 1}x
+                          {t("actual ·")} {c.effective_traffic_multiplier ?? 1}
+                          {t("x")}
                         </small>
                       </span>
                       <span>
                         {c.traffic_limit_bytes
                           ? fmt(c.traffic_limit_bytes)
-                          : "Unlimited"}
+                          : t("Unlimited")}
                       </span>
                     </div>
                     <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[var(--surface-2)]">
@@ -148,24 +178,31 @@ export function TrafficPage() {
                   </div>
                   <div>
                     <Badge tone={c.enabled ? "green" : "amber"}>
-                      {c.enabled ? "Active" : c.disabled_reason || "Disabled"}
+                      {c.enabled
+                        ? t("Active")
+                        : c.disabled_reason || t("Disabled")}
                     </Badge>
                     <div className="mt-1 text-[9px] text-[var(--muted)]">
                       {c.last_traffic_at
                         ? new Date(c.last_traffic_at).toLocaleString()
-                        : "No traffic yet"}
+                        : t("No traffic yet")}
                     </div>
                   </div>
-                  <Button size="sm" variant="outline" onClick={() => reset(c)}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={!can(session, "clients.write")}
+                    onClick={() => reset(c)}
+                  >
                     <RefreshCw className="h-3.5 w-3.5" />
-                    Reset
+                    {t("Reset")}
                   </Button>
                 </div>
               );
             })}
             {!items.length && (
               <div className="p-10 text-center text-[11px] text-[var(--muted)]">
-                No client traffic yet.
+                {t("No client traffic yet.")}
               </div>
             )}
           </div>

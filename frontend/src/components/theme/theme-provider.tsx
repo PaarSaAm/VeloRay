@@ -1,3 +1,4 @@
+import { useLocale, t } from "@/lib/i18n";
 import {
   createContext,
   useContext,
@@ -22,6 +23,7 @@ function systemTheme(): "light" | "dark" {
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
+  useLocale();
   const [theme, setThemeState] = useState<Theme>(
     () => (localStorage.getItem("veloray-theme") as Theme) || "dark",
   );
@@ -56,6 +58,6 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
 export function useTheme() {
   const value = useContext(ThemeContext);
-  if (!value) throw new Error("useTheme must be used within ThemeProvider");
+  if (!value) throw new Error(t("useTheme must be used within ThemeProvider"));
   return value;
 }

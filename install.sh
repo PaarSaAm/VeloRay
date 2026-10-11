@@ -103,7 +103,7 @@ exec 9>/run/lock/veloray-install.lock
 flock -n 9||fail 'Another VeloRay installation is running. Wait for it to finish.'
 export VELORAY_INSTALL_LOCKED=true
 trap 'vr_error "$LINENO" "$?"' ERR
-printf '\nVeloRay 0.1.0\n'
+printf '\nVeloRay 0.2.0\n'
 vr_say 'Server installation' 'نصب روی سرور'
 vr_step 'Prepare system packages' 'آماده‌سازی بسته‌های سیستم'
 packages=(ca-certificates curl jq tar xz-utils unzip openssl iproute2)

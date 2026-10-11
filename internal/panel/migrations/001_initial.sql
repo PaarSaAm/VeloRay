@@ -66,3 +66,6 @@ CREATE TABLE IF NOT EXISTS vr_telegram_actions (
  expires_at timestamptz NOT NULL DEFAULT now()+interval '5 minutes', used boolean NOT NULL DEFAULT false);
 ALTER TABLE vr_telegram_updates ADD COLUMN IF NOT EXISTS reply jsonb;
 ALTER TABLE vr_telegram_updates ADD COLUMN IF NOT EXISTS sent_at timestamptz;
+
+CREATE TABLE IF NOT EXISTS vr_owner_traffic_windows (at timestamptz NOT NULL, owner_id bigint NOT NULL, bytes bigint NOT NULL CHECK(bytes>=0), PRIMARY KEY(at,owner_id));
+CREATE INDEX IF NOT EXISTS vr_owner_traffic_lookup ON vr_owner_traffic_windows(owner_id,at);

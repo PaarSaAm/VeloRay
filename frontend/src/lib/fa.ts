@@ -1,0 +1,760 @@
+const entries = `
+0 means no expiry.|۰ یعنی بدون انقضا.
+0 means unlimited.|۰ یعنی نامحدود.
+1 day|۱ روز
+1. Create an inbound|۱. ایجاد اینباند
+2. Add a client|۲. افزودن کلاینت
+24h ago|۲۴ ساعت قبل
+2FA|احراز هویت دومرحله‌ای
+2FA enabled|احراز هویت دومرحله‌ای فعال
+2FA policy needs attention|سیاست احراز هویت نیاز به بررسی دارد
+3. Share the subscription|۳. اشتراک‌گذاری لینک
+6-digit code|کد شش‌رقمی
+API|رابط برنامه‌نویسی
+API key copied.|کلید دسترسی کپی شد.
+API key created. Copy it now; the full token is shown only once.|کلید دسترسی ساخته شد. اکنون کپی کنید؛ فقط یک بار نمایش داده می‌شود.
+API keys|کلیدهای دسترسی
+API reference|راهنمای رابط برنامه‌نویسی
+Accent|رنگ تأکیدی
+Account, client and server changes.|تغییرات حساب‌ها، کلاینت‌ها و سرورها.
+Accounts|حساب‌ها
+Across all clients|مجموع کلاینت‌ها
+Action|عملیات
+Actions|عملیات
+Active|فعال
+Active API keys|کلیدهای دسترسی فعال
+Active account|حساب فعال
+Active clients|کلاینت‌های فعال
+Actor|انجام‌دهنده
+Actual:|واقعی:
+Add DNS, routing and outbound settings. Xray validates the result before applying it.|تنظیمات دی‌ان‌اس، مسیریابی و خروجی را اضافه کنید. هسته پیش از اجرا آن را اعتبارسنجی می‌کند.
+Add account|افزودن حساب
+Edit account|ویرایش حساب
+Save account|ذخیره حساب
+Account saved.|حساب ذخیره شد.
+Reseller|فروشنده
+Viewer|مشاهده‌گر
+Custom access|دسترسی سفارشی
+Own clients only|فقط کلاینت‌های خود حساب
+Client limit|سقف تعداد کلاینت
+Traffic budget (GB)|بودجه ترافیک (گیگابایت)
+Assigned inbounds|اینباندهای اختصاص‌یافته
+Assign an inbound before this reseller can create clients.|برای ساخت کلاینت توسط فروشنده، یک اینباند اختصاص دهید.
+Permissions|دسترسی‌ها
+View dashboard|مشاهده داشبورد
+View clients|مشاهده کلاینت‌ها
+Create and edit clients|ایجاد و ویرایش کلاینت‌ها
+Delete clients|حذف کلاینت‌ها
+View inbounds|مشاهده اینباندها
+Manage inbounds|مدیریت اینباندها
+View nodes|مشاهده نودها
+Manage nodes|مدیریت نودها
+View traffic|مشاهده ترافیک
+View Xray|مشاهده هسته
+Manage Xray|مدیریت هسته
+View settings|مشاهده تنظیمات
+View API reference|مشاهده راهنمای رابط
+Access is not assigned to this account.|این دسترسی به حساب شما اختصاص نیافته است.
+Administrators, resellers and custom access.|مدیران، فروشندگان و دسترسی سفارشی.
+Add administrator|افزودن مدیر
+Add client|افزودن کلاینت
+Add remote node|افزودن نود خارجی
+Add the secret to your authenticator, then confirm a code.|کلید را به برنامه احراز هویت اضافه و سپس یک کد تأیید کنید.
+Administration|حساب‌ها
+Administrator|مدیر
+Administrator 2FA and account protection|احراز هویت دومرحله‌ای و حفاظت حساب
+Administrator authentication and automation policy.|سیاست احراز هویت مدیران و خودکارسازی.
+Administrator saved.|حساب مدیر ذخیره شد.
+Administrators|مدیران
+Admins|مدیران
+Advanced merge patch|تنظیمات تکمیلی ادغام
+Advanced patch must be a JSON object.|تنظیمات تکمیلی باید یک شیء جی‌سان باشد.
+Advanced patch must be valid JSON.|تنظیمات تکمیلی باید جی‌سان معتبر باشد.
+Advanced patch saved, validated and deployed.|تنظیمات تکمیلی ذخیره، اعتبارسنجی و اجرا شد.
+Advanced stream settings|تنظیمات پیشرفته انتقال
+Agent URL|نشانی عامل
+Agent auth|احراز هویت عامل
+Agent bearer tokens are encrypted at rest.|کلیدهای عامل به صورت رمزگذاری‌شده ذخیره می‌شوند.
+Agent token|کلید عامل
+Agent transport|ارتباط عامل
+Alert cooldown (minutes)|فاصله هشدارها (دقیقه)
+All inbounds|همه اینباندها
+All status|همه وضعیت‌ها
+Allow bot management|اجازه مدیریت با ربات
+Allowed network|شبکه مجاز
+Announcement|اعلان
+Announcement URL|نشانی اعلان
+Apply an action to 1–200 clients atomically|اجرای یک عملیات مشترک روی ۱ تا ۲۰۰ کلاینت
+Audit log|گزارش رویدادها
+Audit retention|نگهداری گزارش رویدادها
+Authenticator / recovery code|کد احراز هویت یا بازیابی
+Authenticator secret|کلید احراز هویت
+Automatic route CIDRs|محدوده‌های مسیریابی خودکار
+Automation|خودکارسازی
+Available|در دسترس
+Backup, restore and admin recovery remain available through the host CLI.|پشتیبان‌گیری، بازیابی و بازیابی مدیر از خط فرمان سرور در دسترس است.
+Base64 Xray feed|خروجی کدگذاری‌شده هسته
+Batch create|ساخت گروهی
+Batch create clients|ساخت گروهی کلاینت‌ها
+Billed traffic|مصرف محاسبه‌شده
+Bot check failed|بررسی ربات ناموفق بود
+Bot connection checked.|ارتباط ربات بررسی شد.
+Bot identity and polling status|مشخصات ربات و وضعیت دریافت پیام
+Bot language|زبان ربات
+Bot token|کلید ربات
+Browser API uses secure sessions and CSRF protection. Public subscription routes are token-scoped and do not expose panel administration.|مرورگر از نشست امن و محافظت در برابر جعل درخواست استفاده می‌کند. لینک‌های اشتراک دسترسی محدود به کلید دارند.
+Browser portal or auto-detected client feed|صفحه مرورگر یا خروجی خودکار کلاینت
+CPU|پردازنده
+CPU alert %|درصد هشدار پردازنده
+Cancel|لغو
+Change the filters or create your first client.|فیلترها را تغییر دهید یا اولین کلاینت خود را بسازید.
+Changes are validated and deployed to Xray automatically.|تغییرات به‌صورت خودکار اعتبارسنجی و روی هسته اجرا می‌شوند.
+Check a proposed inbound port|بررسی پورت پیشنهادی اینباند
+Check bot connection|بررسی ارتباط ربات
+Check listeners and current socket owners|بررسی پورت‌های باز و سرویس استفاده‌کننده
+Check port|بررسی پورت
+Checking listeners…|در حال بررسی پورت‌ها…
+Checking port…|در حال بررسی پورت…
+Choose a port, protocol and connection security.|پورت، پروتکل و امنیت اتصال را انتخاب کنید.
+Choose a starting point|انتخاب نقطه شروع
+Cipher|روش رمزگذاری
+Clash/Mihomo YAML|خروجی یامل کلش و میهومو
+Clean subscription URL|نشانی اصلی اشتراک
+Client|کلاینت
+Client DNS|دی‌ان‌اس کلاینت
+Client created and Xray redeployed.|کلاینت ساخته و هسته به‌روز شد.
+Client defaults|پیش‌فرض کلاینت‌ها
+Client directory|فهرست کلاینت‌ها
+Client health|وضعیت کلاینت‌ها
+Client name|نام کلاینت
+Client traffic and server status.|ترافیک کلاینت‌ها و وضعیت سرور.
+Client updated and Xray redeployed.|کلاینت و هسته به‌روز شدند.
+Client usage and traffic history|مصرف کلاینت‌ها و تاریخچه ترافیک
+Clients|کلاینت‌ها
+Clients ranked by traffic|کلاینت‌ها به ترتیب مصرف
+Clipboard is unavailable. Download the configuration instead.|کپی در دسترس نیست. پیکربندی را دانلود کنید.
+Clone|ساخت نسخه
+Clone & deploy|ساخت نسخه و اجرا
+Clone an inbound to a node|ساخت نسخه اینباند روی یک نود
+Clone inbound|ساخت نسخه اینباند
+Close|بستن
+Close menu|بستن منو
+Collapse navigation|جمع‌کردن منو
+Commands:|دستورها:
+Compact portal|صفحه فشرده
+Configuration copied.|پیکربندی کپی شد.
+Configuration deployed.|پیکربندی اجرا شد.
+Configuration for the selected node. Downloads contain private connection credentials.|پیکربندی نود انتخاب‌شده. فایل دانلودی شامل اطلاعات خصوصی اتصال است.
+Configuration is valid. The running service was not changed.|پیکربندی معتبر است. سرویس فعلی تغییر نکرد.
+Configure transport, ALPN, socket and TLS options. Ports, credentials and security mode use the fields above. Xray validates changes before applying them.|گزینه‌های انتقال، مذاکره پروتکل، سوکت و امنیت را تنظیم کنید. پورت و اطلاعات اتصال در قسمت بالا قرار دارند. هسته تغییرات را پیش از اجرا بررسی می‌کند.
+Configured inbound families|خانواده‌های اینباند تنظیم‌شده
+Configured inbounds|اینباندهای تنظیم‌شده
+Confirm & enable|تأیید و فعال‌سازی
+Conflict|تداخل
+Connection URI|نشانی اتصال
+Connection preset|پیش‌تنظیم اتصال
+Connection protocols, ports and server credentials.|پروتکل‌ها، پورت‌ها و اطلاعات اتصال سرور.
+Copied|کپی شد
+Copy|کپی
+Copy config|کپی پیکربندی
+Copy link|کپی لینک
+Copy sub|کپی اشتراک
+Copy subscription|کپی اشتراک
+Create & deploy|ایجاد و اجرا
+Create 1–100 clients in one deployment|ایجاد ۱ تا ۱۰۰ کلاینت در یک عملیات
+Create API key|ساخت کلید دسترسی
+Create a client to generate a subscription endpoint.|برای ساخت لینک اشتراک یک کلاینت بسازید.
+Create client|ساخت کلاینت
+Create clients|ساخت کلاینت‌ها
+Create key|ساخت کلید
+Create your first listener on Local Node.|اولین اینباند را روی نود محلی بسازید.
+Credentials in portal|اطلاعات اتصال در صفحه اشتراک
+Credentials, quotas, expiry and subscription access|اطلاعات اتصال، سهمیه، انقضا و اشتراک
+Current availability|وضعیت دسترسی فعلی
+Current password|رمز عبور فعلی
+Current socket owners for this configuration. Refresh after changing a port.|سرویس‌های فعلی استفاده‌کننده از پورت‌ها. پس از تغییر پورت به‌روز کنید.
+DNS servers|سرورهای دی‌ان‌اس
+Dashboard|داشبورد
+Dashboard refresh|فاصله به‌روزرسانی داشبورد
+Dashboard totals|آمار داشبورد
+Database|پایگاه داده
+Default API key lifetime|عمر پیش‌فرض کلید دسترسی
+Default expiry (days)|انقضای پیش‌فرض (روز)
+Default locale|زبان پیش‌فرض
+Default renewal (days)|تمدید پیش‌فرض (روز)
+Default traffic (GB)|ترافیک پیش‌فرض (گیگابایت)
+Defaults used by Client creation.|پیش‌فرض‌های ساخت کلاینت.
+Delete|حذف
+Deploy|اجرا
+Deploy:|اجرا:
+Description|توضیح
+Destination|مقصد
+Detail|جزئیات
+Diagnostics|عیب‌یابی
+Direct connection URI|نشانی اتصال مستقیم
+Disable|غیرفعال‌کردن
+Disable 2FA|غیرفعال‌کردن احراز هویت دومرحله‌ای
+Disabled|غیرفعال
+Disabled in Settings|در تنظیمات غیرفعال است
+Disabled without per-user metering.|بدون محاسبه مصرف کاربر غیرفعال است.
+Disk|دیسک
+Disk alert %|درصد هشدار دیسک
+Download|دانلود
+Duplicate|تکراری
+Edit|ویرایش
+Edit administrator|ویرایش مدیر
+Edit client|ویرایش کلاینت
+Edit inbound|ویرایش اینباند
+Edit remote node|ویرایش نود خارجی
+Email|ایمیل
+Enable|فعال‌کردن
+Enable API keys|فعال‌کردن کلیدهای دسترسی
+Enable UDP relay|فعال‌کردن انتقال یودی‌پی
+Enable or disable client|فعال یا غیرفعال‌کردن کلاینت
+Enabled|فعال
+Enabled ·|فعال ·
+English|انگلیسی
+Persian|فارسی
+Enter a number.|یک عدد وارد کنید.
+Enter a valid traffic multiplier.|یک ضریب معتبر وارد کنید.
+Existing webhook blocks polling|وب‌هوک موجود مانع دریافت پیام است
+Expand navigation|بازکردن منو
+Expired|منقضی
+Expires|انقضا
+Expires at|زمان انقضا
+Expires in days|انقضا به روز
+Expiring soon|نزدیک انقضا
+Expiring within 7 days|انقضا در ۷ روز آینده
+Expiry|انقضا
+Expiry after (days)|انقضا پس از (روز)
+Expiry warning (days)|هشدار انقضا (روز)
+Export usage|خروجی مصرف
+Feed behavior and public portal presentation.|رفتار خروجی و نمایش صفحه عمومی اشتراک.
+Fleet|نودها
+Follow redirected destination|پیروی از مقصد هدایت‌شده
+Frankfurt 01|فرانکفورت ۰۱
+Full portal|صفحه کامل
+GB|گیگابایت
+Gateway CIDRs|محدوده‌های دروازه
+General|عمومی
+Generate|ساخت
+Generate X25519 keys on the selected node.|ساخت کلیدهای اتصال روی نود انتخاب‌شده.
+Generate the server keypair, then check the port.|جفت کلید سرور را بسازید و سپس پورت را بررسی کنید.
+Generated by Xray on the selected node.|ساخته‌شده توسط هسته روی نود انتخاب‌شده.
+Generated config preview|پیش‌نمایش پیکربندی
+Go to overview|رفتن به داشبورد
+HTTP Proxy|پروکسی اچ‌تی‌تی‌پی
+HTTP and SOCKS are plaintext proxy protocols. Prefer local/LAN use or place them behind a protected transport.|این پروتکل‌های پروکسی رمزگذاری ندارند. در شبکه محلی یا پشت یک ارتباط امن استفاده کنید.
+Healthy nodes|نودهای سالم
+Host|میزبان
+Host header|سرآیند میزبان
+Host health|وضعیت میزبان
+ID|شناسه
+IP|آی‌پی
+Import data|واردسازی داده‌ها
+Imports and Telegram (administrators)|واردسازی و تلگرام (مدیران)
+In use by Xray|در استفاده هسته
+Inbound|اینباند
+Inbound created, validated and deployed.|اینباند ساخته، اعتبارسنجی و اجرا شد.
+Inbound updated, validated and deployed.|اینباند ویرایش، اعتبارسنجی و اجرا شد.
+Inbounds|اینباندها
+Inbounds & clients|اینباندها و کلاینت‌ها
+Infrastructure|زیرساخت
+Inspect Xray|بررسی هسته
+Interface name|نام رابط
+Key name|نام کلید
+Last login|آخرین ورود
+Last seen|آخرین مشاهده
+Last successful poll:|آخرین دریافت موفق:
+Last used|آخرین استفاده
+Leave blank to keep current token|برای حفظ کلید فعلی خالی بگذارید
+Leave the token blank to keep the current secret.|برای حفظ کلید فعلی این قسمت را خالی بگذارید.
+Limited|محدود
+List nodes|فهرست نودها
+List or create clients|فهرست یا ساخت کلاینت‌ها
+List or create inbounds|فهرست یا ساخت اینباندها
+Listen address|نشانی شنود
+Listener|شنونده
+Listener checks|بررسی پورت‌ها
+Live connections · every 5 seconds|اتصال‌های زنده · هر ۵ ثانیه
+Live server diagnostics.|عیب‌یابی زنده سرور.
+Load average|میانگین بار
+Loading…|در حال بارگذاری…
+Local|محلی
+Local Agent stays loopback-only; remote Agents require TLS.|عامل محلی فقط روی نشانی داخلی در دسترس است؛ عامل خارجی به ارتباط امن نیاز دارد.
+Local node enrolled|نود محلی ثبت شد
+Local server and remote VeloRay agents|سرور محلی و عامل‌های خارجی
+Main|اصلی
+Maintenance mode|حالت تعمیرات
+Manage credentials, quotas, expiry, renewals and subscriptions.|مدیریت اطلاعات اتصال، سهمیه، انقضا، تمدید و اشتراک‌ها.
+Manage inbounds →|مدیریت اینباندها ←
+Manage the local server and your remote nodes.|مدیریت سرور محلی و نودهای خارجی.
+Management|مدیریت
+Masquerade URL|نشانی پوششی
+Memory|حافظه
+Memory alert %|درصد هشدار حافظه
+Message sent to compatible subscription clients|پیام ارسالی به کلاینت‌های سازگار
+Method|روش
+Multipart file + node; private preview valid for 30 minutes|فایل و نود مقصد؛ پیش‌نمایش خصوصی با اعتبار ۳۰ دقیقه
+Name|نام
+Name prefix|پیشوند نام
+Names use prefix-001, prefix-002… Each account gets separate credentials and a subscription address.|نام‌ها با پیشوند و شماره ساخته می‌شوند. هر حساب اطلاعات اتصال و لینک اشتراک جدا دارد.
+Native|اصلی
+Never|هرگز
+New API key|کلید دسترسی جدید
+New inbound|اینباند جدید
+New password (optional)|رمز عبور جدید (اختیاری)
+No API keys created.|کلید دسترسی ساخته نشده است.
+No administrators found.|مدیری یافت نشد.
+No audit events found.|رویدادی یافت نشد.
+No client traffic yet.|هنوز مصرفی ثبت نشده است.
+No clients found|کلاینتی یافت نشد
+No configured IP listeners.|پورت تنظیم‌شده‌ای یافت نشد.
+No email|بدون ایمیل
+No expiry|بدون انقضا
+No inbounds yet.|هنوز اینباندی وجود ندارد.
+No nodes registered|نودی ثبت نشده است
+No nodes yet. Add a remote node or check the local installation.|نودی وجود ندارد. نود خارجی اضافه کنید یا نصب محلی را بررسی کنید.
+No source IP|بدون آی‌پی مبدا
+No subscriptions found|اشتراکی یافت نشد
+No token|بدون کلید
+No traffic recorded yet.|هنوز ترافیکی ثبت نشده است.
+No traffic yet|هنوز ترافیکی وجود ندارد
+Node|نود
+Node credentials|اطلاعات اتصال نود
+Node name|نام نود
+Nodes|نودها
+Nodes need attention|نودها نیاز به بررسی دارند
+None|هیچ‌کدام
+Not configured|تنظیم نشده
+Not metered per user|مصرف کاربر محاسبه نمی‌شود
+Not yet|هنوز ثبت نشده
+Note|یادداشت
+Now|اکنون
+Number of clients|تعداد کلاینت‌ها
+Off|خاموش
+Offline|آفلاین
+One-time secret|کلید یک‌بارنمایش
+Online|آنلاین
+Online now|اکنون آنلاین
+Only combinations validated by VeloRay are deployable.|فقط ترکیب‌های تأییدشده قابل اجرا هستند.
+Open navigation|بازکردن منو
+Open portal|بازکردن صفحه اشتراک
+Open subscription portal|بازکردن صفحه اشتراک
+Open the client portal or copy a connection link.|صفحه کلاینت را باز کنید یا لینک اتصال را کپی کنید.
+Operating system|سیستم‌عامل
+Operators|حساب‌ها
+Operators, access policy and scoped API credentials.|حساب‌ها، سیاست دسترسی و کلیدهای محدود رابط برنامه‌نویسی.
+Optional footer|پاورقی اختیاری
+Optional internal note|یادداشت داخلی اختیاری
+Outbound interface|رابط خروجی
+Overview|نمای کلی
+Owner|مالک
+Owner IDs|شناسه‌های مالک
+Owner command menu registered.|منوی دستورهای مالک ثبت شد.
+Owner-only alerts and management commands.|هشدارها و دستورهای مدیریت مخصوص مالک.
+Panel and nodes|پنل و نودها
+Panel defaults and server information|پیش‌فرض پنل و اطلاعات سرور
+Panel identity and interface defaults.|مشخصات پنل و پیش‌فرض رابط کاربری.
+Panel name|نام پنل
+Panel node and remote agents|نود پنل و عامل‌های خارجی
+Panel operators, roles and account security|حساب‌ها، نقش‌ها و امنیت حساب
+Panel server|سرور پنل
+Panel users|کاربران پنل
+Password|رمز عبور
+Password is required for a new administrator.|رمز عبور برای حساب جدید الزامی است.
+Paste the credentials printed by the node installer.|اطلاعات اتصال نمایش‌داده‌شده توسط نصب‌کننده نود را وارد کنید.
+Paste token|واردکردن کلید
+Path|مسیر
+Pause|توقف
+Paused|متوقف
+Per-client traffic is unavailable for this protocol. Use unlimited traffic and no quota renewal.|محاسبه مصرف کلاینت برای این پروتکل در دسترس نیست. از ترافیک نامحدود و بدون تمدید سهمیه استفاده کنید.
+Per-client usage|مصرف هر کلاینت
+Per-user metering unavailable for this protocol.|محاسبه مصرف کاربر برای این پروتکل در دسترس نیست.
+Polling available|دریافت پیام در دسترس است
+Port|پورت
+Port (not used)|پورت (استفاده نمی‌شود)
+Port check failed.|بررسی پورت ناموفق بود.
+Port check passed. Availability is checked again before deployment.|بررسی پورت موفق بود. پیش از اجرا دوباره بررسی می‌شود.
+Portal footer|پاورقی صفحه اشتراک
+Ports, protocols and connection security|پورت‌ها، پروتکل‌ها و امنیت اتصال
+Prefix|پیشوند
+Preview generated Xray JSON|پیش‌نمایش پیکربندی هسته
+Private key|کلید خصوصی
+Probe|بررسی
+Probe Agent and Xray|بررسی عامل و هسته
+Profile metadata JSON|مشخصات پروفایل به صورت جی‌سان
+Protect your account with two-factor authentication.|با احراز هویت دومرحله‌ای از حساب خود محافظت کنید.
+Protocol|پروتکل
+Protocol mix|ترکیب پروتکل‌ها
+Public client portals, auto-detected feeds, Clash/Mihomo output and direct connection links.|صفحه عمومی کلاینت، خروجی خودکار، خروجی کلش و میهومو و لینک اتصال مستقیم.
+Public host|میزبان عمومی
+Public key|کلید عمومی
+QR code|کد تصویری
+Quota and expiry alerts|هشدار سهمیه و انقضا
+Quota limited|دارای سهمیه محدود
+Quota managed|دارای سهمیه
+Quota reached|سهمیه تمام‌شده
+Quota renewal (days)|تمدید سهمیه (روز)
+Quota warning %|درصد هشدار سهمیه
+REALITY identity|مشخصات ریالیتی
+REALITY key pair generated.|جفت کلید ریالیتی ساخته شد.
+REST endpoints and automation reference|مسیرهای رابط برنامه‌نویسی و راهنمای خودکارسازی
+Raw|خام
+Read + write|خواندن و نوشتن
+Read only|فقط خواندن
+Read-only operator view. Product settings can only be changed by a superuser.|نمای فقط خواندنی. تغییر تنظیمات فقط توسط مدیر اصلی مجاز است.
+Recent events|رویدادهای اخیر
+Recommended apps|برنامه‌های پیشنهادی
+Recorded traffic|ترافیک ثبت‌شده
+Recorded usage|مصرف ثبت‌شده
+Recovery|بازیابی
+Recovery codes|کدهای بازیابی
+Refresh|به‌روزرسانی
+Register commands for private owner chats|ثبت دستورها برای گفت‌وگوی خصوصی مالک
+Register owner commands|ثبت دستورهای مالک
+Reload panel|بارگذاری مجدد پنل
+Reload the panel to try again.|پنل را دوباره بارگذاری کنید.
+Remote node|نود خارجی
+Remote node saved. Probe it before deploying traffic.|نود خارجی ذخیره شد. پیش از اجرای ترافیک آن را بررسی کنید.
+Remote node updated.|نود خارجی به‌روز شد.
+Remove stored bot token|حذف کلید ذخیره‌شده ربات
+Require administrator 2FA|الزام احراز هویت دومرحله‌ای مدیران
+Reset|بازنشانی
+Reset persisted quota usage|بازنشانی مصرف ثبت‌شده سهمیه
+Reset usage|بازنشانی مصرف
+Reset used traffic automatically.|بازنشانی خودکار مصرف ترافیک.
+Restart Xray|راه‌اندازی مجدد هسته
+Restart Xray service|راه‌اندازی مجدد سرویس هسته
+Review and migrate panel backups|بررسی و انتقال پشتیبان پنل
+Review the listener checks below. Resolve conflicting ports in Inbounds, then deploy or restart Xray.|پورت‌های زیر را بررسی کنید. تداخل پورت را در اینباندها رفع و سپس هسته را اجرا یا راه‌اندازی مجدد کنید.
+Revoke|لغو کلید
+Rewrite address|بازنویسی نشانی
+Rewrite port|بازنویسی پورت
+Role|نقش
+Running|در حال اجرا
+Runtime|محیط اجرا
+Runtime policy, subscriptions, automation, security and host health.|سیاست اجرا، اشتراک‌ها، خودکارسازی، امنیت و وضعیت میزبان.
+SOCKS options|گزینه‌های ساکس
+Save & deploy|ذخیره و اجرا
+Save administrator|ذخیره مدیر
+Save changes|ذخیره تغییرات
+Save node|ذخیره نود
+Save settings|ذخیره تنظیمات
+Save, validate & deploy|ذخیره، اعتبارسنجی و اجرا
+Scope|محدوده دسترسی
+Scoped API keys|کلیدهای دسترسی محدود
+Search audit|جست‌وجوی رویدادها
+Search clients...|جست‌وجوی کلاینت‌ها…
+Search profiles|جست‌وجوی پروفایل‌ها
+Search users|جست‌وجوی کاربران
+Security|امنیت
+Security & API|امنیت و رابط برنامه‌نویسی
+Select a node to preview configuration.|برای پیش‌نمایش پیکربندی یک نود انتخاب کنید.
+Select a node.|یک نود انتخاب کنید.
+Select all visible clients|انتخاب همه کلاینت‌های نمایش‌داده‌شده
+Select inbound|انتخاب اینباند
+Select node|انتخاب نود
+Select up to 200 clients per operation.|در هر عملیات حداکثر ۲۰۰ کلاینت انتخاب کنید.
+Send a test to configured owners|ارسال پیام آزمایشی به مالکان
+Send test to owners|ارسال آزمایش به مالکان
+Server key pair|جفت کلید سرور
+Server management|مدیریت سرور
+Server name|نام سرور
+Service|سرویس
+Service health and configuration|وضعیت سرویس و پیکربندی
+Service health, connection configuration and deployment.|وضعیت سرویس، پیکربندی اتصال و اجرا.
+Session-authenticated REST endpoints used by the VeloRay web panel and automation.|مسیرهای رابط برنامه‌نویسی با احراز هویت نشست برای پنل و خودکارسازی.
+Set credentials, traffic quota and expiry.|اطلاعات اتصال، سهمیه ترافیک و انقضا را تنظیم کنید.
+Set the server name and certificate paths, then check the port.|نام سرور و مسیر گواهی را تنظیم و سپس پورت را بررسی کنید.
+Set up 2FA|تنظیم احراز هویت دومرحله‌ای
+Set up your first connection|راه‌اندازی اولین اتصال
+Settings|تنظیمات
+Settings are read-only for non-superuser operators.|تنظیمات برای کاربران غیرمدیر فقط خواندنی است.
+Settings saved.|تنظیمات ذخیره شد.
+Sign out|خروج
+Skip to content|رفتن به محتوا
+Staff|کاربر پنل
+Staff access|دسترسی پنل
+Staff and superuser accounts that can sign in to the panel.|حساب‌های دارای دسترسی ورود به پنل.
+Status|وضعیت
+Stopped|متوقف
+Store these offline. Each code works once.|این کدها را آفلاین نگهداری کنید. هر کد یک بار قابل استفاده است.
+Stream settings JSON|تنظیمات انتقال به صورت جی‌سان
+Subscription|اشتراک
+Subscription directory|فهرست اشتراک‌ها
+Subscription portal|صفحه اشتراک
+Subscription profiles|پروفایل‌های اشتراک
+Subscriptions|اشتراک‌ها
+Subscriptions enabled|اشتراک‌ها فعال هستند
+Superuser|مدیر اصلی
+Support URL|نشانی پشتیبانی
+Swap|حافظه مجازی
+System|سیستم
+TLS certificate|گواهی امنیتی
+TLS private key|کلید خصوصی امنیتی
+TOTP with single-use recovery codes|رمز یک‌بارمصرف و کدهای بازیابی
+TUN changes host routing. VeloRay validates the Xray config, but route design should still be tested carefully to avoid loops.|تونل مسیریابی میزبان را تغییر می‌دهد. پیکربندی بررسی می‌شود؛ مسیرها را برای جلوگیری از حلقه آزمایش کنید.
+TUN interface|رابط تونل
+Target|هدف
+Telegram|تلگرام
+Telegram automation|خودکارسازی تلگرام
+Telegram enabled|تلگرام فعال است
+Template|قالب
+Test delivered to configured owners.|پیام آزمایشی به مالکان ارسال شد.
+The clean URL opens the VeloRay portal in browsers and automatically serves a compatible feed to known VPN clients.|نشانی اصلی در مرورگر صفحه اشتراک و در برنامه‌های شناخته‌شده خروجی سازگار را باز می‌کند.
+The full key is displayed only once after creation.|کلید کامل فقط یک بار پس از ساخت نمایش داده می‌شود.
+The patch is merged into VeloRay's generated config. The local stats API and traffic counters stay enabled.|تنظیمات تکمیلی با پیکربندی ساخته‌شده ادغام می‌شود. آمار محلی و شمارنده‌های ترافیک فعال می‌مانند.
+This page could not load|این صفحه بارگذاری نشد
+This protocol is not metered per managed account.|مصرف این پروتکل برای هر حساب محاسبه نمی‌شود.
+This secret will not be shown again.|این کلید دوباره نمایش داده نمی‌شود.
+Time|زمان
+Today|امروز
+Token configured|کلید تنظیم‌شده
+Top consumers|بیشترین مصرف‌کنندگان
+Total|مجموع
+Total clients|مجموع کلاینت‌ها
+Track usage, quotas and renewal dates.|پیگیری مصرف، سهمیه‌ها و تاریخ تمدید.
+Traffic|ترافیک
+Traffic and server status|ترافیک و وضعیت سرور
+Traffic appears after clients start using the node.|پس از استفاده کلاینت‌ها از نود، ترافیک نمایش داده می‌شود.
+Traffic collected during the last 24 hours|ترافیک ثبت‌شده در ۲۴ ساعت گذشته
+Traffic history retention|نگهداری تاریخچه ترافیک
+Traffic limit (GB)|سقف ترافیک (گیگابایت)
+Traffic multiplier|ضریب مصرف
+Traffic overview|نمای ترافیک
+Transport|انتقال
+Trojan TLS|تروجان امن
+Tunnel|تونل
+Tunnel / port forwarding|تونل و هدایت پورت
+Two-factor authentication|احراز هویت دومرحله‌ای
+Two-factor authentication disabled.|احراز هویت دومرحله‌ای غیرفعال شد.
+Two-factor authentication enabled. Save the recovery codes now.|احراز هویت دومرحله‌ای فعال شد. کدهای بازیابی را ذخیره کنید.
+UDP idle timeout|مهلت بی‌کاری یودی‌پی
+Unchanged when empty|در صورت خالی بودن تغییر نمی‌کند
+Unexpected UI error|خطای غیرمنتظره رابط کاربری
+Unique accounts|حساب‌های یکتا
+Unknown|نامشخص
+Unlimited|نامحدود
+Up to 500 latest audit records|حداکثر ۵۰۰ رویداد اخیر
+Update or remove inbound|ویرایش یا حذف اینباند
+Update policy, including traffic_multiplier|تغییر سیاست و ضریب مصرف
+Uptime|مدت کارکرد
+Usage above 80%|مصرف بالاتر از ۸۰٪
+Usage and quotas update every 5 seconds.|مصرف و سهمیه‌ها هر ۵ ثانیه به‌روز می‌شوند.
+Use 0.0.0.0 for IPv4 or :: for IPv6. Enter a specific IP to restrict the listener.|برای همه نشانی‌ها از ۰.۰.۰.۰ یا دو دونقطه استفاده کنید. برای محدودکردن شنود، آی‌پی مشخص وارد کنید.
+Use Bearer tokens for automation without sharing a panel password.|برای خودکارسازی بدون اشتراک‌گذاری رمز پنل، از کلید دسترسی استفاده کنید.
+Use strong passwords and enable 2FA after first login.|از رمز قوی استفاده کنید و پس از اولین ورود احراز هویت دومرحله‌ای را فعال کنید.
+User|کاربر
+Username|نام کاربری
+Validate|اعتبارسنجی
+Validate and apply generated config|اعتبارسنجی و اجرای پیکربندی
+Validate configuration and listener availability|اعتبارسنجی پیکربندی و بررسی پورت
+VeloRay version|نسخه برنامه
+Verify the Agent TLS certificate|بررسی گواهی امنیتی عامل
+Version|نسخه
+Version pending|نسخه در انتظار دریافت
+WG config|پیکربندی وایرگارد
+Waiting for local node|در انتظار نود محلی
+Within the next 7 days|در ۷ روز آینده
+Xray Core|هسته ایکس‌ری
+Xray is|وضعیت هسته:
+Xray restarted.|هسته راه‌اندازی مجدد شد.
+active|فعال
+actual ·|واقعی ·
+administrator account(s) do not have TOTP enabled yet.|حساب هنوز احراز هویت دومرحله‌ای فعال ندارد.
+auto|خودکار
+billed|محاسبه‌شده
+clients|کلاینت
+clients ·|کلاینت ·
+days|روز
+e.g. Arman - iPhone|مثلاً آرمان - گوشی
+gRPC service|سرویس جی‌آرپی‌سی
+listeners across|اینباند روی
+nodes|نود
+not installed|نصب نشده
+of|از
+on|روشن
+online|آنلاین
+owners ·|مالک ·
+recorded total|مجموع ثبت‌شده
+recovery codes remaining|کد بازیابی باقی مانده
+registered node|نود ثبت‌شده
+s|
+selected|انتخاب‌شده
+to another node or port.|به نود یا پورت دیگر.
+token, selected source IDs and optional port_overrides; save disabled|کلید، شناسه‌های انتخاب‌شده و تغییر اختیاری پورت؛ ذخیره به صورت غیرفعال
+used|مصرف‌شده
+Reconnecting…|در حال اتصال مجدد…
+Choose file|انتخاب فایل
+No file selected|فایلی انتخاب نشده است
+Change language|تغییر زبان
+Dark|تیره
+Light|روشن
+System theme|تم سیستم
+Theme: dark|تم: تیره
+Theme: light|تم: روشن
+Theme: system|تم: سیستم
+administrator|مدیر
+reseller|فروشنده
+viewer|مشاهده‌گر
+custom|سفارشی
+`;
+export const fa: Record<string, string> = Object.fromEntries(
+  entries
+    .trim()
+    .split("\n")
+    .map((line) => line.split("|")),
+);
+Object.assign(fa, {
+  " · Shared across {0} connections": " · مشترک بین {0} اتصال",
+  "Actions for {0}": "عملیات برای {0}",
+  "Delete administrator {0}?": "حساب {0} حذف شود؟",
+  "Delete inbound {0}?": "اینباند {0} حذف شود؟",
+  "Delete node {0}? Remove this node's inbounds first.":
+    "نود {0} حذف شود؟ ابتدا اینباندهای آن را حذف کنید.",
+  "Delete {0} selected clients?": "{0} کلاینت انتخاب‌شده حذف شوند؟",
+  "Delete {0}?": "{0} حذف شود؟",
+  "Recorded traffic from {0} to {1}": "ترافیک ثبت‌شده از {0} تا {1}",
+  "Restart Xray on {0}? Active connections may briefly reconnect.":
+    "هسته روی {0} دوباره راه‌اندازی شود؟ اتصال‌ها ممکن است کوتاه قطع و وصل شوند.",
+  "Revoke API key {0}?": "کلید دسترسی {0} لغو شود؟",
+  "Select {0}": "انتخاب {0}",
+  "Theme: {0}": "تم: {0}",
+  "Validated config deployed to {0}.": "پیکربندی معتبر روی {0} اجرا شد.",
+  "{0} accounts · {1} actual": "{0} حساب · {1} واقعی",
+  "{0} active": "{0} فعال",
+  "{0} clients created in one deployment.": "{0} کلاینت در یک عملیات ساخته شد.",
+  "{0} clients updated in one deployment per node.":
+    "{0} کلاینت با یک عملیات برای هر نود به‌روز شد.",
+  "{0} copy": "نسخه {0}",
+  "{0} days": "{0} روز",
+  "{0} deleted.": "{0} حذف شد.",
+  "{0} responded successfully.": "{0} با موفقیت پاسخ داد.",
+  "{0} total": "مجموع {0}",
+  "{0} unlimited": "{0} نامحدود",
+  "{0} validated and deployed.": "{0} اعتبارسنجی و اجرا شد.",
+  "{0}% of quotas": "{0}٪ سهمیه‌ها",
+  "{0}% · {1} cores": "{0}٪ · {1} هسته",
+  "{0}d {1}h": "{0} روز {1} ساعت",
+  "{0}h {1}m": "{0} ساعت {1} دقیقه",
+  "{0}m": "{0} دقیقه",
+  dark: "تیره",
+  light: "روشن",
+  system: "سیستم",
+  ok: "سالم",
+  offline: "آفلاین",
+  online: "آنلاین",
+  unknown: "نامشخص",
+  pending: "در انتظار",
+  applied: "اجراشده",
+  error: "خطا",
+  degraded: "نیازمند بررسی",
+  rollback_pending: "در انتظار بازیابی",
+  stopped: "متوقف",
+  running: "در حال اجرا",
+  read: "خواندن",
+  write: "نوشتن",
+  admin: "مدیر",
+  disabled: "غیرفعال",
+  enabled: "فعال",
+  manual: "دستی",
+  quota: "سهمیه",
+  expired: "منقضی",
+  "enabled ·": "فعال ·",
+  free: "آزاد",
+  conflict: "تداخل",
+  active: "فعال",
+  none: "بدون",
+  raw: "مستقیم",
+  tls: "رمزگذاری‌شده",
+  "account client limit reached": "سقف تعداد کلاینت‌های حساب پر شده است",
+  "account traffic budget exceeded": "بودجه ترافیک حساب کافی نیست",
+  "inbound is not assigned to your account":
+    "این اینباند به حساب شما اختصاص ندارد",
+  "inbound is not assigned to the client owner":
+    "این اینباند به مالک کلاینت اختصاص ندارد",
+  "a limited reseller account requires finite client quotas":
+    "برای حساب فروشنده با بودجه محدود، سهمیه کلاینت باید محدود باشد",
+  "client not found": "کلاینت یافت نشد",
+  "inbound not found": "اینباند یافت نشد",
+  "administrator access required": "دسترسی مدیر لازم است",
+  "sign in required": "ورود به حساب لازم است",
+  "session expired": "نشست منقضی شده است",
+  "invalid username or password": "نام کاربری یا رمز عبور نادرست است",
+  "Refresh the page and try again": "صفحه را دوباره بارگذاری کنید",
+  "Set up two-factor authentication to continue":
+    "برای ادامه احراز هویت دومرحله‌ای را تنظیم کنید",
+  "Too many attempts. Try again later":
+    "تعداد تلاش‌ها زیاد است. بعداً دوباره امتحان کنید",
+  ". Management actions require a confirmation button that expires after five minutes. Every owner must start the bot before testing. Save changed settings before checking the connection.":
+    ". عملیات مدیریت نیاز به تأیید دارد و پس از پنج دقیقه منقضی می‌شود. هر مالک باید پیش از آزمایش ربات را شروع کند. پیش از بررسی ارتباط، تنظیمات را ذخیره کنید.",
+  "Choose a file": "انتخاب فایل",
+  "No backup selected": "فایلی انتخاب نشده است",
+});
+
+Object.assign(fa, {
+  "0 B": "۰ بایت",
+  B: "بایت",
+  KB: "کیلوبایت",
+  MB: "مگابایت",
+  TB: "ترابایت",
+  "Protocol options": "گزینه‌های پروتکل",
+});
+Object.assign(fa, {
+  "{0} logical cores": "{0} هسته منطقی",
+  "{0} protocol families": "{0} خانواده پروتکل",
+  "{0} total · {1} disabled": "مجموع {0} · {1} غیرفعال",
+});
+
+Object.assign(fa, { "Account directory": "فهرست حساب‌ها" });
+Object.assign(fa, {
+  "Pause public subscriptions while administrator access remains online.":
+    "توقف اشتراک‌های عمومی با حفظ دسترسی مدیر به پنل.",
+  "Turn public subscription endpoints on or off.":
+    "فعال یا غیرفعال‌کردن نشانی‌های عمومی اشتراک.",
+  "Display compatible client suggestions.": "نمایش پیشنهاد برنامه‌های سازگار.",
+  "Allow subscription URL QR display.": "نمایش کد تصویری نشانی اشتراک.",
+  "Expose the raw protocol URI when supported.":
+    "نمایش نشانی مستقیم پروتکل در صورت پشتیبانی.",
+  "Staff must enroll TOTP before protected API use.":
+    "کاربران پنل باید پیش از استفاده از رابط محافظت‌شده، رمز یک‌بارمصرف را تنظیم کنند.",
+  "Allow scoped Bearer tokens from Accounts.":
+    "اجازه کلیدهای دسترسی محدود از بخش حساب‌ها.",
+  "Send alerts and accept commands from configured owner IDs.":
+    "ارسال هشدار و دریافت دستور از شناسه‌های مالک تنظیم‌شده.",
+  "Enable confirmed client and node changes. Required panel 2FA keeps bot management read-only.":
+    "فعال‌کردن تغییرات تأییدشده کلاینت و نود. با الزام احراز هویت دومرحله‌ای، مدیریت ربات فقط خواندنی است.",
+  "Notify owners before quota exhaustion or account expiry.":
+    "اطلاع به مالکان پیش از اتمام سهمیه یا انقضای حساب.",
+  "Clear the encrypted Telegram credential on save.":
+    "حذف کلید رمزگذاری‌شده تلگرام هنگام ذخیره.",
+});
+Object.assign(fa, {
+  "Verify that the TLS certificate and private-key files exist and are readable on the target node":
+    "وجود و دسترسی خواندن فایل گواهی و کلید خصوصی را روی نود مقصد بررسی کنید",
+  "Host overrides, remote node credentials, IP limits, fallback chains and calendar reset schedules need review; they are not activated automatically":
+    "تغییرات میزبان، اطلاعات نود خارجی، محدودیت آی‌پی، مسیرهای جایگزین و زمان‌بندی بازنشانی نیاز به بررسی دارند و خودکار فعال نمی‌شوند",
+  "Fallback chains require manual configuration and are not activated":
+    "مسیرهای جایگزین به تنظیم دستی نیاز دارند و فعال نشده‌اند",
+  "Live port inspection is unavailable; check the target node before activation":
+    "بررسی زنده پورت در دسترس نیست؛ پیش از فعال‌سازی نود مقصد را بررسی کنید",
+  "PasarGuard subscription tokens are regenerated; distribute the new VeloRay subscription addresses":
+    "کلیدهای اشتراک دوباره ساخته می‌شوند؛ نشانی اشتراک جدید را در اختیار کاربران قرار دهید",
+  "Calendar resets, on-hold activation, host overrides and node credentials need review in VeloRay":
+    "بازنشانی تقویمی، فعال‌سازی در انتظار، تغییرات میزبان و اطلاعات نود نیاز به بررسی دارند",
+  "Non-Xray core configuration was skipped":
+    "پیکربندی هسته‌های دیگر نادیده گرفته شد",
+  "Source port is invalid": "پورت مبدا معتبر نیست",
+  "Inline TLS material must be replaced with target-node certificate files":
+    "اطلاعات گواهی درون پیکربندی باید با فایل گواهی نود مقصد جایگزین شود",
+  "VLESS encrypted decryption settings require manual migration":
+    "تنظیمات رمزگذاری وی‌لس به انتقال دستی نیاز دارد",
+  "Client name exceeds 96 characters": "نام کلاینت از ۹۶ نویسه بیشتر است",
+  "Negative source traffic counters are not accepted":
+    "شمارنده منفی ترافیک مبدا پذیرفته نمی‌شود",
+  "WireGuard server key pair generated.": "جفت کلید سرور وایرگارد ساخته شد.",
+  "VLESS flow": "حالت جریان VLESS",
+  "0.0.0.0/0, ::/0 (optional)": "0.0.0.0/0, ::/0 (اختیاری)",
+  s: "ثانیه",
+});

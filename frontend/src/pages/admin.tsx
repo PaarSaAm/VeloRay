@@ -1,3 +1,20 @@
+import { t } from "@/lib/i18n";
+import { useLocale, tx } from "@/lib/i18n";
+const permissionOptions = [
+  ["dashboard.read", "View dashboard"],
+  ["clients.read", "View clients"],
+  ["clients.write", "Create and edit clients"],
+  ["clients.delete", "Delete clients"],
+  ["inbounds.read", "View inbounds"],
+  ["inbounds.write", "Manage inbounds"],
+  ["nodes.read", "View nodes"],
+  ["nodes.write", "Manage nodes"],
+  ["traffic.read", "View traffic"],
+  ["xray.read", "View Xray"],
+  ["xray.write", "Manage Xray"],
+  ["settings.read", "View settings"],
+  ["api.read", "View API reference"],
+];
 import { Dialog } from "@/components/common/dialog";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Copy, KeyRound, Plus, Search, Trash2, UserCog, X } from "lucide-react";
@@ -5,6 +22,7 @@ import {
   api,
   type AdminAPIKey,
   type AdminUser,
+  type InboundItem,
   type AppSettings,
   type SystemInfo,
 } from "@/lib/api";
@@ -22,6 +40,12 @@ type Editor = {
   is_active: boolean;
   is_staff: boolean;
   is_superuser: boolean;
+  role: "administrator" | "reseller" | "viewer" | "custom";
+  permissions: string[];
+  allowed_inbounds: number[];
+  own_clients_only: boolean;
+  max_clients: string;
+  budget: string;
 };
 type KeyEditor = {
   name: string;
@@ -36,9 +60,17 @@ const blank = (): Editor => ({
   is_active: true,
   is_staff: true,
   is_superuser: false,
+  role: "reseller",
+  permissions: [],
+  allowed_inbounds: [],
+  own_clients_only: true,
+  max_clients: "0",
+  budget: "0",
 });
 
 export function AdminPage() {
+  useLocale();
+  const [inbounds, setInbounds] = useState<InboundItem[]>([]);
   const [users, setUsers] = useState<AdminUser[]>([]),
     [keys, setKeys] = useState<AdminAPIKey[]>([]),
     [sys, setSys] = useState<SystemInfo | null>(null),
@@ -52,13 +84,15 @@ export function AdminPage() {
     [busy, setBusy] = useState(false);
   async function load() {
     try {
-      const [u, k, s, c] = await Promise.all([
+      const [u, k, s, c, i] = await Promise.all([
         api<AdminUser[]>("/admin/users/"),
         api<AdminAPIKey[]>("/admin/api-keys/"),
         api<SystemInfo>("/system-info"),
         api<AppSettings>("/settings"),
+        api<InboundItem[]>("/inbounds/"),
       ]);
       setUsers(u);
+      setInbounds(i);
       setKeys(k);
       setSys(s);
       setCfg(c);
@@ -86,6 +120,12 @@ export function AdminPage() {
       is_active: u.is_active,
       is_staff: u.is_staff,
       is_superuser: u.is_superuser,
+      role: u.role || (u.is_superuser ? "administrator" : "custom"),
+      permissions: u.permissions || [],
+      allowed_inbounds: u.allowed_inbounds || [],
+      own_clients_only: !!u.own_clients_only,
+      max_clients: String(u.max_clients || 0),
+      budget: String((u.traffic_budget_bytes || 0) / 1024 ** 3),
     });
   }
   async function save(e: FormEvent) {
@@ -99,7 +139,12 @@ export function AdminPage() {
         email: editor.email,
         is_active: editor.is_active,
         is_staff: editor.is_staff,
-        is_superuser: editor.is_superuser,
+        role: editor.role,
+        permissions: editor.permissions,
+        allowed_inbounds: editor.allowed_inbounds,
+        own_clients_only: editor.role === "reseller" || editor.own_clients_only,
+        max_clients: Number(editor.max_clients),
+        traffic_budget_bytes: Math.round(Number(editor.budget) * 1024 ** 3),
       };
       if (editor.password) body.password = editor.password;
       if (editor.id)
@@ -109,14 +154,14 @@ export function AdminPage() {
         });
       else {
         if (!editor.password)
-          throw new Error("Password is required for a new administrator.");
+          throw new Error(t("Password is required for a new administrator."));
         await api("/admin/users/", {
           method: "POST",
           body: JSON.stringify(body),
         });
       }
       setEditor(null);
-      setMsg("Administrator saved.");
+      setMsg(t("Account saved."));
       await load();
     } catch (e: any) {
       setMsg(e.message);
@@ -125,7 +170,7 @@ export function AdminPage() {
     }
   }
   async function remove(u: AdminUser) {
-    if (!confirm(`Delete administrator ${u.username}?`)) return;
+    if (!confirm(tx("Delete administrator {0}?", u.username))) return;
     try {
       await api(`/admin/users/${u.id}/`, { method: "DELETE" });
       await load();
@@ -154,7 +199,7 @@ export function AdminPage() {
       setCreatedToken(out.token || "");
       setKeyEditor(null);
       setMsg(
-        "API key created. Copy it now; the full token is shown only once.",
+        t("API key created. Copy it now; the full token is shown only once."),
       );
       await load();
     } catch (e: any) {
@@ -164,7 +209,7 @@ export function AdminPage() {
     }
   }
   async function revokeKey(k: AdminAPIKey) {
-    if (!confirm(`Revoke API key ${k.name}?`)) return;
+    if (!confirm(tx("Revoke API key {0}?", k.name))) return;
     try {
       await api(`/admin/api-keys/${k.id}/`, { method: "DELETE" });
       await load();
@@ -186,20 +231,20 @@ export function AdminPage() {
   async function copyToken() {
     if (!createdToken) return;
     await navigator.clipboard.writeText(createdToken);
-    setMsg("API key copied.");
+    setMsg(t("API key copied."));
   }
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Administration"
-        description="Operators, access policy and scoped API credentials."
+        title={t("Accounts")}
+        description={t("Operators, access policy and scoped API credentials.")}
         actions={
           <Button
             onClick={() =>
               tab === "operators"
                 ? setEditor(blank())
                 : setKeyEditor({
-                    name: "Automation",
+                    name: t("Automation"),
                     scope: "read",
                     user: String(users[0]?.id || ""),
                     days: String(cfg?.api_key_default_days || 90),
@@ -207,7 +252,7 @@ export function AdminPage() {
             }
           >
             <Plus className="h-3.5 w-3.5" />
-            {tab === "operators" ? "Add administrator" : "Create API key"}
+            {tab === "operators" ? t("Add account") : t("Create API key")}
           </Button>
         }
       />
@@ -224,12 +269,12 @@ export function AdminPage() {
         <Card className="border-emerald-500/30">
           <CardHeader>
             <div>
-              <CardTitle>New API key</CardTitle>
+              <CardTitle>{t("New API key")}</CardTitle>
               <p className="mt-1 text-[10px] text-[var(--muted)]">
-                This secret will not be shown again.
+                {t("This secret will not be shown again.")}
               </p>
             </div>
-            <Badge tone="green">One-time secret</Badge>
+            <Badge tone="green">{t("One-time secret")}</Badge>
           </CardHeader>
           <CardContent>
             <div className="flex flex-col gap-2 sm:flex-row">
@@ -238,7 +283,7 @@ export function AdminPage() {
               </code>
               <Button variant="outline" onClick={copyToken}>
                 <Copy className="h-3.5 w-3.5" />
-                Copy
+                {t("Copy")}
               </Button>
             </div>
           </CardContent>
@@ -247,41 +292,43 @@ export function AdminPage() {
       {cfg?.require_2fa_for_admins &&
         users.some((u) => u.is_staff && !u.two_factor_enabled) && (
           <div className="rounded-lg border border-amber-500/20 bg-amber-500/8 px-4 py-3 text-[11px] text-amber-500">
-            <div className="font-semibold">2FA policy needs attention</div>
+            <div className="font-semibold">
+              {t("2FA policy needs attention")}
+            </div>
             <div className="mt-1 text-[10px] opacity-90">
               {users.filter((u) => u.is_staff && !u.two_factor_enabled).length}{" "}
-              administrator account(s) do not have TOTP enabled yet.
+              {t("administrator account(s) do not have TOTP enabled yet.")}
             </div>
           </div>
         )}
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Mini
           icon="users"
-          label="Panel users"
+          label={t("Panel users")}
           value={String(sys?.users_total ?? users.length)}
         />
         <Mini
           icon="user-shield"
-          label="Administrators"
+          label={t("Administrators")}
           value={String(
             sys?.admins_total ?? users.filter((x) => x.is_staff).length,
           )}
         />
         <Mini
           icon="key"
-          label="Active API keys"
+          label={t("Active API keys")}
           value={String(keys.filter((x) => x.enabled).length)}
         />
         <Mini
           icon="shield-halved"
-          label="2FA enabled"
+          label={t("2FA enabled")}
           value={String(users.filter((x) => x.two_factor_enabled).length)}
         />
       </section>
       <div className="flex gap-1 rounded-lg border border-[var(--border)] bg-[var(--card)] p-1">
         {[
-          ["operators", "Operators"],
-          ["api", "API keys"],
+          ["operators", t("Accounts")],
+          ["api", t("API keys")],
         ].map(([k, l]) => (
           <button
             key={k}
@@ -296,16 +343,16 @@ export function AdminPage() {
         <Card>
           <CardHeader>
             <div>
-              <CardTitle>Operators</CardTitle>
+              <CardTitle>{t("Account directory")}</CardTitle>
               <p className="mt-1 text-[10px] text-[var(--muted)]">
-                Staff and superuser accounts that can sign in to the panel.
+                {t("Administrators, resellers and custom access.")}
               </p>
             </div>
             <div className="relative w-full max-w-64">
               <Search className="pointer-events-none absolute left-3 top-2.5 h-3.5 w-3.5 text-[var(--muted)]" />
               <input
                 className="input h-9 pl-8"
-                placeholder="Search users"
+                placeholder={t("Search users")}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
               />
@@ -316,11 +363,11 @@ export function AdminPage() {
               <table className="data-table min-w-[760px]">
                 <thead>
                   <tr>
-                    <th>User</th>
-                    <th>Role</th>
-                    <th>2FA</th>
-                    <th>Status</th>
-                    <th>Last login</th>
+                    <th>{t("User")}</th>
+                    <th>{t("Role")}</th>
+                    <th>{t("2FA")}</th>
+                    <th>{t("Status")}</th>
+                    <th>{t("Last login")}</th>
                     <th></th>
                   </tr>
                 </thead>
@@ -332,39 +379,51 @@ export function AdminPage() {
                           {u.username}
                         </div>
                         <div className="mt-0.5 text-[9px] text-[var(--muted)]">
-                          {u.email || "No email"}
+                          {u.email || t("No email")}
+                          <div className="mt-1 text-[10px] text-[var(--muted)]">
+                            {u.clients_count || 0} {t("clients")} ·{" "}
+                            {(
+                              (u.allocated_traffic_bytes || 0) /
+                              1024 ** 3
+                            ).toFixed(1)}{" "}
+                            {t("GB")}
+                          </div>
                         </div>
                       </td>
                       <td>
-                        {u.is_superuser ? (
-                          <Badge tone="blue">Superuser</Badge>
+                        {u.role === "reseller" ? (
+                          <Badge tone="blue">{t("Reseller")}</Badge>
+                        ) : u.role === "viewer" ? (
+                          <Badge>{t("Viewer")}</Badge>
+                        ) : u.is_superuser ? (
+                          <Badge tone="blue">{t("Superuser")}</Badge>
                         ) : u.is_staff ? (
-                          <Badge tone="neutral">Staff</Badge>
+                          <Badge tone="neutral">{t("Staff")}</Badge>
                         ) : (
-                          <Badge tone="amber">Limited</Badge>
+                          <Badge tone="amber">{t("Limited")}</Badge>
                         )}
                       </td>
                       <td>
                         <Badge tone={u.two_factor_enabled ? "green" : "amber"}>
-                          {u.two_factor_enabled ? "Enabled" : "Off"}
+                          {u.two_factor_enabled ? t("Enabled") : t("Off")}
                         </Badge>
                       </td>
                       <td>
                         <Badge tone={u.is_active ? "green" : "red"}>
-                          {u.is_active ? "Active" : "Disabled"}
+                          {u.is_active ? t("Active") : t("Disabled")}
                         </Badge>
                       </td>
                       <td>
                         {u.last_login
                           ? new Date(u.last_login).toLocaleString()
-                          : "Never"}
+                          : t("Never")}
                       </td>
                       <td>
                         <div className="flex justify-end gap-1">
                           <Button
                             variant="ghost"
                             size="icon"
-                            title="Edit"
+                            title={t("Edit")}
                             onClick={() => edit(u)}
                           >
                             <UserCog className="h-4 w-4" />
@@ -372,7 +431,7 @@ export function AdminPage() {
                           <Button
                             variant="ghost"
                             size="icon"
-                            title="Delete"
+                            title={t("Delete")}
                             onClick={() => remove(u)}
                           >
                             <Trash2 className="h-4 w-4" />
@@ -386,7 +445,7 @@ export function AdminPage() {
             </div>
             {!filtered.length && (
               <div className="p-12 text-center text-[11px] text-[var(--muted)]">
-                No administrators found.
+                {t("No administrators found.")}
               </div>
             )}
           </CardContent>
@@ -395,14 +454,15 @@ export function AdminPage() {
         <Card>
           <CardHeader>
             <div>
-              <CardTitle>Scoped API keys</CardTitle>
+              <CardTitle>{t("Scoped API keys")}</CardTitle>
               <p className="mt-1 text-[10px] text-[var(--muted)]">
-                Use Bearer tokens for automation without sharing a panel
-                password.
+                {t(
+                  "Use Bearer tokens for automation without sharing a panel password.",
+                )}
               </p>
             </div>
             <Badge tone={cfg?.api_keys_enabled ? "green" : "amber"}>
-              {cfg?.api_keys_enabled ? "Enabled" : "Disabled in Settings"}
+              {cfg?.api_keys_enabled ? t("Enabled") : t("Disabled in Settings")}
             </Badge>
           </CardHeader>
           <CardContent className="p-0">
@@ -410,13 +470,13 @@ export function AdminPage() {
               <table className="data-table min-w-[760px]">
                 <thead>
                   <tr>
-                    <th>Name</th>
-                    <th>Owner</th>
-                    <th>Prefix</th>
-                    <th>Scope</th>
-                    <th>Expires</th>
-                    <th>Last used</th>
-                    <th>Status</th>
+                    <th>{t("Name")}</th>
+                    <th>{t("Owner")}</th>
+                    <th>{t("Prefix")}</th>
+                    <th>{t("Scope")}</th>
+                    <th>{t("Expires")}</th>
+                    <th>{t("Last used")}</th>
+                    <th>{t("Status")}</th>
                     <th></th>
                   </tr>
                 </thead>
@@ -444,16 +504,16 @@ export function AdminPage() {
                       <td>
                         {k.expires_at
                           ? new Date(k.expires_at).toLocaleDateString()
-                          : "Never"}
+                          : t("Never")}
                       </td>
                       <td>
                         {k.last_used_at
                           ? new Date(k.last_used_at).toLocaleString()
-                          : "Never"}
+                          : t("Never")}
                       </td>
                       <td>
                         <Badge tone={k.enabled ? "green" : "amber"}>
-                          {k.enabled ? "Active" : "Paused"}
+                          {k.enabled ? t("Active") : t("Paused")}
                         </Badge>
                       </td>
                       <td>
@@ -463,12 +523,12 @@ export function AdminPage() {
                             size="sm"
                             onClick={() => toggleKey(k)}
                           >
-                            {k.enabled ? "Pause" : "Enable"}
+                            {k.enabled ? t("Pause") : t("Enable")}
                           </Button>
                           <Button
                             variant="ghost"
                             size="icon"
-                            title="Revoke"
+                            title={t("Revoke")}
                             onClick={() => revokeKey(k)}
                           >
                             <Trash2 className="h-4 w-4" />
@@ -482,7 +542,7 @@ export function AdminPage() {
             </div>
             {!keys.length && (
               <div className="p-12 text-center text-[11px] text-[var(--muted)]">
-                No API keys created.
+                {t("No API keys created.")}
               </div>
             )}
           </CardContent>
@@ -490,7 +550,7 @@ export function AdminPage() {
       )}
       {editor && (
         <Dialog
-          label="Administrator"
+          label={t("Administrator")}
           onClose={() => {
             if (!busy) setEditor(null);
           }}
@@ -498,10 +558,10 @@ export function AdminPage() {
           <div className="flex items-start justify-between border-b border-[var(--border)] px-5 py-4">
             <div>
               <div className="text-[14px] font-semibold">
-                {editor.id ? "Edit administrator" : "Add administrator"}
+                {editor.id ? t("Edit account") : t("Add account")}
               </div>
               <div className="mt-1 text-[10px] text-[var(--muted)]">
-                Use strong passwords and enable 2FA after first login.
+                {t("Use strong passwords and enable 2FA after first login.")}
               </div>
             </div>
             <Button variant="ghost" size="icon" onClick={() => setEditor(null)}>
@@ -510,7 +570,7 @@ export function AdminPage() {
           </div>
           <form onSubmit={save}>
             <div className="grid gap-4 p-5 sm:grid-cols-2">
-              <Field label="Username">
+              <Field label={t("Username")}>
                 <input
                   className="input"
                   value={editor.username}
@@ -520,7 +580,7 @@ export function AdminPage() {
                   required
                 />
               </Field>
-              <Field label="Email">
+              <Field label={t("Email")}>
                 <input
                   className="input"
                   type="email"
@@ -531,7 +591,7 @@ export function AdminPage() {
                 />
               </Field>
               <Field
-                label={editor.id ? "New password (optional)" : "Password"}
+                label={editor.id ? t("New password (optional)") : t("Password")}
                 className="sm:col-span-2"
               >
                 <input
@@ -546,27 +606,139 @@ export function AdminPage() {
                 />
               </Field>
               <Toggle
-                label="Active account"
+                label={t("Active account")}
                 checked={editor.is_active}
                 onChange={(v) => setEditor({ ...editor, is_active: v })}
               />
-              <Toggle
-                label="Staff access"
-                checked={editor.is_staff}
-                onChange={(v) => setEditor({ ...editor, is_staff: v })}
-              />
-              <Toggle
-                label="Superuser"
-                checked={editor.is_superuser}
-                onChange={(v) => setEditor({ ...editor, is_superuser: v })}
-              />
+              <Field label={t("Role")}>
+                <select
+                  className="input"
+                  aria-label={t("Role")}
+                  value={editor.role}
+                  onChange={(e) =>
+                    setEditor({
+                      ...editor,
+                      role: e.target.value as Editor["role"],
+                    })
+                  }
+                >
+                  <option value="administrator">{t("Administrator")}</option>
+                  <option value="reseller">{t("Reseller")}</option>
+                  <option value="viewer">{t("Viewer")}</option>
+                  <option value="custom">{t("Custom access")}</option>
+                </select>
+              </Field>
+              {editor.role !== "administrator" && (
+                <>
+                  <Toggle
+                    label={t("Own clients only")}
+                    checked={
+                      editor.role === "reseller" || editor.own_clients_only
+                    }
+                    onChange={(v) =>
+                      setEditor({ ...editor, own_clients_only: v })
+                    }
+                  />
+                  <Field label={t("Client limit")}>
+                    <input
+                      className="input"
+                      type="number"
+                      min="0"
+                      value={editor.max_clients}
+                      onChange={(e) =>
+                        setEditor({ ...editor, max_clients: e.target.value })
+                      }
+                    />
+                  </Field>
+                  <Field label={t("Traffic budget (GB)")}>
+                    <input
+                      className="input"
+                      type="number"
+                      min="0"
+                      step=".1"
+                      value={editor.budget}
+                      onChange={(e) =>
+                        setEditor({ ...editor, budget: e.target.value })
+                      }
+                    />
+                  </Field>
+                  <fieldset className="sm:col-span-2">
+                    <legend className="label mb-2">
+                      {t("Assigned inbounds")}
+                    </legend>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {inbounds.map((i) => (
+                        <label
+                          key={i.id}
+                          className="flex items-center gap-2 text-xs"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={editor.allowed_inbounds.includes(i.id)}
+                            onChange={(e) =>
+                              setEditor({
+                                ...editor,
+                                allowed_inbounds: e.target.checked
+                                  ? [...editor.allowed_inbounds, i.id]
+                                  : editor.allowed_inbounds.filter(
+                                      (id) => id !== i.id,
+                                    ),
+                              })
+                            }
+                          />
+                          <span>
+                            {i.name} · {i.node_name}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </fieldset>
+                  {editor.role === "reseller" &&
+                    !editor.allowed_inbounds.length && (
+                      <p className="sm:col-span-2 text-xs text-amber-500">
+                        {t(
+                          "Assign an inbound before this reseller can create clients.",
+                        )}
+                      </p>
+                    )}
+                  {editor.role === "custom" && (
+                    <fieldset className="sm:col-span-2">
+                      <legend className="label mb-2">{t("Permissions")}</legend>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {permissionOptions.map(([key, label]) => (
+                          <label
+                            key={key}
+                            className="flex items-center gap-2 text-xs"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={editor.permissions.includes(key)}
+                              onChange={(e) =>
+                                setEditor({
+                                  ...editor,
+                                  permissions: e.target.checked
+                                    ? [...editor.permissions, key]
+                                    : editor.permissions.filter(
+                                        (p) => p !== key,
+                                      ),
+                                })
+                              }
+                            />
+                            {t(label)}
+                          </label>
+                        ))}
+                      </div>
+                    </fieldset>
+                  )}
+                </>
+              )}
             </div>
             <div className="flex justify-end gap-2 border-t border-[var(--border)] px-5 py-4">
               <Button variant="outline" onClick={() => setEditor(null)}>
-                Cancel
+                {t("Cancel")}
               </Button>
               <Button type="submit" disabled={busy}>
-                {busy ? "Saving…" : "Save administrator"}
+                {busy ? "Saving…" : t("Save account")}
               </Button>
             </div>
           </form>
@@ -574,16 +746,18 @@ export function AdminPage() {
       )}
       {keyEditor && (
         <Dialog
-          label="Create API key"
+          label={t("Create API key")}
           onClose={() => {
             if (!busy) setKeyEditor(null);
           }}
         >
           <div className="flex items-start justify-between border-b border-[var(--border)] px-5 py-4">
             <div>
-              <div className="text-[14px] font-semibold">Create API key</div>
+              <div className="text-[14px] font-semibold">
+                {t("Create API key")}
+              </div>
               <div className="mt-1 text-[10px] text-[var(--muted)]">
-                The full key is displayed only once after creation.
+                {t("The full key is displayed only once after creation.")}
               </div>
             </div>
             <Button
@@ -596,7 +770,7 @@ export function AdminPage() {
           </div>
           <form onSubmit={createKey}>
             <div className="grid gap-4 p-5 sm:grid-cols-2">
-              <Field label="Key name">
+              <Field label={t("Key name")}>
                 <input
                   className="input"
                   value={keyEditor.name}
@@ -606,7 +780,7 @@ export function AdminPage() {
                   required
                 />
               </Field>
-              <Field label="Owner">
+              <Field label={t("Owner")}>
                 <select
                   className="input"
                   value={keyEditor.user}
@@ -623,7 +797,7 @@ export function AdminPage() {
                     ))}
                 </select>
               </Field>
-              <Field label="Scope">
+              <Field label={t("Scope")}>
                 <select
                   className="input"
                   value={keyEditor.scope}
@@ -631,12 +805,12 @@ export function AdminPage() {
                     setKeyEditor({ ...keyEditor, scope: e.target.value as any })
                   }
                 >
-                  <option value="read">Read only</option>
-                  <option value="write">Read + write</option>
-                  <option value="admin">Administrator</option>
+                  <option value="read">{t("Read only")}</option>
+                  <option value="write">{t("Read + write")}</option>
+                  <option value="admin">{t("Administrator")}</option>
                 </select>
               </Field>
-              <Field label="Expires in days">
+              <Field label={t("Expires in days")}>
                 <input
                   className="input"
                   type="number"
@@ -651,11 +825,11 @@ export function AdminPage() {
             </div>
             <div className="flex justify-end gap-2 border-t border-[var(--border)] px-5 py-4">
               <Button variant="outline" onClick={() => setKeyEditor(null)}>
-                Cancel
+                {t("Cancel")}
               </Button>
               <Button type="submit" disabled={busy}>
                 <KeyRound className="h-3.5 w-3.5" />
-                {busy ? "Creating…" : "Create key"}
+                {busy ? "Creating…" : t("Create key")}
               </Button>
             </div>
           </form>
@@ -673,6 +847,7 @@ function Mini({
   label: string;
   value: string;
 }) {
+  useLocale();
   return (
     <Card>
       <CardContent className="flex items-center justify-between p-4">
@@ -696,6 +871,7 @@ function Field({
   children: any;
   className?: string;
 }) {
+  useLocale();
   return (
     <label className={`label ${className}`}>
       {label}
@@ -712,6 +888,7 @@ function Toggle({
   checked: boolean;
   onChange: (v: boolean) => void;
 }) {
+  useLocale();
   return (
     <label className="flex items-center justify-between rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2.5 text-[11px]">
       <span>{label}</span>

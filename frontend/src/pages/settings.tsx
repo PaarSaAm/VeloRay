@@ -1,3 +1,5 @@
+import { t } from "@/lib/i18n";
+import { useLocale, tx } from "@/lib/i18n";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   api,
@@ -12,8 +14,8 @@ import { PageHeader } from "@/components/common/page-header";
 import { FaIcon } from "@/components/ui/fa-icon";
 
 const fmt = (b: number) => {
-  if (!b) return "0 B";
-  const u = ["B", "KB", "MB", "GB", "TB"];
+  if (!b) return t("0 B");
+  const u = ["B", t("KB"), t("MB"), t("GB"), t("TB")];
   const i = Math.max(
     0,
     Math.min(Math.floor(Math.log(b) / Math.log(1024)), u.length - 1),
@@ -24,7 +26,7 @@ const duration = (s: number) => {
   const d = Math.floor(s / 86400),
     h = Math.floor((s % 86400) / 3600),
     m = Math.floor((s % 3600) / 60);
-  return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m`;
+  return d ? tx("{0}d {1}h", d, h) : h ? tx("{0}h {1}m", h, m) : tx("{0}m", m);
 };
 type Health = { status: string; version: string; database: string };
 const defaults: AppSettings = {
@@ -72,6 +74,7 @@ type Tab =
   | "telegram"
   | "system";
 export function SettingsPage() {
+  useLocale();
   const [h, setH] = useState<Health | null>(null),
     [cfg, setCfg] = useState<AppSettings>(defaults),
     [sys, setSys] = useState<SystemInfo | null>(null),
@@ -86,7 +89,11 @@ export function SettingsPage() {
       const [a, b, c, u] = await Promise.all([
         api<Health>("/health"),
         api<AppSettings>("/settings"),
-        api<SystemInfo>("/system-info"),
+        currentSession().then((u) =>
+          u.is_superuser || u.permissions?.includes("nodes.read")
+            ? api<SystemInfo>("/system-info")
+            : null,
+        ),
         currentSession(),
       ]);
       setH(a);
@@ -106,18 +113,18 @@ export function SettingsPage() {
     setMsg("");
     try {
       const result = await api<TelegramStatus>(`/telegram/${action}`, {
-        method: action === "status" ? "GET" : "POST",
+        method: action === "status" ? t("GET") : t("POST"),
       });
       setBotStatus(result);
       setMsg(
         action === "status"
-          ? "Bot connection checked."
+          ? t("Bot connection checked.")
           : action === "test"
-            ? "Test delivered to configured owners."
-            : "Owner command menu registered.",
+            ? t("Test delivered to configured owners.")
+            : t("Owner command menu registered."),
       );
     } catch (e) {
-      setMsg(e instanceof Error ? e.message : "Bot check failed");
+      setMsg(e instanceof Error ? e.message : t("Bot check failed"));
     } finally {
       setBusy(false);
     }
@@ -126,7 +133,7 @@ export function SettingsPage() {
   async function save(e: FormEvent) {
     e.preventDefault();
     if (!canEdit) {
-      setMsg("Settings are read-only for non-superuser operators.");
+      setMsg(t("Settings are read-only for non-superuser operators."));
       return;
     }
     setBusy(true);
@@ -144,7 +151,7 @@ export function SettingsPage() {
       setCfg(next);
       setTelegramToken("");
       setClearTelegram(false);
-      setMsg("Settings saved.");
+      setMsg(t("Settings saved."));
     } catch (e: any) {
       setMsg(e.message);
     } finally {
@@ -154,21 +161,23 @@ export function SettingsPage() {
   const set = (k: keyof AppSettings, v: any) =>
     setCfg((c) => ({ ...c, [k]: v }));
   const nav: [Tab, string, string][] = [
-    ["general", "General", "gear"],
-    ["subscription", "Subscription", "rss"],
-    ["defaults", "Client defaults", "sliders"],
-    ["security", "Security & API", "shield-halved"],
-    ["telegram", "Telegram", "paper-plane"],
-    ["system", "System", "server"],
+    ["general", t("General"), "gear"],
+    ["subscription", t("Subscription"), "rss"],
+    ["defaults", t("Client defaults"), "sliders"],
+    ["security", t("Security & API"), "shield-halved"],
+    ["telegram", t("Telegram"), "paper-plane"],
+    ["system", t("System"), "server"],
   ];
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Settings"
-        description="Runtime policy, subscriptions, automation, security and host health."
+        title={t("Settings")}
+        description={t(
+          "Runtime policy, subscriptions, automation, security and host health.",
+        )}
         actions={
           <Button variant="outline" onClick={load}>
-            Refresh
+            {t("Refresh")}
           </Button>
         }
       />
@@ -184,26 +193,31 @@ export function SettingsPage() {
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Info
           icon="code-branch"
-          label="VeloRay version"
-          value={h?.version || "0.1.0"}
+          label={t("VeloRay version")}
+          value={h?.version || "0.2.0"}
         />
         <Info
           icon="database"
-          label="Database"
+          label={t("Database")}
           value={h?.database || "Checking…"}
         />
-        <Info icon="server" label="Host" value={sys?.hostname || "Checking…"} />
+        <Info
+          icon="server"
+          label={t("Host")}
+          value={sys?.hostname || "Checking…"}
+        />
         <Info
           icon="clock"
-          label="Uptime"
+          label={t("Uptime")}
           value={sys ? duration(sys.uptime_seconds) : "Checking…"}
         />
       </div>
       {!canEdit && (
         <div className="rounded-lg border border-amber-500/20 bg-amber-500/8 px-4 py-3 text-[11px] text-amber-600 dark:text-amber-400">
           <FaIcon icon="lock" className="mr-2" />
-          Read-only operator view. Product settings can only be changed by a
-          superuser.
+          {t(
+            "Read-only operator view. Product settings can only be changed by a superuser.",
+          )}
         </div>
       )}
       <div className="grid gap-4 xl:grid-cols-[220px_1fr]">
@@ -227,55 +241,60 @@ export function SettingsPage() {
               <Card>
                 <CardHeader>
                   <div>
-                    <CardTitle>General</CardTitle>
+                    <CardTitle>{t("General")}</CardTitle>
                     <p className="mt-1 text-[10px] text-[var(--muted)]">
-                      Panel identity and interface defaults.
+                      {t("Panel identity and interface defaults.")}
                     </p>
                   </div>
                 </CardHeader>
                 <CardContent className="grid gap-4 sm:grid-cols-2">
-                  <Field label="Panel name">
+                  <Field label={t("Panel name")}>
                     <input
                       className="input"
                       value={cfg.site_name}
                       onChange={(e) => set("site_name", e.target.value)}
                     />
                   </Field>
-                  <Field label="Default locale">
+                  <Field label={t("Default locale")}>
                     <select
                       className="input"
                       value={cfg.default_locale}
                       onChange={(e) => set("default_locale", e.target.value)}
                     >
-                      <option value="en">English</option>
-                      <option value="fa">فارسی</option>
+                      <option value="en">{t("English")}</option>
+                      <option value="fa">{t("Persian")}</option>
                     </select>
                   </Field>
-                  <Field label="Support URL" className="sm:col-span-2">
+                  <Field label={t("Support URL")} className="sm:col-span-2">
                     <input
                       className="input"
                       value={cfg.support_url}
                       onChange={(e) => set("support_url", e.target.value)}
-                      placeholder="https://..."
+                      placeholder={t("https://...")}
                     />
                   </Field>
-                  <Field label="Announcement" className="sm:col-span-2">
+                  <Field label={t("Announcement")} className="sm:col-span-2">
                     <textarea
                       className="input min-h-24"
                       value={cfg.announcement}
                       onChange={(e) => set("announcement", e.target.value)}
-                      placeholder="Message sent to compatible subscription clients"
+                      placeholder={t(
+                        "Message sent to compatible subscription clients",
+                      )}
                     />
                   </Field>
-                  <Field label="Announcement URL" className="sm:col-span-2">
+                  <Field
+                    label={t("Announcement URL")}
+                    className="sm:col-span-2"
+                  >
                     <input
                       className="input"
                       value={cfg.announcement_url}
                       onChange={(e) => set("announcement_url", e.target.value)}
-                      placeholder="https://..."
+                      placeholder={t("https://...")}
                     />
                   </Field>
-                  <Field label="Accent">
+                  <Field label={t("Accent")}>
                     <select
                       className="input"
                       value={cfg.accent}
@@ -290,7 +309,7 @@ export function SettingsPage() {
                       )}
                     </select>
                   </Field>
-                  <Field label="Dashboard refresh">
+                  <Field label={t("Dashboard refresh")}>
                     <select
                       className="input"
                       value={cfg.dashboard_refresh_seconds}
@@ -300,14 +319,17 @@ export function SettingsPage() {
                     >
                       {[10, 15, 30, 60, 120, 300].map((x) => (
                         <option key={x} value={x}>
-                          {x}s
+                          {x}
+                          {t("s")}
                         </option>
                       ))}
                     </select>
                   </Field>
                   <Toggle
-                    label="Maintenance mode"
-                    text="Pause public subscriptions while administrator access remains online."
+                    label={t("Maintenance mode")}
+                    text={t(
+                      "Pause public subscriptions while administrator access remains online.",
+                    )}
                     checked={cfg.maintenance_mode}
                     onChange={(v) => set("maintenance_mode", v)}
                   />
@@ -319,14 +341,14 @@ export function SettingsPage() {
               <Card>
                 <CardHeader>
                   <div>
-                    <CardTitle>Subscription portal</CardTitle>
+                    <CardTitle>{t("Subscription portal")}</CardTitle>
                     <p className="mt-1 text-[10px] text-[var(--muted)]">
-                      Feed behavior and public portal presentation.
+                      {t("Feed behavior and public portal presentation.")}
                     </p>
                   </div>
                 </CardHeader>
                 <CardContent className="grid gap-4 sm:grid-cols-2">
-                  <Field label="Template">
+                  <Field label={t("Template")}>
                     <select
                       className="input"
                       value={cfg.subscription_template}
@@ -334,11 +356,11 @@ export function SettingsPage() {
                         set("subscription_template", e.target.value)
                       }
                     >
-                      <option value="default">Full portal</option>
-                      <option value="compact">Compact portal</option>
+                      <option value="default">{t("Full portal")}</option>
+                      <option value="compact">{t("Compact portal")}</option>
                     </select>
                   </Field>
-                  <Field label="Portal footer">
+                  <Field label={t("Portal footer")}>
                     <input
                       className="input"
                       maxLength={180}
@@ -346,30 +368,30 @@ export function SettingsPage() {
                       onChange={(e) =>
                         set("subscription_footer", e.target.value)
                       }
-                      placeholder="Optional footer"
+                      placeholder={t("Optional footer")}
                     />
                   </Field>
                   <Toggle
-                    label="Subscriptions enabled"
-                    text="Turn public subscription endpoints on or off."
+                    label={t("Subscriptions enabled")}
+                    text={t("Turn public subscription endpoints on or off.")}
                     checked={cfg.subscription_enabled}
                     onChange={(v) => set("subscription_enabled", v)}
                   />
                   <Toggle
-                    label="Recommended apps"
-                    text="Display compatible client suggestions."
+                    label={t("Recommended apps")}
+                    text={t("Display compatible client suggestions.")}
                     checked={cfg.subscription_show_apps}
                     onChange={(v) => set("subscription_show_apps", v)}
                   />
                   <Toggle
-                    label="QR code"
-                    text="Allow subscription URL QR display."
+                    label={t("QR code")}
+                    text={t("Allow subscription URL QR display.")}
                     checked={cfg.subscription_show_qr}
                     onChange={(v) => set("subscription_show_qr", v)}
                   />
                   <Toggle
-                    label="Connection URI"
-                    text="Expose the raw protocol URI when supported."
+                    label={t("Connection URI")}
+                    text={t("Expose the raw protocol URI when supported.")}
                     checked={cfg.subscription_show_connection_uri}
                     onChange={(v) => set("subscription_show_connection_uri", v)}
                   />
@@ -381,14 +403,14 @@ export function SettingsPage() {
               <Card>
                 <CardHeader>
                   <div>
-                    <CardTitle>Client defaults</CardTitle>
+                    <CardTitle>{t("Client defaults")}</CardTitle>
                     <p className="mt-1 text-[10px] text-[var(--muted)]">
-                      Defaults used by Client creation.
+                      {t("Defaults used by Client creation.")}
                     </p>
                   </div>
                 </CardHeader>
                 <CardContent className="grid gap-4 sm:grid-cols-2">
-                  <Field label="Default expiry (days)">
+                  <Field label={t("Default expiry (days)")}>
                     <input
                       className="input"
                       type="number"
@@ -399,7 +421,7 @@ export function SettingsPage() {
                       }
                     />
                   </Field>
-                  <Field label="Default traffic (GB)">
+                  <Field label={t("Default traffic (GB)")}>
                     <input
                       className="input"
                       type="number"
@@ -410,7 +432,7 @@ export function SettingsPage() {
                       }
                     />
                   </Field>
-                  <Field label="Default renewal (days)">
+                  <Field label={t("Default renewal (days)")}>
                     <input
                       className="input"
                       type="number"
@@ -421,7 +443,7 @@ export function SettingsPage() {
                       }
                     />
                   </Field>
-                  <Field label="Traffic history retention">
+                  <Field label={t("Traffic history retention")}>
                     <select
                       className="input"
                       value={cfg.traffic_history_days}
@@ -431,7 +453,7 @@ export function SettingsPage() {
                     >
                       {[7, 14, 30, 60, 90, 180, 365].map((x) => (
                         <option key={x} value={x}>
-                          {x} days
+                          {x} {t("days")}
                         </option>
                       ))}
                     </select>
@@ -444,26 +466,26 @@ export function SettingsPage() {
               <Card>
                 <CardHeader>
                   <div>
-                    <CardTitle>Security & API</CardTitle>
+                    <CardTitle>{t("Security & API")}</CardTitle>
                     <p className="mt-1 text-[10px] text-[var(--muted)]">
-                      Administrator authentication and automation policy.
+                      {t("Administrator authentication and automation policy.")}
                     </p>
                   </div>
                 </CardHeader>
                 <CardContent className="grid gap-4 sm:grid-cols-2">
                   <Toggle
-                    label="Require administrator 2FA"
-                    text="Staff must enroll TOTP before protected API use."
+                    label={t("Require administrator 2FA")}
+                    text={t("Staff must enroll TOTP before protected API use.")}
                     checked={cfg.require_2fa_for_admins}
                     onChange={(v) => set("require_2fa_for_admins", v)}
                   />
                   <Toggle
-                    label="Enable API keys"
-                    text="Allow scoped Bearer tokens from Administration."
+                    label={t("Enable API keys")}
+                    text={t("Allow scoped Bearer tokens from Accounts.")}
                     checked={cfg.api_keys_enabled}
                     onChange={(v) => set("api_keys_enabled", v)}
                   />
-                  <Field label="Default API key lifetime">
+                  <Field label={t("Default API key lifetime")}>
                     <input
                       className="input"
                       type="number"
@@ -475,7 +497,7 @@ export function SettingsPage() {
                       }
                     />
                   </Field>
-                  <Field label="Audit retention">
+                  <Field label={t("Audit retention")}>
                     <input
                       className="input"
                       type="number"
@@ -495,47 +517,55 @@ export function SettingsPage() {
               <Card>
                 <CardHeader>
                   <div>
-                    <CardTitle>Telegram automation</CardTitle>
+                    <CardTitle>{t("Telegram automation")}</CardTitle>
                     <p className="mt-1 text-[10px] text-[var(--muted)]">
-                      Owner-only alerts and management commands.
+                      {t("Owner-only alerts and management commands.")}
                     </p>
                   </div>
                   <span
                     className={`rounded-full px-2 py-1 text-[9px] ${cfg.telegram_configured ? "bg-emerald-500/10 text-emerald-500" : "bg-[var(--surface-2)] text-[var(--muted)]"}`}
                   >
-                    {cfg.telegram_configured ? "Token configured" : "No token"}
+                    {cfg.telegram_configured
+                      ? t("Token configured")
+                      : t("No token")}
                   </span>
                 </CardHeader>
                 <CardContent className="grid gap-4 sm:grid-cols-2">
                   <Toggle
-                    label="Telegram enabled"
-                    text="Send alerts and accept commands from configured owner IDs."
+                    label={t("Telegram enabled")}
+                    text={t(
+                      "Send alerts and accept commands from configured owner IDs.",
+                    )}
                     checked={cfg.telegram_enabled}
                     onChange={(v) => set("telegram_enabled", v)}
                   />
                   <Toggle
-                    label="Allow bot management"
-                    text="Enable confirmed client and node changes. Required panel 2FA keeps bot management read-only."
+                    label={t("Allow bot management")}
+                    text={t(
+                      "Enable confirmed client and node changes. Required panel 2FA keeps bot management read-only.",
+                    )}
                     checked={cfg.telegram_allow_changes}
                     onChange={(v) => set("telegram_allow_changes", v)}
                   />
                   <Toggle
-                    label="Quota and expiry alerts"
-                    text="Notify owners before quota exhaustion or account expiry."
+                    label={t("Quota and expiry alerts")}
+                    text={t(
+                      "Notify owners before quota exhaustion or account expiry.",
+                    )}
                     checked={cfg.telegram_client_alerts}
                     onChange={(v) => set("telegram_client_alerts", v)}
                   />
-                  <Field label="Bot language">
+                  <Field label={t("Bot language")}>
                     <select
                       className="input"
                       value={cfg.telegram_locale}
                       onChange={(e) => set("telegram_locale", e.target.value)}
                     >
-                      <option value="en">English</option>
-                      <option value="fa">فارسی</option>
+                      <option value="en">{t("English")}</option>
+                      <option value="fa">{t("Persian")}</option>
                     </select>
                   </Field>
-                  <Field label="Quota warning %">
+                  <Field label={t("Quota warning %")}>
                     <input
                       className="input"
                       type="number"
@@ -550,7 +580,7 @@ export function SettingsPage() {
                       }
                     />
                   </Field>
-                  <Field label="Expiry warning (days)">
+                  <Field label={t("Expiry warning (days)")}>
                     <input
                       className="input"
                       type="number"
@@ -565,7 +595,7 @@ export function SettingsPage() {
                       }
                     />
                   </Field>
-                  <Field label="Bot token">
+                  <Field label={t("Bot token")}>
                     <input
                       className="input"
                       type="password"
@@ -574,12 +604,12 @@ export function SettingsPage() {
                       onChange={(e) => setTelegramToken(e.target.value)}
                       placeholder={
                         cfg.telegram_configured
-                          ? "Leave blank to keep current token"
+                          ? t("Leave blank to keep current token")
                           : "123456:ABC..."
                       }
                     />
                   </Field>
-                  <Field label="Owner IDs" className="sm:col-span-2">
+                  <Field label={t("Owner IDs")} className="sm:col-span-2">
                     <input
                       className="input"
                       value={cfg.telegram_owner_ids.join(", ")}
@@ -595,7 +625,7 @@ export function SettingsPage() {
                       placeholder="123456789, 987654321"
                     />
                   </Field>
-                  <Field label="CPU alert %">
+                  <Field label={t("CPU alert %")}>
                     <input
                       className="input"
                       type="number"
@@ -610,7 +640,7 @@ export function SettingsPage() {
                       }
                     />
                   </Field>
-                  <Field label="Memory alert %">
+                  <Field label={t("Memory alert %")}>
                     <input
                       className="input"
                       type="number"
@@ -625,7 +655,7 @@ export function SettingsPage() {
                       }
                     />
                   </Field>
-                  <Field label="Disk alert %">
+                  <Field label={t("Disk alert %")}>
                     <input
                       className="input"
                       type="number"
@@ -640,7 +670,7 @@ export function SettingsPage() {
                       }
                     />
                   </Field>
-                  <Field label="Alert cooldown (minutes)">
+                  <Field label={t("Alert cooldown (minutes)")}>
                     <input
                       className="input"
                       type="number"
@@ -657,19 +687,23 @@ export function SettingsPage() {
                   </Field>
                   {cfg.telegram_configured && (
                     <Toggle
-                      label="Remove stored bot token"
-                      text="Clear the encrypted Telegram credential on save."
+                      label={t("Remove stored bot token")}
+                      text={t(
+                        "Clear the encrypted Telegram credential on save.",
+                      )}
                       checked={clearTelegram}
                       onChange={setClearTelegram}
                     />
                   )}
                   <div className="sm:col-span-2 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-3 text-[10px] leading-5 text-[var(--muted)]">
-                    Commands: <code>/status</code>, <code>/nodes</code>,{" "}
-                    <code>/clients [page]</code>, <code>/search name</code>,{" "}
-                    <code>/client ID</code>, <code>/link ID</code>. Management
-                    actions require a confirmation button that expires after
-                    five minutes. Every owner must start the bot before testing.
-                    Save changed settings before checking the connection.
+                    {t("Commands:")} <code>{t("/status")}</code>,{" "}
+                    <code>{t("/nodes")}</code>,{" "}
+                    <code>{t("/clients [page]")}</code>,{" "}
+                    <code>{t("/search name")}</code>,{" "}
+                    <code>{t("/client ID")}</code>, <code>{t("/link ID")}</code>
+                    {t(
+                      ". Management actions require a confirmation button that expires after five minutes. Every owner must start the bot before testing. Save changed settings before checking the connection.",
+                    )}
                   </div>
                   <div className="sm:col-span-2 flex flex-wrap gap-2">
                     <Button
@@ -677,32 +711,33 @@ export function SettingsPage() {
                       disabled={busy || !cfg.telegram_configured || !canEdit}
                       onClick={() => checkBot("status")}
                     >
-                      Check bot connection
+                      {t("Check bot connection")}
                     </Button>
                     <Button
                       variant="outline"
                       disabled={busy || !cfg.telegram_configured || !canEdit}
                       onClick={() => checkBot("test")}
                     >
-                      Send test to owners
+                      {t("Send test to owners")}
                     </Button>
                     <Button
                       variant="outline"
                       disabled={busy || !cfg.telegram_configured || !canEdit}
                       onClick={() => checkBot("setup")}
                     >
-                      Register owner commands
+                      {t("Register owner commands")}
                     </Button>
                   </div>
                   {botStatus && (
                     <div className="sm:col-span-2 rounded-md border border-[var(--border)] p-3 text-[12px] leading-6">
-                      @{botStatus.username} · {botStatus.owner_count} owners ·{" "}
+                      @{botStatus.username} · {botStatus.owner_count}{" "}
+                      {t("owners ·")}{" "}
                       {botStatus.webhook_configured
-                        ? "Existing webhook blocks polling"
-                        : "Polling available"}
+                        ? t("Existing webhook blocks polling")
+                        : t("Polling available")}
                       <br />
-                      Last successful poll:{" "}
-                      {botStatus.last_success || "Not yet"}
+                      {t("Last successful poll:")}{" "}
+                      {botStatus.last_success || t("Not yet")}
                       {botStatus.last_error && (
                         <p className="text-amber-500">{botStatus.last_error}</p>
                       )}
@@ -717,23 +752,27 @@ export function SettingsPage() {
                 <Card>
                   <CardHeader>
                     <div>
-                      <CardTitle>Host health</CardTitle>
+                      <CardTitle>{t("Host health")}</CardTitle>
                       <p className="mt-1 text-[10px] text-[var(--muted)]">
-                        Live server diagnostics.
+                        {t("Live server diagnostics.")}
                       </p>
                     </div>
                   </CardHeader>
                   <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                     <Read
-                      label="CPU"
+                      label={t("CPU")}
                       value={
                         sys
-                          ? `${sys.cpu_percent.toFixed(1)}% · ${sys.cpu_count} cores`
+                          ? tx(
+                              "{0}% · {1} cores",
+                              sys.cpu_percent.toFixed(1),
+                              sys.cpu_count,
+                            )
                           : "—"
                       }
                     />
                     <Read
-                      label="Memory"
+                      label={t("Memory")}
                       value={
                         sys
                           ? `${fmt(sys.memory_used_bytes)} / ${fmt(sys.memory_total_bytes)} (${sys.memory_percent.toFixed(1)}%)`
@@ -741,7 +780,7 @@ export function SettingsPage() {
                       }
                     />
                     <Read
-                      label="Swap"
+                      label={t("Swap")}
                       value={
                         sys
                           ? `${fmt(sys.swap_used_bytes)} / ${fmt(sys.swap_total_bytes)} (${sys.swap_percent.toFixed(1)}%)`
@@ -749,7 +788,7 @@ export function SettingsPage() {
                       }
                     />
                     <Read
-                      label="Disk"
+                      label={t("Disk")}
                       value={
                         sys
                           ? `${fmt(sys.disk_used_bytes)} / ${fmt(sys.disk_total_bytes)} (${diskPct}%)`
@@ -757,12 +796,12 @@ export function SettingsPage() {
                       }
                     />
                     <Read
-                      label="Operating system"
+                      label={t("Operating system")}
                       value={sys?.platform || "—"}
                     />
-                    <Read label="Go" value={sys?.go_version || "—"} />
+                    <Read label={t("Go")} value={sys?.go_version || "—"} />
                     <Read
-                      label="Load average"
+                      label={t("Load average")}
                       value={
                         sys
                           ? sys.load_average
@@ -772,26 +811,26 @@ export function SettingsPage() {
                       }
                     />
                     <Read
-                      label="Admins"
+                      label={t("Admins")}
                       value={String(sys?.admins_total ?? 0)}
                     />
                   </CardContent>
                 </Card>
                 <Card>
                   <CardHeader>
-                    <CardTitle>Server management</CardTitle>
+                    <CardTitle>{t("Server management")}</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                       {[
-                        "veloray status",
-                        "veloray doctor",
-                        "veloray backup",
-                        "veloray port PORT",
-                        "veloray logs web",
-                        "veloray logs agent",
-                        "veloray ssl EMAIL",
-                        "veloray update",
+                        t("veloray status"),
+                        t("veloray doctor"),
+                        t("veloray backup"),
+                        t("veloray port PORT"),
+                        t("veloray logs web"),
+                        t("veloray logs agent"),
+                        t("veloray ssl EMAIL"),
+                        t("veloray update"),
                       ].map((x) => (
                         <div
                           key={x}
@@ -820,6 +859,7 @@ function Field({
   children: any;
   className?: string;
 }) {
+  useLocale();
   return (
     <label className={`label ${className}`}>
       {label}
@@ -836,6 +876,7 @@ function Info({
   label: string;
   value: string;
 }) {
+  useLocale();
   return (
     <Card>
       <CardContent className="flex items-center gap-3 p-4">
@@ -863,6 +904,7 @@ function Toggle({
   checked: boolean;
   onChange: (v: boolean) => void;
 }) {
+  useLocale();
   return (
     <label className="group flex cursor-pointer items-center justify-between gap-4 rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-3.5 transition hover:border-[var(--border-strong)]">
       <div>
@@ -888,6 +930,7 @@ function Toggle({
   );
 }
 function Read({ label, value }: { label: string; value: string }) {
+  useLocale();
   return (
     <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-3">
       <div className="text-[9px] text-[var(--muted)]">{label}</div>
@@ -896,10 +939,11 @@ function Read({ label, value }: { label: string; value: string }) {
   );
 }
 function Actions({ busy }: { busy: boolean }) {
+  useLocale();
   return (
     <div className="sm:col-span-2 flex justify-end pt-2">
       <Button type="submit" disabled={busy}>
-        {busy ? "Saving…" : "Save settings"}
+        {busy ? "Saving…" : t("Save settings")}
       </Button>
     </div>
   );

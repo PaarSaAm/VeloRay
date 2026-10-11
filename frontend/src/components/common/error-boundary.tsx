@@ -1,3 +1,4 @@
+import { t } from "@/lib/i18n";
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -10,7 +11,7 @@ export class ErrorBoundary extends Component<
   state = { error: null as string | null };
   static getDerivedStateFromError(error: unknown) {
     return {
-      error: error instanceof Error ? error.message : "Unexpected UI error",
+      error: error instanceof Error ? error.message : t("Unexpected UI error"),
     };
   }
   componentDidCatch(error: unknown, info: ErrorInfo) {
@@ -25,10 +26,10 @@ export class ErrorBoundary extends Component<
             <VeloRayMark className="h-9 w-9" />
             <div>
               <div className="text-[14px] font-semibold">
-                This page could not load
+                {t("This page could not load")}
               </div>
               <div className="mt-0.5 text-[10px] text-[var(--muted)]">
-                Reload the panel to try again.
+                {t("Reload the panel to try again.")}
               </div>
             </div>
           </div>
@@ -41,7 +42,7 @@ export class ErrorBoundary extends Component<
           <div className="mt-5 flex gap-2">
             <Button className="flex-1" onClick={() => location.reload()}>
               <RefreshCw className="h-3.5 w-3.5" />
-              Reload panel
+              {t("Reload panel")}
             </Button>
             <Button
               variant="outline"
@@ -50,7 +51,7 @@ export class ErrorBoundary extends Component<
                 location.reload();
               }}
             >
-              Go to overview
+              {t("Go to overview")}
             </Button>
           </div>
         </div>

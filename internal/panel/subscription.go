@@ -257,8 +257,8 @@ func (s *Server) portal(w http.ResponseWriter, r *http.Request, c, i, n, cfg Dat
 	}
 	_, clashErr := clashConfig(c, i, n)
 	d := map[string]any{"Locale": str(cfg, "default_locale"), "Direction": "ltr", "Compact": str(cfg, "subscription_template") == "compact", "Site": str(cfg, "site_name"), "Name": str(c, "name"), "Protocol": strings.ToUpper(str(i, "protocol")), "Host": str(n, "public_host"), "Active": "Active", "UsageLabel": "Traffic used", "ExpiryLabel": "Expires", "Used": fmtBytes(used), "Quota": quota, "Expiry": expiry, "Limited": limit > 0, "Percent": min(100, percent(used, limit)), "URL": url, "URLLabel": "Subscription URL", "Connect": "Connection", "QRLabel": "Subscription QR code", "URILabel": "Connection URI", "AppsLabel": "Compatible apps", "SupportLabel": "Contact support", "ShowQR": flag(cfg, "subscription_show_qr"), "ShowApps": flag(cfg, "subscription_show_apps"), "ShowURI": flag(cfg, "subscription_show_connection_uri"), "Link": link, "Profile": profile, "Clash": clashErr == nil, "Support": str(cfg, "support_url"), "Footer": str(cfg, "subscription_footer"), "Announcement": str(cfg, "announcement"), "AnnouncementURL": str(cfg, "announcement_url"), "ProxyLabel": "Proxy account"}
-	rate, _ := multiplierMilli(c)
-	d["ActualLabel"], d["Actual"], d["FactorLabel"], d["Factor"] = "Actual traffic", fmtBytes(num(c, "raw_used_traffic_bytes")), "Billing rate", fmt.Sprintf("%.3f", float64(rate)/1000)
+	rate := effectiveTrafficMultiplier(c)
+	d["ActualLabel"], d["Actual"], d["FactorLabel"], d["Factor"] = "Actual traffic", fmtBytes(num(c, "raw_used_traffic_bytes")), "Billing rate", fmt.Sprintf("%.3f", rate)
 	if str(cfg, "default_locale") == "fa" {
 		d["ActualLabel"], d["FactorLabel"] = "مصرف واقعی", "ضریب محاسبه"
 		d["Direction"] = "rtl"

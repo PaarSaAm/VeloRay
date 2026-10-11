@@ -163,7 +163,7 @@ func (s *Server) telegramReply(ctx context.Context, cfg Data, text, owner string
 	message := ""
 	switch cmd {
 	case "/help", "/start":
-		message = botText(cfg, "VeloRay 0.1.0\n/status · /nodes · /clients [page] · /search name\n/client ID · /link ID\n/client ID enable|disable|reset\n/node ID deploy|restart\nChanges require confirmation and enabled bot management.", "VeloRay 0.1.0\n/status وضعیت · /nodes نودها\n/clients [page] کلاینت‌ها · /search name جستجو\n/client ID جزئیات · /link ID اشتراک\n/client ID enable|disable|reset\n/node ID deploy|restart\nتغییرات نیازمند فعال‌سازی مدیریت و تأیید جداگانه هستند.")
+		message = botText(cfg, "VeloRay "+Version+"\n/status · /nodes · /clients [page] · /search name\n/client ID · /link ID\n/client ID enable|disable|reset\n/node ID deploy|restart\nChanges require confirmation and enabled bot management.", "VeloRay "+Version+"\n/status وضعیت · /nodes نودها\n/clients [page] کلاینت‌ها · /search name جستجو\n/client ID جزئیات · /link ID اشتراک\n/client ID enable|disable|reset\n/node ID deploy|restart\nتغییرات نیازمند فعال‌سازی مدیریت و تأیید جداگانه هستند.")
 	case "/status":
 		o, e := s.overview(ctx)
 		if e != nil {
@@ -259,8 +259,8 @@ func (s *Server) telegramReply(ctx context.Context, cfg Data, text, owner string
 			message = str(view, "subscription_url")
 			break
 		}
-		rate, _ := multiplierMilli(c)
-		message = fmt.Sprintf("%d · %s\nEnabled: %t\nBilled: %s / %s\nActual: %s\nMultiplier: %v → %.3fx\nExpiry: %s", id, str(c, "name"), flag(c, "enabled"), fmtBytes(num(c, "used_traffic_bytes")), quotaText(c), fmtBytes(num(c, "raw_used_traffic_bytes")), c["traffic_multiplier"], float64(rate)/1000, fallback(str(c, "expires_at"), "Never"))
+		rate := effectiveTrafficMultiplier(c)
+		message = fmt.Sprintf("%d · %s\nEnabled: %t\nBilled: %s / %s\nActual: %s\nMultiplier: %v → %.3fx\nExpiry: %s", id, str(c, "name"), flag(c, "enabled"), fmtBytes(num(c, "used_traffic_bytes")), quotaText(c), fmtBytes(num(c, "raw_used_traffic_bytes")), c["traffic_multiplier"], rate, fallback(str(c, "expires_at"), "Never"))
 		reply["reply_markup"] = botKeyboard([]any{botButton("Enable", fmt.Sprintf("vr:/client %d enable", id)), botButton("Disable", fmt.Sprintf("vr:/client %d disable", id))}, []any{botButton("Reset usage", fmt.Sprintf("vr:/client %d reset", id)), botButton("Subscription", fmt.Sprintf("vr:/link %d", id))}, []any{botButton("‹ Clients", "vr:/clients 1")})
 	case "/confirm":
 		if len(p) != 2 {

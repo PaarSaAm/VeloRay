@@ -1,3 +1,4 @@
+import { useLocale, t } from "@/lib/i18n";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/common/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -5,105 +6,128 @@ import { FaIcon } from "@/components/ui/fa-icon";
 
 const groups = [
   {
-    name: "Panel and nodes",
+    name: t("Panel and nodes"),
     rows: [
-      ["GET", "/api/overview", "Dashboard totals"],
-      ["GET", "/api/nodes/", "List nodes"],
-      ["POST", "/api/nodes/:id/probe/", "Probe Agent and Xray"],
-      ["POST", "/api/nodes/:id/deploy/", "Validate and apply generated config"],
-      ["GET", "/api/nodes/:id/config-preview/", "Preview generated Xray JSON"],
+      [t("GET"), "/api/overview", t("Dashboard totals")],
+      [t("GET"), "/api/nodes/", t("List nodes")],
+      [t("POST"), "/api/nodes/:id/probe/", t("Probe Agent and Xray")],
       [
-        "GET",
+        t("POST"),
+        "/api/nodes/:id/deploy/",
+        t("Validate and apply generated config"),
+      ],
+      [
+        t("GET"),
+        "/api/nodes/:id/config-preview/",
+        t("Preview generated Xray JSON"),
+      ],
+      [
+        t("GET"),
         "/api/nodes/:id/ports/",
-        "Check listeners and current socket owners",
+        t("Check listeners and current socket owners"),
       ],
       [
-        "POST",
+        t("POST"),
         "/api/nodes/:id/check-listener/",
-        "Check a proposed inbound port",
+        t("Check a proposed inbound port"),
       ],
       [
-        "POST",
+        t("POST"),
         "/api/nodes/:id/config-validate/",
-        "Validate configuration and listener availability",
+        t("Validate configuration and listener availability"),
       ],
-      ["POST", "/api/nodes/:id/xray-restart/", "Restart Xray service"],
+      [t("POST"), "/api/nodes/:id/xray-restart/", t("Restart Xray service")],
     ],
   },
   {
-    name: "Inbounds & clients",
+    name: t("Inbounds & clients"),
     rows: [
-      ["GET / POST", "/api/inbounds/", "List or create inbounds"],
-      ["PATCH / DELETE", "/api/inbounds/:id/", "Update or remove inbound"],
-      ["POST", "/api/inbounds/:id/clone/", "Clone an inbound to a node"],
-      ["GET / POST", "/api/clients/", "List or create clients"],
+      [t("GET / POST"), "/api/inbounds/", t("List or create inbounds")],
       [
-        "PATCH",
+        t("PATCH / DELETE"),
+        "/api/inbounds/:id/",
+        t("Update or remove inbound"),
+      ],
+      [t("POST"), "/api/inbounds/:id/clone/", t("Clone an inbound to a node")],
+      [t("GET / POST"), "/api/clients/", t("List or create clients")],
+      [
+        t("PATCH"),
         "/api/clients/:id/",
-        "Update policy, including traffic_multiplier (-1 to 3)",
+        t("Update policy, including traffic_multiplier"),
       ],
-      ["POST", "/api/clients/batch", "Create 1–100 clients in one deployment"],
       [
-        "POST",
+        t("POST"),
+        "/api/clients/batch",
+        t("Create 1–100 clients in one deployment"),
+      ],
+      [
+        t("POST"),
         "/api/clients/bulk",
-        "Apply an action to 1–200 clients atomically",
+        t("Apply an action to 1–200 clients atomically"),
       ],
-      ["POST", "/api/clients/:id/toggle/", "Enable or disable client"],
-      ["POST", "/api/clients/:id/reset-usage/", "Reset persisted quota usage"],
+      [t("POST"), "/api/clients/:id/toggle/", t("Enable or disable client")],
+      [
+        t("POST"),
+        "/api/clients/:id/reset-usage/",
+        t("Reset persisted quota usage"),
+      ],
     ],
   },
   {
-    name: "Imports and Telegram (administrators)",
+    name: t("Imports and Telegram (administrators)"),
     rows: [
       [
-        "POST",
+        t("POST"),
         "/api/imports/preview",
-        "Multipart file + node; private preview valid for 30 minutes",
+        t("Multipart file + node; private preview valid for 30 minutes"),
       ],
       [
-        "POST",
+        t("POST"),
         "/api/imports/commit",
-        "token, selected source IDs and optional port_overrides; save disabled",
+        t(
+          "token, selected source IDs and optional port_overrides; save disabled",
+        ),
       ],
-      ["GET", "/api/telegram/status", "Bot identity and polling status"],
-      ["POST", "/api/telegram/test", "Send a test to configured owners"],
+      [t("GET"), "/api/telegram/status", t("Bot identity and polling status")],
+      [t("POST"), "/api/telegram/test", t("Send a test to configured owners")],
       [
-        "POST",
+        t("POST"),
         "/api/telegram/setup",
-        "Register commands for private owner chats",
+        t("Register commands for private owner chats"),
       ],
     ],
   },
   {
-    name: "Subscriptions",
+    name: t("Subscriptions"),
     rows: [
-      ["GET", "/sub/:token", "Browser portal or auto-detected client feed"],
-      ["GET", "/sub/:token?format=base64", "Base64 Xray feed"],
-      ["GET", "/sub/:token?format=clash", "Clash/Mihomo YAML"],
-      ["GET", "/sub/:token?format=raw", "Direct connection URI"],
-      ["GET", "/sub/:token?format=json", "Profile metadata JSON"],
+      [
+        t("GET"),
+        "/sub/:token",
+        t("Browser portal or auto-detected client feed"),
+      ],
+      [t("GET"), "/sub/:token?format=base64", t("Base64 Xray feed")],
+      [t("GET"), "/sub/:token?format=clash", t("Clash/Mihomo YAML")],
+      [t("GET"), "/sub/:token?format=raw", t("Direct connection URI")],
+      [t("GET"), "/sub/:token?format=json", t("Profile metadata JSON")],
     ],
   },
 ];
 export function ApiDocsPage() {
+  useLocale();
   return (
     <div className="space-y-6">
       <PageHeader
-        title="API reference"
-        description="Session-authenticated REST endpoints used by the VeloRay web panel and automation."
+        title={t("API reference")}
+        description={t(
+          "Session-authenticated REST endpoints used by the VeloRay web panel and automation.",
+        )}
       />
       <div className="rounded-xl border border-blue-500/15 bg-blue-500/5 px-4 py-3 text-[11px] leading-5 text-[var(--muted-strong)]">
         <FaIcon icon="shield-halved" className="mr-1.5 text-blue-500" />
-        Browser API uses secure sessions and CSRF protection. Public
-        subscription routes are token-scoped and do not expose panel
-        administration.
-        <p className="mt-2">
-          Client traffic_multiplier defaults to 1, accepts three decimal places
-          and has a maximum of 3. Negative values are discounts: -0.5 bills half
-          the actual traffic. Changes apply to subsequent traffic. Shared
-          account policy applies to every connection; account_id identifies the
-          shared quota, and raw_used_traffic_bytes reports actual usage.
-        </p>
+        {t(
+          "Browser API uses secure sessions and CSRF protection. Public subscription routes are token-scoped and do not expose panel administration.",
+        )}
+        <p className="mt-2">{t("1G => 3G")}</p>
       </div>
       {groups.map((g) => (
         <Card key={g.name}>
@@ -115,9 +139,9 @@ export function ApiDocsPage() {
               <table className="data-table min-w-[720px]">
                 <thead>
                   <tr>
-                    <th>Method</th>
-                    <th>Path</th>
-                    <th>Description</th>
+                    <th>{t("Method")}</th>
+                    <th>{t("Path")}</th>
+                    <th>{t("Description")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -126,7 +150,9 @@ export function ApiDocsPage() {
                       <td>
                         <Badge
                           tone={
-                            String(r[0]).includes("POST") ? "blue" : "neutral"
+                            String(r[0]).includes(t("POST"))
+                              ? "blue"
+                              : "neutral"
                           }
                         >
                           {r[0]}

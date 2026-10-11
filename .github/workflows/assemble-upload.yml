@@ -1,0 +1,27 @@
+name: Assemble VeloRay upload
+on:
+  push:
+    branches: [veloray-v0.2.0-staging]
+permissions:
+  contents: write
+jobs:
+  assemble:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Assemble and verify bundled runtimes
+        run: |
+          cat .runtime-parts/amd64/part-* > runtime/linux-amd64.tar.xz
+          cat .runtime-parts/arm64/part-* > runtime/linux-arm64.tar.xz
+          (cd runtime && sha256sum -c SHA256SUMS)
+          bash scripts/verify-runtime.sh
+      - name: Commit complete release
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add runtime/linux-amd64.tar.xz runtime/linux-arm64.tar.xz
+          git rm -r .runtime-parts .github/workflows/assemble-upload.yml
+          git commit -m "Assemble verified VeloRay 0.2.0 runtimes"
+          git push origin HEAD:veloray-v0.2.0-staging

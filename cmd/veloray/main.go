@@ -66,7 +66,7 @@ func run() error {
 		return nil
 	}
 	switch command {
-	case "menu", "status", "doctor", "start", "stop", "restart", "logs", "url", "reset", "admin-reset", "domain", "port", "ssl", "update", "uninstall", "repair", "ports", "inbounds", "inbound-port", "backup-schedule", "language", "node":
+	case "audit", "menu", "status", "doctor", "start", "stop", "restart", "logs", "url", "reset", "admin-reset", "domain", "port", "ssl", "update", "uninstall", "repair", "ports", "inbounds", "inbound-port", "backup-schedule", "language", "node":
 		controller, err := exec.LookPath("velorayctl")
 		if err != nil {
 			return errors.New("management is available after installation; run veloray help for development commands")
@@ -84,13 +84,14 @@ func run() error {
 		return syscall.Exec(controller, append([]string{"velorayctl"}, args...), os.Environ())
 	}
 	if command == "help" || command == "--help" {
-		fmt.Println(`VeloRay 0.1.0
+		fmt.Println(`VeloRay 0.2.0
 
   veloray                         Open the management menu
   veloray status | doctor | url    Service health and panel address
   veloray start | stop | restart   Manage panel, agent and Xray
   veloray reset [USERNAME]         Change an administrator password
   veloray logs [web|agent|xray]     Follow service logs
+  veloray audit [LIMIT]            Read server audit events
   veloray backup [FILE]            Create a private recovery backup
   veloray restore FILE            Verify and restore a backup
   veloray domain HOST | port PORT  Configure the panel address
@@ -163,6 +164,31 @@ Run veloray serve explicitly to start the application in the foreground.`)
 		return e
 	}
 	switch command {
+	case "host-audit":
+		if os.Geteuid() != 0 {
+			return errors.New("audit requires root access")
+		}
+		limit := 100
+		if len(args) > 2 {
+			return errors.New("usage: veloray audit [LIMIT]")
+		}
+		if len(args) == 2 {
+			limit, e = strconv.Atoi(args[1])
+			if e != nil {
+				return e
+			}
+		}
+		events, e := (&panel.Server{Config: c, Store: store}).AuditEvents(ctx, limit)
+		if e != nil {
+			return e
+		}
+		encoder := json.NewEncoder(os.Stdout)
+		for _, event := range events {
+			if e = encoder.Encode(event); e != nil {
+				return e
+			}
+		}
+		return nil
 	case "host-inbounds":
 		if os.Geteuid() != 0 {
 			return errors.New("run with sudo")

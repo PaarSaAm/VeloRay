@@ -1,3 +1,7 @@
+import { t } from "@/lib/i18n";
+import { useLocale, tx } from "@/lib/i18n";
+import { can, useSession } from "@/lib/session";
+import { smoothPath } from "@/lib/chart";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowUpRight,
@@ -37,8 +41,8 @@ type TrafficPoint = {
   online_nodes: number;
 };
 const fmt = (b: number) => {
-  if (!b) return "0 B";
-  const u = ["B", "KB", "MB", "GB", "TB"];
+  if (!b) return t("0 B");
+  const u = ["B", t("KB"), t("MB"), t("GB"), t("TB")];
   const i = Math.max(
     0,
     Math.min(Math.floor(Math.log(b) / Math.log(1024)), u.length - 1),
@@ -48,13 +52,13 @@ const fmt = (b: number) => {
 const pct = (a: number, b: number) =>
   b > 0 ? Math.min(100, Math.max(0, (a / b) * 100)) : 0;
 const names: Record<string, string> = {
-  vless: "VLESS",
-  vmess: "VMess",
-  trojan: "Trojan",
-  shadowsocks: "Shadowsocks",
+  vless: t("VLESS"),
+  vmess: t("VMess"),
+  trojan: t("Trojan"),
+  shadowsocks: t("Shadowsocks"),
   hysteria: "Hysteria2",
-  wireguard: "WireGuard",
-  http: "HTTP",
+  wireguard: t("WireGuard"),
+  http: t("HTTP"),
   socks: "SOCKS5",
 };
 function Metric({
@@ -70,6 +74,7 @@ function Metric({
   icon: string;
   tone?: "neutral" | "green" | "blue" | "amber";
 }) {
+  useLocale();
   const tones = {
     neutral: "text-[var(--muted-strong)] bg-[var(--surface-2)]",
     green: "text-emerald-500 bg-emerald-500/10",
@@ -100,6 +105,7 @@ function Metric({
   );
 }
 function TrafficChart({ points }: { points: TrafficPoint[] }) {
+  useLocale();
   const data = points.length
     ? points
     : [
@@ -126,10 +132,15 @@ function TrafficChart({ points }: { points: TrafficPoint[] }) {
       (1 - (d.used_traffic_bytes - min) / span) * (height - padTop - padBottom),
     d,
   }));
-  const line = coords
-    .map((p, i) => `${i ? "L" : "M"} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`)
-    .join(" ");
-  const area = `${line} L ${coords.at(-1)?.x ?? padX} ${height - padBottom} L ${coords[0]?.x ?? padX} ${height - padBottom} Z`;
+  const line = smoothPath(coords);
+  const area = tx(
+    "{0} L {1} {2} L {3} {4} Z",
+    line,
+    coords.at(-1)?.x ?? padX,
+    height - padBottom,
+    coords[0]?.x ?? padX,
+    height - padBottom,
+  );
   const ticks = [0, 0.25, 0.5, 0.75, 1].map((v) => ({
     label: fmt(min + span * (1 - v)),
     y: padTop + v * (height - padTop - padBottom),
@@ -138,7 +149,7 @@ function TrafficChart({ points }: { points: TrafficPoint[] }) {
   if (points.length === 0) {
     return (
       <div className="flex h-[220px] items-center justify-center text-sm text-[var(--muted)]">
-        No traffic recorded yet.
+        {t("No traffic recorded yet.")}
       </div>
     );
   }
@@ -166,8 +177,15 @@ function TrafficChart({ points }: { points: TrafficPoint[] }) {
         <div
           className="chart-tooltip"
           style={{
-            left: `${(hp.x / width) * 100}%`,
+            left: tx(
+              "clamp(90px, {0}%, calc(100% - 90px))",
+              (hp.x / width) * 100,
+            ),
             top: `${(hp.y / height) * 100}%`,
+            transform:
+              hp.y < 75
+                ? "translate(-50%, 12px)"
+                : "translate(-50%, calc(-100% - 12px))",
           }}
         >
           <div className="font-semibold">{fmt(hp.d.used_traffic_bytes)}</div>
@@ -178,7 +196,11 @@ function TrafficChart({ points }: { points: TrafficPoint[] }) {
       )}
       <svg
         role="img"
-        aria-label={`Recorded traffic from ${fmt(values[0])} to ${fmt(values.at(-1) ?? 0)}`}
+        aria-label={tx(
+          "Recorded traffic from {0} to {1}",
+          fmt(values[0]),
+          fmt(values.at(-1) ?? 0),
+        )}
         viewBox={`0 0 ${width} ${height}`}
         className="h-full w-full"
         preserveAspectRatio="none"
@@ -246,14 +268,16 @@ function TrafficChart({ points }: { points: TrafficPoint[] }) {
                 hour: "2-digit",
                 minute: "2-digit",
               })
-            : "24h ago"}
+            : t("24h ago")}
         </span>
-        <span>Now</span>
+        <span>{t("Now")}</span>
       </div>
     </div>
   );
 }
 export function Dashboard() {
+  useLocale();
+  const session = useSession();
   const [o, setO] = useState<Overview | null>(null),
     [nodes, setNodes] = useState<NodeItem[]>([]),
     [clients, setClients] = useState<ClientItem[]>([]),
@@ -274,11 +298,17 @@ export function Dashboard() {
     try {
       const [ov, n, c, h, s, system] = await Promise.all([
         api<Overview>("/overview", options),
-        api<NodeItem[]>("/nodes/", options),
-        api<ClientItem[]>("/clients/", options),
+        can(session, "nodes.read")
+          ? api<NodeItem[]>("/nodes/", options)
+          : Promise.resolve([]),
+        can(session, "clients.read")
+          ? api<ClientItem[]>("/clients/", options)
+          : Promise.resolve([]),
         api<TrafficPoint[]>("/traffic-history?hours=24", options),
         api<AppSettings>("/settings", options),
-        api<SystemInfo>("/system-info", options),
+        can(session, "nodes.read")
+          ? api<SystemInfo>("/system-info", options)
+          : Promise.resolve(null),
       ]);
       if (controller.signal.aborted) return;
       setO(ov);
@@ -294,7 +324,7 @@ export function Dashboard() {
       inFlight.current = false;
       if (!controller.signal.aborted) setBusy(false);
     }
-  }, []);
+  }, [session]);
   useEffect(() => {
     void load();
     return () => request.current?.abort();
@@ -323,14 +353,14 @@ export function Dashboard() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Dashboard"
-        description="Client traffic and server status."
+        title={t("Dashboard")}
+        description={t("Client traffic and server status.")}
         actions={
           <Button variant="outline" onClick={load} disabled={busy}>
             <RefreshCw
               className={`h-3.5 w-3.5 ${busy ? "animate-spin" : ""}`}
             />
-            Refresh
+            {t("Refresh")}
           </Button>
         }
       />
@@ -356,7 +386,7 @@ export function Dashboard() {
         >
           <div className="text-[12px]">
             <div className="font-semibold text-amber-500">
-              Nodes need attention
+              {t("Nodes need attention")}
             </div>
             <p className="mt-1 text-[var(--muted-strong)]">
               {nodes
@@ -369,33 +399,33 @@ export function Dashboard() {
             href="/xray"
             className="text-[12px] font-semibold text-[var(--fg)] underline underline-offset-4"
           >
-            Inspect Xray
+            {t("Inspect Xray")}
           </a>
         </div>
       )}
       {o && (o.inbounds_total === 0 || o.clients_total === 0) && (
         <Card>
           <CardHeader>
-            <CardTitle>Set up your first connection</CardTitle>
+            <CardTitle>{t("Set up your first connection")}</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-3 sm:grid-cols-3">
             {[
               {
                 href: "/inbounds",
-                title: "1. Create an inbound",
-                text: "Choose a port, protocol and connection security.",
+                title: t("1. Create an inbound"),
+                text: t("Choose a port, protocol and connection security."),
                 done: o.inbounds_total > 0,
               },
               {
                 href: "/clients",
-                title: "2. Add a client",
-                text: "Set credentials, traffic quota and expiry.",
+                title: t("2. Add a client"),
+                text: t("Set credentials, traffic quota and expiry."),
                 done: o.clients_total > 0,
               },
               {
-                href: "/subscriptions",
-                title: "3. Share the subscription",
-                text: "Open the client portal or copy a connection link.",
+                href: "/clients",
+                title: t("3. Share the subscription"),
+                text: t("Open the client portal or copy a connection link."),
                 done: false,
               },
             ].map((step) => (
@@ -418,31 +448,31 @@ export function Dashboard() {
       )}
       <section className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <Metric
-          label="CPU"
+          label={t("CPU")}
           value={`${(sys?.cpu_percent ?? 0).toFixed(1)}%`}
-          note={`${sys?.cpu_count ?? 0} logical cores`}
+          note={tx("{0} logical cores", sys?.cpu_count ?? 0)}
           icon="microchip"
           tone={(sys?.cpu_percent ?? 0) > 85 ? "amber" : "blue"}
         />
         <Metric
-          label="Memory"
+          label={t("Memory")}
           value={`${(sys?.memory_percent ?? 0).toFixed(1)}%`}
           note={`${fmt(sys?.memory_used_bytes ?? 0)} / ${fmt(sys?.memory_total_bytes ?? 0)}`}
           icon="memory"
           tone={(sys?.memory_percent ?? 0) > 85 ? "amber" : "green"}
         />
         <Metric
-          label="Swap"
+          label={t("Swap")}
           value={`${(sys?.swap_percent ?? 0).toFixed(1)}%`}
           note={
             sys?.swap_total_bytes
               ? `${fmt(sys.swap_used_bytes)} / ${fmt(sys.swap_total_bytes)}`
-              : "Not configured"
+              : t("Not configured")
           }
           icon="arrows-rotate"
         />
         <Metric
-          label="Disk"
+          label={t("Disk")}
           value={`${(sys?.disk_percent ?? 0).toFixed(1)}%`}
           note={`${fmt(sys?.disk_used_bytes ?? 0)} / ${fmt(sys?.disk_total_bytes ?? 0)}`}
           icon="hard-drive"
@@ -451,38 +481,40 @@ export function Dashboard() {
       </section>
       <section className="grid grid-cols-2 gap-3 xl:grid-cols-5">
         <Metric
-          label="Active clients"
+          label={t("Active clients")}
           value={String(o?.clients_active ?? 0)}
-          note={`${o?.clients_total ?? 0} total · ${disabled} disabled`}
+          note={tx("{0} total · {1} disabled", o?.clients_total ?? 0, disabled)}
           icon="users"
           tone="green"
         />
         <Metric
-          label="Healthy nodes"
+          label={t("Healthy nodes")}
           value={`${o?.nodes_online ?? 0}/${o?.nodes_total ?? 0}`}
-          note={local ? "Local node enrolled" : "Waiting for local node"}
+          note={local ? t("Local node enrolled") : t("Waiting for local node")}
           icon="server"
           tone="blue"
         />
         <Metric
-          label="Recorded traffic"
+          label={t("Recorded traffic")}
           value={fmt(o?.traffic_used_bytes ?? 0)}
           note={
-            quota ? `${usagePct.toFixed(1)}% of quotas` : "Across all clients"
+            quota
+              ? tx("{0}% of quotas", usagePct.toFixed(1))
+              : t("Across all clients")
           }
           icon="chart-area"
         />
         <Metric
-          label="Inbounds"
+          label={t("Inbounds")}
           value={String(o?.inbounds_total ?? 0)}
-          note={`${o?.protocols?.length ?? 0} protocol families`}
+          note={tx("{0} protocol families", o?.protocols?.length ?? 0)}
           icon="diagram-project"
           tone="amber"
         />
         <Metric
-          label="Expiring soon"
+          label={t("Expiring soon")}
           value={String(o?.clients_expiring_7d ?? 0)}
-          note="Within the next 7 days"
+          note={t("Within the next 7 days")}
           icon="hourglass-half"
           tone="amber"
         />
@@ -491,9 +523,9 @@ export function Dashboard() {
         <Card>
           <CardHeader>
             <div>
-              <CardTitle>Traffic overview</CardTitle>
+              <CardTitle>{t("Traffic overview")}</CardTitle>
               <p className="mt-1 text-[10px] text-[var(--muted)]">
-                Traffic collected during the last 24 hours
+                {t("Traffic collected during the last 24 hours")}
               </p>
             </div>
             <div className="text-right">
@@ -501,7 +533,7 @@ export function Dashboard() {
                 {fmt(o?.traffic_used_bytes ?? 0)}
               </div>
               <div className="text-[9px] text-[var(--muted)]">
-                recorded total
+                {t("recorded total")}
               </div>
             </div>
           </CardHeader>
@@ -512,9 +544,9 @@ export function Dashboard() {
         <Card>
           <CardHeader>
             <div>
-              <CardTitle>Client health</CardTitle>
+              <CardTitle>{t("Client health")}</CardTitle>
               <p className="mt-1 text-[10px] text-[var(--muted)]">
-                Current availability
+                {t("Current availability")}
               </p>
             </div>
             <CircleGauge className="h-4 w-4 text-[var(--muted)]" />
@@ -533,15 +565,15 @@ export function Dashboard() {
                       {o?.clients_active ?? 0}
                     </div>
                     <div className="text-[9px] uppercase tracking-[.12em] text-[var(--muted)]">
-                      active
+                      {t("active")}
                     </div>
                   </div>
                 </div>
               </div>
             </div>
             <div className="mt-4 grid grid-cols-2 gap-2">
-              <Box label="Total" value={o?.clients_total ?? 0} />
-              <Box label="Disabled" value={disabled} />
+              <Box label={t("Total")} value={o?.clients_total ?? 0} />
+              <Box label={t("Disabled")} value={disabled} />
             </div>
           </CardContent>
         </Card>
@@ -550,9 +582,9 @@ export function Dashboard() {
         <Card className="xl:col-span-1">
           <CardHeader>
             <div>
-              <CardTitle>Protocol mix</CardTitle>
+              <CardTitle>{t("Protocol mix")}</CardTitle>
               <p className="mt-1 text-[10px] text-[var(--muted)]">
-                Configured inbound families
+                {t("Configured inbound families")}
               </p>
             </div>
           </CardHeader>
@@ -576,7 +608,7 @@ export function Dashboard() {
               ))
             ) : (
               <div className="py-8 text-center text-[11px] text-[var(--muted)]">
-                No inbounds yet.
+                {t("No inbounds yet.")}
               </div>
             )}
           </CardContent>
@@ -584,15 +616,15 @@ export function Dashboard() {
         <Card>
           <CardHeader>
             <div>
-              <CardTitle>Nodes</CardTitle>
+              <CardTitle>{t("Nodes")}</CardTitle>
               <p className="mt-1 text-[10px] text-[var(--muted)]">
-                Panel node and remote agents
+                {t("Panel node and remote agents")}
               </p>
             </div>
             <Badge
               tone={nodes.some((n) => n.status === "ok") ? "green" : "amber"}
             >
-              {nodes.filter((n) => n.status === "ok").length} online
+              {nodes.filter((n) => n.status === "ok").length} {t("online")}
             </Badge>
           </CardHeader>
           <CardContent className="p-0">
@@ -611,10 +643,11 @@ export function Dashboard() {
                         <span className="truncate text-[12px] font-semibold">
                           {n.name}
                         </span>
-                        {n.is_local && <Badge tone="blue">Local</Badge>}
+                        {n.is_local && <Badge tone="blue">{t("Local")}</Badge>}
                       </div>
                       <div className="mt-0.5 truncate text-[9px] text-[var(--muted)]">
-                        {n.public_host} · {n.xray_version || "Version pending"}
+                        {n.public_host} ·{" "}
+                        {n.xray_version || t("Version pending")}
                       </div>
                     </div>
                     <Badge
@@ -634,7 +667,7 @@ export function Dashboard() {
                 <div className="grid place-items-center px-5 py-12 text-center">
                   <WifiOff className="mb-3 h-5 w-5 text-[var(--muted)]" />
                   <div className="text-[12px] font-medium">
-                    No nodes registered
+                    {t("No nodes registered")}
                   </div>
                 </div>
               )}
@@ -644,9 +677,9 @@ export function Dashboard() {
         <Card>
           <CardHeader>
             <div>
-              <CardTitle>Top consumers</CardTitle>
+              <CardTitle>{t("Top consumers")}</CardTitle>
               <p className="mt-1 text-[10px] text-[var(--muted)]">
-                Clients ranked by traffic
+                {t("Clients ranked by traffic")}
               </p>
             </div>
             <ArrowUpRight className="h-4 w-4 text-[var(--muted)]" />
@@ -678,7 +711,7 @@ export function Dashboard() {
               ))
             ) : (
               <div className="py-8 text-center text-[11px] text-[var(--muted)]">
-                Traffic appears after clients start using the node.
+                {t("Traffic appears after clients start using the node.")}
               </div>
             )}
           </CardContent>
@@ -688,6 +721,7 @@ export function Dashboard() {
   );
 }
 function Box({ label, value }: { label: string; value: number }) {
+  useLocale();
   return (
     <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-3">
       <div className="text-[9px] text-[var(--muted)]">{label}</div>

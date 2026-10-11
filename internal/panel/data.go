@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-const Version = "0.1.0"
+const Version = "0.2.0"
 
 // Data is a stored entity. Private fields use a leading underscore and are never
 // included in API responses. All mutations validate a per-entity allowlist.
@@ -125,9 +125,9 @@ func defaults(kind string) Data {
 	case "inbounds":
 		return Data{"name": "", "node": 0, "listen": "0.0.0.0", "port": 0, "protocol": "vless", "transport": "raw", "security": "none", "flow": "", "path": "/", "host_header": "", "service_name": "", "tls_server_name": "", "tls_cert_file": "", "tls_key_file": "", "reality_dest": "", "reality_server_name": "", "reality_private_key": "", "reality_public_key": "", "reality_short_id": "", "protocol_settings": Data{}, "stream_settings": Data{}, "enabled": true}
 	case "clients":
-		return Data{"inbound": 0, "name": "", "credential": "", "protocol_settings": Data{}, "subscription_token": "", "enabled": true, "expires_at": nil, "traffic_limit_bytes": 0, "used_traffic_bytes": 0, "lifetime_traffic_bytes": 0, "raw_used_traffic_bytes": 0, "raw_lifetime_traffic_bytes": 0, "traffic_multiplier": 1.0, "last_traffic_at": nil, "disabled_reason": "", "renewal_interval_days": 0, "next_renewal_at": nil, "note": ""}
+		return Data{"owner_id": 0, "inbound": 0, "name": "", "credential": "", "protocol_settings": Data{}, "subscription_token": "", "enabled": true, "expires_at": nil, "traffic_limit_bytes": 0, "used_traffic_bytes": 0, "lifetime_traffic_bytes": 0, "raw_used_traffic_bytes": 0, "raw_lifetime_traffic_bytes": 0, "traffic_multiplier": 1.0, "last_traffic_at": nil, "disabled_reason": "", "renewal_interval_days": 0, "next_renewal_at": nil, "note": ""}
 	case "users":
-		return Data{"username": "", "email": "", "is_active": true, "is_staff": true, "is_superuser": false, "last_login": nil, "date_joined": stamp(time.Now()), "_password": "", "_totp_secret": "", "_totp_enabled": false, "_totp_step": int64(-1), "_recovery": []any{}, "_auth_version": 1}
+		return Data{"role": "", "permissions": []any{}, "allowed_inbounds": []any{}, "own_clients_only": false, "max_clients": 0, "traffic_budget_bytes": 0, "username": "", "email": "", "is_active": true, "is_staff": true, "is_superuser": false, "last_login": nil, "date_joined": stamp(time.Now()), "_password": "", "_totp_secret": "", "_totp_enabled": false, "_totp_step": int64(-1), "_recovery": []any{}, "_auth_version": 1}
 	case "api_keys":
 		return Data{"name": "", "prefix": "", "scope": "read", "enabled": true, "expires_at": nil, "last_used_at": nil, "user": 0}
 	}

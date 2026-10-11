@@ -175,7 +175,7 @@ func TestIntegrationMultiplierChangesOnlyFutureTraffic(t *testing.T) {
 	if num(fresh, "used_traffic_bytes") != 17 {
 		t.Fatal("unchanged counter counted twice")
 	}
-	req = httptest.NewRequest("PATCH", "/", strings.NewReader(`{"traffic_multiplier":3.001}`)).WithContext(ctx)
+	req = httptest.NewRequest("PATCH", "/", strings.NewReader(`{"traffic_multiplier":1.0001}`)).WithContext(ctx)
 	if _, _, e = s.api(httptest.NewRecorder(), req, fmt.Sprintf("clients/%d", num(c, "id")), Actor{}); e == nil {
 		t.Fatal("API accepted multiplier above three")
 	}

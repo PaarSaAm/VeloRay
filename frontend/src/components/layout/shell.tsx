@@ -1,8 +1,8 @@
-import type { ReactNode } from "react";
+import { useLocale, t } from "@/lib/i18n";
+import type { ReactNode, CSSProperties } from "react";
 import { useState } from "react";
 import { Header } from "./header";
 import { Sidebar, type RouteKey } from "./sidebar";
-import { cn } from "@/lib/cn";
 import type { Session } from "@/lib/api";
 export function Shell({
   route,
@@ -21,6 +21,7 @@ export function Shell({
   user: Session;
   onLogout: () => void;
 }) {
+  useLocale();
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem("veloray-sidebar") === "collapsed",
   );
@@ -32,7 +33,7 @@ export function Shell({
   return (
     <div className="veloray-shell min-h-screen text-[var(--fg)]">
       <a href="#main-content" className="skip-link">
-        Skip to content
+        {t("Skip to content")}
       </a>
       <Sidebar
         route={route}
@@ -44,10 +45,8 @@ export function Shell({
         isSuperuser={!!user.is_superuser}
       />
       <div
-        className={cn(
-          "min-h-screen transition-[padding] duration-200",
-          collapsed ? "lg:pl-[68px]" : "lg:pl-[252px]",
-        )}
+        className="shell-content min-h-screen"
+        style={{ "--nav-width": collapsed ? "68px" : "252px" } as CSSProperties}
       >
         <Header
           title={title}
