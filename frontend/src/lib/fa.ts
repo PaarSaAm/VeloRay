@@ -739,7 +739,7 @@ Object.assign(fa, {
     "مسیرهای جایگزین به تنظیم دستی نیاز دارند و فعال نشده‌اند",
   "Live port inspection is unavailable; check the target node before activation":
     "بررسی زنده پورت در دسترس نیست؛ پیش از فعال‌سازی نود مقصد را بررسی کنید",
-  "PasarGuard subscription tokens are regenerated; distribute the new VeloRay subscription addresses":
+  "Relational subscription tokens are regenerated; distribute the new VeloRay subscription addresses":
     "کلیدهای اشتراک دوباره ساخته می‌شوند؛ نشانی اشتراک جدید را در اختیار کاربران قرار دهید",
   "Calendar resets, on-hold activation, host overrides and node credentials need review in VeloRay":
     "بازنشانی تقویمی، فعال‌سازی در انتظار، تغییرات میزبان و اطلاعات نود نیاز به بررسی دارند",
@@ -757,4 +757,44 @@ Object.assign(fa, {
   "VLESS flow": "حالت جریان VLESS",
   "0.0.0.0/0, ::/0 (optional)": "0.0.0.0/0, ::/0 (اختیاری)",
   s: "ثانیه",
+});
+
+Object.assign(fa, {
+  Outbounds: "خروجی‌ها",
+  Routing: "مسیریابی",
+  "New outbound": "خروجی جدید",
+  "Configured outbounds": "خروجی‌های تنظیم‌شده",
+  "New rule": "قانون جدید",
+  Rules: "قوانین",
+  Core: "هسته",
+  Priority: "اولویت",
+  Match: "تطبیق",
+  Tag: "برچسب",
+  Devices: "دستگاه‌ها",
+  "Start after first use": "شروع پس از اولین استفاده",
+  "0 = unlimited · concurrent IPs": "۰ = نامحدود · آی‌پی‌های هم‌زمان",
+  "days · after first use": "روز · پس از اولین استفاده",
+  Used: "مصرف‌شده",
+  "Transfer rate": "نرخ انتقال",
+  "Traffic chart": "نمودار ترافیک",
+  "Select date": "انتخاب تاریخ",
+  Clear: "پاک‌کردن",
+  Done: "تمام",
+  "Scan SNI": "اسکن SNI",
+  "SNI scanner": "اسکنر SNI",
+  Domain: "دامنه",
+  Scan: "اسکن",
+  "Find SNI": "پیداکردن SNI",
+  "Scanning from this node…": "در حال بررسی از این نود…",
+  Use: "انتخاب",
+  "Create key": "ساخت کلید",
+  "Your API key": "کلید API شما",
+  "Copy now. This key is shown only once.":
+    "اکنون کپی کنید. این کلید فقط یک بار نمایش داده می‌شود.",
+  "Valid for (days)": "اعتبار (روز)",
+  "Reset key": "بازنشانی کلید",
+  "No keys yet.": "هنوز کلیدی ساخته نشده است.",
+  "No entries yet.": "هنوز موردی ساخته نشده است.",
+  "Enter a JSON object.": "یک شیء JSON وارد کنید.",
+  Create: "ساخت",
 });

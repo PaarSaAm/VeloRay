@@ -1,3 +1,6 @@
+import { Textarea } from "@/components/ui/controls";
+import { SNIScanner } from "@/components/sni-scanner";
+import { Select, Input } from "@/components/ui/controls";
 import { t } from "@/lib/i18n";
 import { useLocale, tx } from "@/lib/i18n";
 import { Dialog } from "@/components/common/dialog";
@@ -27,6 +30,7 @@ import { FaIcon } from "@/components/ui/fa-icon";
 import { cn } from "@/lib/cn";
 
 type FormState = {
+  core: string;
   node: string;
   name: string;
   listen: string;
@@ -68,6 +72,7 @@ type FormState = {
 };
 const fresh = (node = ""): FormState => ({
   node,
+  core: "xray",
   name: t("Main"),
   listen: "0.0.0.0",
   port: "443",
@@ -205,6 +210,7 @@ export function InboundsPage() {
   function preset(value: string) {
     if (!value) return;
     const next = fresh(form.node);
+    next.core = form.core;
     if (value === "reality") {
       next.name = t("VLESS REALITY");
       next.port = "2053";
@@ -375,6 +381,7 @@ export function InboundsPage() {
   }
   function payload() {
     const p: any = {
+      core: form.core,
       node: Number(form.node),
       name: form.name,
       listen: form.listen,
@@ -468,6 +475,7 @@ export function InboundsPage() {
         setMsg(t("Inbound created, validated and deployed."));
       }
       const keep = form.node;
+      setEditorOpen(false);
       setEditing(null);
       setForm(fresh(keep));
       await load();
@@ -479,8 +487,10 @@ export function InboundsPage() {
   }
   function beginEdit(i: InboundItem) {
     const ps = i.protocol_settings || {};
+    setEditorOpen(true);
     setEditing(i);
     setForm({
+      core: i.core || "xray",
       node: String(i.node),
       name: i.name,
       listen: i.listen || "0.0.0.0",
@@ -530,6 +540,7 @@ export function InboundsPage() {
   }
   function cancelEdit() {
     const node = form.node;
+    setEditorOpen(false);
     setEditing(null);
     setForm(fresh(node));
   }
@@ -590,6 +601,7 @@ export function InboundsPage() {
       setCloneBusy(false);
     }
   }
+  const [editorOpen, setEditorOpen] = useState(false);
   const reality = form.security === "reality",
     tls = form.security === "tls",
     vision = form.protocol === "vless" && form.transport === "raw" && reality;
@@ -608,7 +620,18 @@ export function InboundsPage() {
     <div className="space-y-6">
       <PageHeader
         title={t("Inbounds")}
-        description={t("Connection protocols, ports and server credentials.")}
+        description=""
+        actions={
+          <Button
+            onClick={() => {
+              cancelEdit();
+              setEditorOpen(true);
+            }}
+          >
+            <Plus size={15} />
+            {t("New inbound")}
+          </Button>
+        }
       />
       {msg && (
         <div
@@ -620,666 +643,723 @@ export function InboundsPage() {
           {msg}
         </div>
       )}
-      <section className="grid grid-cols-2 gap-2 sm:grid-cols-5 xl:grid-cols-10">
-        {protocolOptions.map(([p, label, icon]) => (
-          <div
-            key={p}
-            className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-3"
+      <div className="space-y-4">
+        {editorOpen && (
+          <Dialog
+            label={editing ? t("Edit inbound") : t("New inbound")}
+            onClose={cancelEdit}
           >
-            <div className="flex items-center justify-between">
-              <FaIcon icon={icon} className="text-[var(--muted)]" />
-              <span className="text-[16px] font-semibold">
-                {protocolCounts[p] || 0}
-              </span>
-            </div>
-            <div className="mt-2 truncate text-[9px] text-[var(--muted)]">
-              {t(label)}
-            </div>
-          </div>
-        ))}
-      </section>
-      <div className="grid gap-4 2xl:grid-cols-[520px_1fr]">
-        <Card>
-          <CardHeader>
-            <div>
-              <CardTitle>
-                {editing ? t("Edit inbound") : t("New inbound")}
-              </CardTitle>
-              <p className="mt-1 text-[11px] text-[var(--muted)]">
-                {t("Only combinations validated by VeloRay are deployable.")}
-              </p>
-            </div>
-            {editing && (
-              <Button variant="ghost" size="icon" onClick={cancelEdit}>
-                <X className="h-4 w-4" />
-              </Button>
-            )}
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={save} className="space-y-5">
-              {!editing && (
-                <label className="label">
-                  {t("Connection preset")}
-                  <select
-                    className="input"
-                    aria-label={t("Connection preset")}
-                    value=""
-                    onChange={(e) => preset(e.target.value)}
-                    disabled={busy}
-                  >
-                    <option value="">{t("Choose a starting point")}</option>
-                    <option value="reality">
-                      {t("VLESS · REALITY · Vision")}
-                    </option>
-                    <option value="websocket">
-                      {t("VLESS · WebSocket · TLS")}
-                    </option>
-                    <option value="trojan">{t("Trojan · TLS")}</option>
-                    <option value="wireguard">{t("WireGuard · UDP")}</option>
-                    <option value="hysteria">
-                      {t("Hysteria2 · UDP · TLS")}
-                    </option>
-                  </select>
-                </label>
-              )}
-              <section>
-                <div className="panel-section-title mb-3">{t("Listener")}</div>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <Field label={t("Node")} className="sm:col-span-2">
-                    <select
+            <Card>
+              <CardHeader>
+                <div>
+                  <CardTitle>
+                    {editing ? t("Edit inbound") : t("New inbound")}
+                  </CardTitle>
+                </div>
+                {true && (
+                  <Button variant="ghost" size="icon" onClick={cancelEdit}>
+                    <X className="h-4 w-4" />
+                  </Button>
+                )}
+              </CardHeader>
+              <CardContent>
+                <form onSubmit={save} className="space-y-5">
+                  <Field label="Core">
+                    <Select
                       className="input"
-                      value={form.node}
-                      onChange={(e) => set("node", e.target.value)}
-                      required
+                      value={form.core}
+                      onChange={(e) => {
+                        set("core", e.target.value);
+                        set("protocol", "vless");
+                        set("transport", "raw");
+                      }}
                     >
-                      <option value="">{t("Select node")}</option>
-                      {nodes.map((n) => (
-                        <option key={n.id} value={n.id}>
-                          {n.is_local ? "★ " : ""}
-                          {n.name}
-                        </option>
-                      ))}
-                    </select>
+                      <option value="xray">Xray · Primary</option>
+                      <option value="singbox">sing-box</option>
+                    </Select>
                   </Field>
-                  <Field label={t("Name")}>
-                    <input
-                      className="input"
-                      value={form.name}
-                      onChange={(e) => set("name", e.target.value)}
-                      required
-                    />
-                  </Field>
-                  <Field
-                    label={
-                      form.protocol === "tun" ? t("Port (not used)") : t("Port")
-                    }
-                  >
-                    <input
-                      className="input"
-                      type="number"
-                      min={form.protocol === "tun" ? 0 : 1}
-                      max="65535"
-                      value={form.port}
-                      onChange={(e) => set("port", e.target.value)}
-                      disabled={form.protocol === "tun"}
-                      required
-                    />
-                  </Field>
-                  {form.protocol !== "tun" && (
-                    <Field
-                      label={t("Listen address")}
-                      className="sm:col-span-2"
-                    >
-                      <input
+                  {!editing && (
+                    <label className="label">
+                      {t("Connection preset")}
+                      <Select
                         className="input"
-                        value={form.listen}
-                        onChange={(e) => set("listen", e.target.value)}
-                        placeholder={t("0.0.0.0 or ::")}
-                        required
-                      />
-                      <span className="mt-1 text-[10px] font-normal text-[var(--muted)]">
-                        {t(
-                          "Use 0.0.0.0 for IPv4 or :: for IPv6. Enter a specific IP to restrict the listener.",
-                        )}
-                      </span>
-                    </Field>
-                  )}
-                </div>
-                {form.protocol !== "tun" && (
-                  <div className="mt-3 space-y-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={checkPort}
-                      disabled={portBusy || busy || !form.node}
-                    >
-                      <FaIcon icon="shield-halved" />
-                      {portBusy ? t("Checking port…") : t("Check port")}
-                    </Button>
-                    {portResult && portSignature === signature && (
-                      <p
-                        role="status"
-                        className="break-words text-[11px] leading-5 text-[var(--muted-strong)]"
+                        aria-label={t("Connection preset")}
+                        value=""
+                        onChange={(e) => preset(e.target.value)}
+                        disabled={busy}
                       >
-                        {portResult}
-                      </p>
-                    )}
-                  </div>
-                )}
-              </section>
-              <section>
-                <div className="panel-section-title mb-3">{t("Protocol")}</div>
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                  {protocolOptions.map(([v, l]) => (
-                    <Choice
-                      key={v}
-                      value={v}
-                      label={l}
-                      active={form.protocol === v}
-                      onClick={(v) => set("protocol", v)}
-                    />
-                  ))}
-                </div>
-                {plaintext && (
-                  <div className="mt-3 rounded-lg border border-amber-500/20 bg-amber-500/7 px-3 py-2 text-[10px] leading-5 text-amber-500">
-                    {t(
-                      "HTTP and SOCKS are plaintext proxy protocols. Prefer local/LAN use or place them behind a protected transport.",
-                    )}
-                  </div>
-                )}
-              </section>
-              {!["wireguard", "tunnel", "tun"].includes(form.protocol) && (
-                <section>
-                  <div className="panel-section-title mb-3">
-                    {t("Transport")}
-                  </div>
-                  {form.protocol === "hysteria" ? (
-                    <div className="grid grid-cols-2">
-                      <Choice
-                        value="hysteria"
-                        label={t("Hysteria2 / QUIC")}
-                        active
-                        onClick={() => {}}
-                      />
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                      {transportOptions.map(([v, l]) => (
-                        <Choice
-                          key={v}
-                          value={v}
-                          label={l}
-                          active={form.transport === v}
-                          disabled={
-                            (form.protocol === "shadowsocks" ||
-                              form.protocol === "socks") &&
-                            v !== "raw"
-                          }
-                          onClick={(v) => set("transport", v)}
-                        />
-                      ))}
-                    </div>
+                        <option value="">{t("Choose a starting point")}</option>
+                        <option value="reality">
+                          {t("VLESS · REALITY · Vision")}
+                        </option>
+                        <option value="websocket">
+                          {t("VLESS · WebSocket · TLS")}
+                        </option>
+                        <option value="trojan">{t("Trojan · TLS")}</option>
+                        {form.core === "xray" && (
+                          <option value="wireguard">
+                            {t("WireGuard · UDP")}
+                          </option>
+                        )}
+                        <option value="hysteria">
+                          {t("Hysteria2 · UDP · TLS")}
+                        </option>
+                      </Select>
+                    </label>
                   )}
-                  {["ws", "xhttp", "httpupgrade"].includes(form.transport) && (
-                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                      <Field label={t("Path")}>
-                        <input
+                  <section>
+                    <div className="panel-section-title mb-3">
+                      {t("Listener")}
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <Field label={t("Node")} className="sm:col-span-2">
+                        <Select
                           className="input"
-                          value={form.path}
-                          onChange={(e) => set("path", e.target.value)}
-                          placeholder={t("/veloray")}
+                          value={form.node}
+                          onChange={(e) => set("node", e.target.value)}
+                          required
+                        >
+                          <option value="">{t("Select node")}</option>
+                          {nodes.map((n) => (
+                            <option key={n.id} value={n.id}>
+                              {n.is_local ? "★ " : ""}
+                              {n.name}
+                            </option>
+                          ))}
+                        </Select>
+                      </Field>
+                      <Field label={t("Name")}>
+                        <Input
+                          className="input"
+                          value={form.name}
+                          onChange={(e) => set("name", e.target.value)}
+                          required
                         />
                       </Field>
-                      {["ws", "httpupgrade"].includes(form.transport) && (
-                        <Field label={t("Host header")}>
-                          <input
+                      <Field
+                        label={
+                          form.protocol === "tun"
+                            ? t("Port (not used)")
+                            : t("Port")
+                        }
+                      >
+                        <Input
+                          className="input"
+                          type="number"
+                          min={form.protocol === "tun" ? 0 : 1}
+                          max="65535"
+                          value={form.port}
+                          onChange={(e) => set("port", e.target.value)}
+                          disabled={form.protocol === "tun"}
+                          required
+                        />
+                      </Field>
+                      {form.protocol !== "tun" && (
+                        <Field
+                          label={t("Listen address")}
+                          className="sm:col-span-2"
+                        >
+                          <Input
                             className="input"
-                            value={form.host_header}
-                            onChange={(e) => set("host_header", e.target.value)}
-                            placeholder={t("cdn.example.com")}
+                            value={form.listen}
+                            onChange={(e) => set("listen", e.target.value)}
+                            placeholder={t("0.0.0.0 or ::")}
+                            required
                           />
+                          <span className="mt-1 text-[10px] font-normal text-[var(--muted)]">
+                            {t(
+                              "Use 0.0.0.0 for IPv4 or :: for IPv6. Enter a specific IP to restrict the listener.",
+                            )}
+                          </span>
                         </Field>
                       )}
                     </div>
-                  )}
-                  {form.transport === "grpc" && (
-                    <div className="mt-3">
-                      <Field label={t("gRPC service")}>
-                        <input
-                          className="input"
-                          value={form.service_name}
-                          onChange={(e) => set("service_name", e.target.value)}
-                          placeholder={t("veloray-grpc")}
-                        />
-                      </Field>
-                    </div>
-                  )}
-                </section>
-              )}
-              {!["wireguard", "tunnel", "tun"].includes(form.protocol) && (
-                <section>
-                  <div className="panel-section-title mb-3">
-                    {t("Security")}
-                  </div>
-                  <div className="grid grid-cols-3 gap-2">
-                    {[
-                      ["none", t("None")],
-                      ["tls", t("TLS")],
-                      ["reality", t("REALITY")],
-                    ].map(([v, l]) => (
-                      <Choice
-                        key={v}
-                        value={v}
-                        label={l}
-                        active={form.security === v}
-                        disabled={
-                          (form.protocol === "hysteria" && v !== "tls") ||
-                          ((form.protocol === "shadowsocks" ||
-                            form.protocol === "socks") &&
-                            v !== "none") ||
-                          (v === "reality" &&
-                            (form.protocol !== "vless" ||
-                              !["raw", "grpc", "xhttp"].includes(
-                                form.transport,
-                              )))
-                        }
-                        onClick={(v) => set("security", v)}
-                      />
-                    ))}
-                  </div>
-                  {vision && (
-                    <div className="mt-3">
-                      <Field label={t("VLESS flow")}>
-                        <select
-                          className="input"
-                          value={form.flow}
-                          onChange={(e) => set("flow", e.target.value)}
+                    {form.protocol !== "tun" && (
+                      <div className="mt-3 space-y-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={checkPort}
+                          disabled={portBusy || busy || !form.node}
                         >
-                          <option value="xtls-rprx-vision">
-                            {t("XTLS Vision")}
+                          <FaIcon icon="shield-halved" />
+                          {portBusy ? t("Checking port…") : t("Check port")}
+                        </Button>
+                        {portResult && portSignature === signature && (
+                          <p
+                            role="status"
+                            className="break-words text-[11px] leading-5 text-[var(--muted-strong)]"
+                          >
+                            {portResult}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </section>
+                  <section>
+                    <div className="panel-section-title mb-3">
+                      {t("Protocol")}
+                    </div>
+                    <Select
+                      className="input"
+                      aria-label={t("Protocol")}
+                      value={form.protocol}
+                      onChange={(e) => set("protocol", e.target.value)}
+                    >
+                      {protocolOptions
+                        .filter(
+                          ([v]) =>
+                            form.core === "xray" ||
+                            [
+                              "vless",
+                              "vmess",
+                              "trojan",
+                              "shadowsocks",
+                              "hysteria",
+                              "http",
+                              "socks",
+                            ].includes(v),
+                        )
+                        .map(([v, l]) => (
+                          <option key={v} value={v}>
+                            {t(l)}
                           </option>
-                          <option value="">{t("None")}</option>
-                        </select>
-                      </Field>
-                    </div>
-                  )}
-                  {tls && (
-                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                      <Field label={t("TLS certificate")}>
-                        <input
+                        ))}
+                    </Select>
+                    {plaintext && (
+                      <div className="mt-3 rounded-lg border border-amber-500/20 bg-amber-500/7 px-3 py-2 text-[10px] leading-5 text-amber-500">
+                        {t(
+                          "HTTP and SOCKS are plaintext proxy protocols. Prefer local/LAN use or place them behind a protected transport.",
+                        )}
+                      </div>
+                    )}
+                  </section>
+                  {!["wireguard", "tunnel", "tun"].includes(form.protocol) && (
+                    <section>
+                      <div className="panel-section-title mb-3">
+                        {t("Transport")}
+                      </div>
+                      {form.protocol === "hysteria" ? (
+                        <div className="grid grid-cols-2">
+                          <Choice
+                            value="hysteria"
+                            label={t("Hysteria2 / QUIC")}
+                            active
+                            onClick={() => {}}
+                          />
+                        </div>
+                      ) : (
+                        <Select
                           className="input"
-                          value={form.tls_cert_file}
-                          onChange={(e) => set("tls_cert_file", e.target.value)}
-                          placeholder={t(
-                            "/etc/letsencrypt/live/.../fullchain.pem",
+                          aria-label={t("Transport")}
+                          value={form.transport}
+                          onChange={(e) => set("transport", e.target.value)}
+                        >
+                          {transportOptions
+                            .filter(
+                              ([v]) =>
+                                form.core === "xray" ||
+                                ["raw", "ws", "grpc", "httpupgrade"].includes(
+                                  v,
+                                ),
+                            )
+                            .map(([v, l]) => (
+                              <option
+                                key={v}
+                                value={v}
+                                disabled={
+                                  ["shadowsocks", "socks"].includes(
+                                    form.protocol,
+                                  ) && v !== "raw"
+                                }
+                              >
+                                {t(l)}
+                              </option>
+                            ))}
+                        </Select>
+                      )}
+                      {["ws", "xhttp", "httpupgrade"].includes(
+                        form.transport,
+                      ) && (
+                        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                          <Field label={t("Path")}>
+                            <Input
+                              className="input"
+                              value={form.path}
+                              onChange={(e) => set("path", e.target.value)}
+                              placeholder={t("/veloray")}
+                            />
+                          </Field>
+                          {["ws", "httpupgrade"].includes(form.transport) && (
+                            <Field label={t("Host header")}>
+                              <Input
+                                className="input"
+                                value={form.host_header}
+                                onChange={(e) =>
+                                  set("host_header", e.target.value)
+                                }
+                                placeholder={t("cdn.example.com")}
+                              />
+                            </Field>
                           )}
-                        />
-                      </Field>
-                      <Field label={t("TLS private key")}>
-                        <input
-                          className="input"
-                          value={form.tls_key_file}
-                          onChange={(e) => set("tls_key_file", e.target.value)}
-                          placeholder={t(
-                            "/etc/letsencrypt/live/.../privkey.pem",
-                          )}
-                        />
-                      </Field>
-                      <Field label={t("Server name")} className="sm:col-span-2">
-                        <input
-                          className="input"
-                          value={form.tls_server_name}
-                          onChange={(e) =>
-                            set("tls_server_name", e.target.value)
-                          }
-                          placeholder={t("vpn.example.com")}
-                        />
-                      </Field>
-                    </div>
+                        </div>
+                      )}
+                      {form.transport === "grpc" && (
+                        <div className="mt-3">
+                          <Field label={t("gRPC service")}>
+                            <Input
+                              className="input"
+                              value={form.service_name}
+                              onChange={(e) =>
+                                set("service_name", e.target.value)
+                              }
+                              placeholder={t("veloray-grpc")}
+                            />
+                          </Field>
+                        </div>
+                      )}
+                    </section>
                   )}
-                  {reality && (
-                    <div className="mt-3 space-y-3">
+                  {!["wireguard", "tunnel", "tun"].includes(form.protocol) && (
+                    <section>
+                      <div className="panel-section-title mb-3">
+                        {t("Security")}
+                      </div>
+                      <div className="grid grid-cols-3 gap-2">
+                        {[
+                          ["none", t("None")],
+                          ["tls", t("TLS")],
+                          ["reality", t("REALITY")],
+                        ].map(([v, l]) => (
+                          <Choice
+                            key={v}
+                            value={v}
+                            label={l}
+                            active={form.security === v}
+                            disabled={
+                              (form.protocol === "hysteria" && v !== "tls") ||
+                              ((form.protocol === "shadowsocks" ||
+                                form.protocol === "socks") &&
+                                v !== "none") ||
+                              (v === "reality" &&
+                                (form.protocol !== "vless" ||
+                                  !["raw", "grpc", "xhttp"].includes(
+                                    form.transport,
+                                  )))
+                            }
+                            onClick={(v) => set("security", v)}
+                          />
+                        ))}
+                      </div>
+                      {vision && (
+                        <div className="mt-3">
+                          <Field label={t("VLESS flow")}>
+                            <Select
+                              className="input"
+                              value={form.flow}
+                              onChange={(e) => set("flow", e.target.value)}
+                            >
+                              <option value="xtls-rprx-vision">
+                                {t("XTLS Vision")}
+                              </option>
+                              <option value="">{t("None")}</option>
+                            </Select>
+                          </Field>
+                        </div>
+                      )}
+                      {tls && (
+                        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                          <Field label={t("TLS certificate")}>
+                            <Input
+                              className="input"
+                              value={form.tls_cert_file}
+                              onChange={(e) =>
+                                set("tls_cert_file", e.target.value)
+                              }
+                              placeholder={t(
+                                "/etc/letsencrypt/live/.../fullchain.pem",
+                              )}
+                            />
+                          </Field>
+                          <Field label={t("TLS private key")}>
+                            <Input
+                              className="input"
+                              value={form.tls_key_file}
+                              onChange={(e) =>
+                                set("tls_key_file", e.target.value)
+                              }
+                              placeholder={t(
+                                "/etc/letsencrypt/live/.../privkey.pem",
+                              )}
+                            />
+                          </Field>
+                          <Field
+                            label={t("Server name")}
+                            className="sm:col-span-2"
+                          >
+                            <SNIScanner
+                              node={form.node}
+                              value={form.tls_server_name}
+                              onChange={(v) => {
+                                set("tls_server_name", v);
+                              }}
+                            />
+                          </Field>
+                        </div>
+                      )}
+                      {reality && (
+                        <div className="mt-3 space-y-3">
+                          <div className="flex items-center justify-between rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2">
+                            <div>
+                              <div className="text-[11px] font-semibold">
+                                {t("REALITY identity")}
+                              </div>
+                              <div className="mt-0.5 text-[9px] text-[var(--muted)]">
+                                {t(
+                                  "Generate X25519 keys on the selected node.",
+                                )}
+                              </div>
+                            </div>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={realityKeys}
+                              disabled={busy}
+                            >
+                              <KeyRound className="h-3.5 w-3.5" />
+                              {t("Generate")}
+                            </Button>
+                          </div>
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            <Field label={t("Destination")}>
+                              <Input
+                                className="input"
+                                value={form.reality_dest}
+                                onChange={(e) =>
+                                  set("reality_dest", e.target.value)
+                                }
+                              />
+                            </Field>
+                            <Field label={t("Server name")}>
+                              <SNIScanner
+                                node={form.node}
+                                value={form.reality_server_name}
+                                onChange={(v) => {
+                                  set("reality_server_name", v);
+                                  set("reality_dest", v + ":443");
+                                }}
+                              />
+                            </Field>
+                            <Field label={t("Private key")}>
+                              <Input
+                                className="input mono"
+                                value={form.reality_private_key}
+                                onChange={(e) =>
+                                  set("reality_private_key", e.target.value)
+                                }
+                              />
+                            </Field>
+                            <Field label={t("Public key")}>
+                              <Input
+                                className="input mono"
+                                value={form.reality_public_key}
+                                onChange={(e) =>
+                                  set("reality_public_key", e.target.value)
+                                }
+                              />
+                            </Field>
+                          </div>
+                        </div>
+                      )}
+                    </section>
+                  )}
+                  {form.protocol === "wireguard" && (
+                    <section>
+                      <div className="panel-section-title mb-3">
+                        {t("WireGuard")}
+                      </div>
                       <div className="flex items-center justify-between rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2">
                         <div>
                           <div className="text-[11px] font-semibold">
-                            {t("REALITY identity")}
+                            {t("Server key pair")}
                           </div>
                           <div className="mt-0.5 text-[9px] text-[var(--muted)]">
-                            {t("Generate X25519 keys on the selected node.")}
+                            {t("Generated by Xray on the selected node.")}
                           </div>
                         </div>
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={realityKeys}
+                          onClick={wgKeys}
                           disabled={busy}
                         >
                           <KeyRound className="h-3.5 w-3.5" />
                           {t("Generate")}
                         </Button>
                       </div>
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <Field label={t("Destination")}>
-                          <input
-                            className="input"
-                            value={form.reality_dest}
-                            onChange={(e) =>
-                              set("reality_dest", e.target.value)
-                            }
-                          />
-                        </Field>
-                        <Field label={t("Server name")}>
-                          <input
-                            className="input"
-                            value={form.reality_server_name}
-                            onChange={(e) =>
-                              set("reality_server_name", e.target.value)
-                            }
-                          />
-                        </Field>
+                      <div className="mt-3 grid gap-3 sm:grid-cols-2">
                         <Field label={t("Private key")}>
-                          <input
+                          <Input
                             className="input mono"
-                            value={form.reality_private_key}
+                            value={form.wg_secret_key}
                             onChange={(e) =>
-                              set("reality_private_key", e.target.value)
+                              set("wg_secret_key", e.target.value)
                             }
                           />
                         </Field>
                         <Field label={t("Public key")}>
-                          <input
+                          <Input
                             className="input mono"
-                            value={form.reality_public_key}
+                            value={form.wg_public_key}
                             onChange={(e) =>
-                              set("reality_public_key", e.target.value)
+                              set("wg_public_key", e.target.value)
                             }
                           />
                         </Field>
+                        <Field label={t("MTU")}>
+                          <Input
+                            className="input"
+                            type="number"
+                            min="1200"
+                            max="9000"
+                            value={form.wg_mtu}
+                            onChange={(e) => set("wg_mtu", e.target.value)}
+                          />
+                        </Field>
+                        <Field label={t("Client DNS")}>
+                          <Input
+                            className="input"
+                            value={form.wg_dns}
+                            onChange={(e) => set("wg_dns", e.target.value)}
+                          />
+                        </Field>
                       </div>
-                    </div>
+                    </section>
                   )}
-                </section>
-              )}
-              {form.protocol === "wireguard" && (
-                <section>
-                  <div className="panel-section-title mb-3">
-                    {t("WireGuard")}
-                  </div>
-                  <div className="flex items-center justify-between rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2">
-                    <div>
-                      <div className="text-[11px] font-semibold">
-                        {t("Server key pair")}
+                  {form.protocol === "socks" && (
+                    <section>
+                      <div className="panel-section-title mb-3">
+                        {t("SOCKS options")}
                       </div>
-                      <div className="mt-0.5 text-[9px] text-[var(--muted)]">
-                        {t("Generated by Xray on the selected node.")}
+                      <label className="flex items-center justify-between rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2.5 text-[11px]">
+                        <span>{t("Enable UDP relay")}</span>
+                        <Input
+                          type="checkbox"
+                          checked={form.socks_udp}
+                          onChange={(e) => set("socks_udp", e.target.checked)}
+                        />
+                      </label>
+                    </section>
+                  )}
+                  {form.protocol === "shadowsocks" && (
+                    <section>
+                      <div className="panel-section-title mb-3">
+                        {t("Shadowsocks")}
                       </div>
-                    </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={wgKeys}
-                      disabled={busy}
-                    >
-                      <KeyRound className="h-3.5 w-3.5" />
-                      {t("Generate")}
-                    </Button>
-                  </div>
-                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                    <Field label={t("Private key")}>
-                      <input
-                        className="input mono"
-                        value={form.wg_secret_key}
-                        onChange={(e) => set("wg_secret_key", e.target.value)}
-                      />
-                    </Field>
-                    <Field label={t("Public key")}>
-                      <input
-                        className="input mono"
-                        value={form.wg_public_key}
-                        onChange={(e) => set("wg_public_key", e.target.value)}
-                      />
-                    </Field>
-                    <Field label={t("MTU")}>
-                      <input
-                        className="input"
-                        type="number"
-                        min="1200"
-                        max="9000"
-                        value={form.wg_mtu}
-                        onChange={(e) => set("wg_mtu", e.target.value)}
-                      />
-                    </Field>
-                    <Field label={t("Client DNS")}>
-                      <input
-                        className="input"
-                        value={form.wg_dns}
-                        onChange={(e) => set("wg_dns", e.target.value)}
-                      />
-                    </Field>
-                  </div>
-                </section>
-              )}
-              {form.protocol === "socks" && (
-                <section>
-                  <div className="panel-section-title mb-3">
-                    {t("SOCKS options")}
-                  </div>
-                  <label className="flex items-center justify-between rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2.5 text-[11px]">
-                    <span>{t("Enable UDP relay")}</span>
-                    <input
-                      type="checkbox"
-                      checked={form.socks_udp}
-                      onChange={(e) => set("socks_udp", e.target.checked)}
-                    />
-                  </label>
-                </section>
-              )}
-              {form.protocol === "shadowsocks" && (
-                <section>
-                  <div className="panel-section-title mb-3">
-                    {t("Shadowsocks")}
-                  </div>
-                  <Field label={t("Cipher")}>
-                    <select
-                      className="input"
-                      value={form.ss_method}
-                      onChange={(e) => set("ss_method", e.target.value)}
-                    >
-                      <option value="aes-256-gcm">{t("AES-256-GCM")}</option>
-                      <option value="chacha20-poly1305">
-                        {t("ChaCha20-Poly1305")}
-                      </option>
-                    </select>
-                  </Field>
-                </section>
-              )}
-              {form.protocol === "hysteria" && (
-                <section>
-                  <div className="panel-section-title mb-3">
-                    {t("Hysteria2")}
-                  </div>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <Field label={t("UDP idle timeout")}>
-                      <input
-                        className="input"
-                        type="number"
-                        min="10"
-                        value={form.hy_udp_idle}
-                        onChange={(e) => set("hy_udp_idle", e.target.value)}
-                      />
-                    </Field>
-                    <Field label={t("Masquerade URL")}>
-                      <input
-                        className="input"
-                        value={form.hy_masquerade}
-                        onChange={(e) => set("hy_masquerade", e.target.value)}
-                        placeholder={t("https://example.com")}
-                      />
-                    </Field>
-                  </div>
-                </section>
-              )}
-              {form.protocol === "tunnel" && (
-                <section>
-                  <div className="panel-section-title mb-3">
-                    {t("Tunnel / port forwarding")}
-                  </div>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <Field label={t("Allowed network")}>
-                      <select
-                        className="input"
-                        value={form.tunnel_network}
-                        onChange={(e) => set("tunnel_network", e.target.value)}
-                      >
-                        <option value="tcp">{t("TCP")}</option>
-                        <option value="udp">{t("UDP")}</option>
-                        <option value="tcp,udp">{t("TCP + UDP")}</option>
-                      </select>
-                    </Field>
-                    <Field label={t("Rewrite address")}>
-                      <input
-                        className="input"
-                        value={form.tunnel_address}
-                        onChange={(e) => set("tunnel_address", e.target.value)}
-                        placeholder={t("target.example.com")}
-                      />
-                    </Field>
-                    <Field label={t("Rewrite port")}>
-                      <input
-                        className="input"
-                        type="number"
-                        min="0"
-                        max="65535"
-                        value={form.tunnel_port}
-                        onChange={(e) => set("tunnel_port", e.target.value)}
-                      />
-                    </Field>
-                    <label className="flex items-center justify-between rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2.5 text-[11px]">
-                      <span>{t("Follow redirected destination")}</span>
-                      <input
-                        type="checkbox"
-                        checked={form.tunnel_redirect}
-                        onChange={(e) =>
-                          set("tunnel_redirect", e.target.checked)
-                        }
+                      <Field label={t("Cipher")}>
+                        <Select
+                          className="input"
+                          value={form.ss_method}
+                          onChange={(e) => set("ss_method", e.target.value)}
+                        >
+                          <option value="aes-256-gcm">
+                            {t("AES-256-GCM")}
+                          </option>
+                          <option value="chacha20-poly1305">
+                            {t("ChaCha20-Poly1305")}
+                          </option>
+                        </Select>
+                      </Field>
+                    </section>
+                  )}
+                  {form.protocol === "hysteria" && (
+                    <section>
+                      <div className="panel-section-title mb-3">
+                        {t("Hysteria2")}
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <Field label={t("UDP idle timeout")}>
+                          <Input
+                            className="input"
+                            type="number"
+                            min="10"
+                            value={form.hy_udp_idle}
+                            onChange={(e) => set("hy_udp_idle", e.target.value)}
+                          />
+                        </Field>
+                        <Field label={t("Masquerade URL")}>
+                          <Input
+                            className="input"
+                            value={form.hy_masquerade}
+                            onChange={(e) =>
+                              set("hy_masquerade", e.target.value)
+                            }
+                            placeholder={t("https://example.com")}
+                          />
+                        </Field>
+                      </div>
+                    </section>
+                  )}
+                  {form.protocol === "tunnel" && (
+                    <section>
+                      <div className="panel-section-title mb-3">
+                        {t("Tunnel / port forwarding")}
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <Field label={t("Allowed network")}>
+                          <Select
+                            className="input"
+                            value={form.tunnel_network}
+                            onChange={(e) =>
+                              set("tunnel_network", e.target.value)
+                            }
+                          >
+                            <option value="tcp">{t("TCP")}</option>
+                            <option value="udp">{t("UDP")}</option>
+                            <option value="tcp,udp">{t("TCP + UDP")}</option>
+                          </Select>
+                        </Field>
+                        <Field label={t("Rewrite address")}>
+                          <Input
+                            className="input"
+                            value={form.tunnel_address}
+                            onChange={(e) =>
+                              set("tunnel_address", e.target.value)
+                            }
+                            placeholder={t("target.example.com")}
+                          />
+                        </Field>
+                        <Field label={t("Rewrite port")}>
+                          <Input
+                            className="input"
+                            type="number"
+                            min="0"
+                            max="65535"
+                            value={form.tunnel_port}
+                            onChange={(e) => set("tunnel_port", e.target.value)}
+                          />
+                        </Field>
+                        <label className="flex items-center justify-between rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2.5 text-[11px]">
+                          <span>{t("Follow redirected destination")}</span>
+                          <Input
+                            type="checkbox"
+                            checked={form.tunnel_redirect}
+                            onChange={(e) =>
+                              set("tunnel_redirect", e.target.checked)
+                            }
+                          />
+                        </label>
+                      </div>
+                    </section>
+                  )}
+                  {form.protocol === "tun" && (
+                    <section>
+                      <div className="panel-section-title mb-3">
+                        {t("TUN interface")}
+                      </div>
+                      <div className="rounded-lg border border-amber-500/20 bg-amber-500/7 px-3 py-2 text-[10px] leading-5 text-amber-500">
+                        {t(
+                          "TUN changes host routing. VeloRay validates the Xray config, but route design should still be tested carefully to avoid loops.",
+                        )}
+                      </div>
+                      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                        <Field label={t("Interface name")}>
+                          <Input
+                            className="input"
+                            value={form.tun_name}
+                            onChange={(e) => set("tun_name", e.target.value)}
+                          />
+                        </Field>
+                        <Field label={t("MTU")}>
+                          <Input
+                            className="input"
+                            type="number"
+                            min="576"
+                            max="9000"
+                            value={form.tun_mtu}
+                            onChange={(e) => set("tun_mtu", e.target.value)}
+                          />
+                        </Field>
+                        <Field label={t("Gateway CIDRs")}>
+                          <Input
+                            className="input"
+                            value={form.tun_gateway}
+                            onChange={(e) => set("tun_gateway", e.target.value)}
+                            placeholder="10.66.0.1/16"
+                          />
+                        </Field>
+                        <Field label={t("DNS servers")}>
+                          <Input
+                            className="input"
+                            value={form.tun_dns}
+                            onChange={(e) => set("tun_dns", e.target.value)}
+                            placeholder="1.1.1.1, 8.8.8.8"
+                          />
+                        </Field>
+                        <Field
+                          label={t("Automatic route CIDRs")}
+                          className="sm:col-span-2"
+                        >
+                          <Input
+                            className="input"
+                            value={form.tun_routes}
+                            onChange={(e) => set("tun_routes", e.target.value)}
+                            placeholder={t("0.0.0.0/0, ::/0 (optional)")}
+                          />
+                        </Field>
+                        <Field
+                          label={t("Outbound interface")}
+                          className="sm:col-span-2"
+                        >
+                          <Input
+                            className="input"
+                            value={form.tun_interface}
+                            onChange={(e) =>
+                              set("tun_interface", e.target.value)
+                            }
+                            placeholder={t("auto")}
+                          />
+                        </Field>
+                      </div>
+                    </section>
+                  )}
+                  <details className="rounded-lg border border-[var(--border)] p-3">
+                    <summary className="cursor-pointer text-[12px] font-medium">
+                      {t("Advanced stream settings")}
+                    </summary>
+                    <label className="label mt-3">
+                      {t("Stream settings JSON")}
+                      <Textarea
+                        className="input min-h-40 font-mono text-[11px]"
+                        value={form.stream_json}
+                        onChange={(e) => set("stream_json", e.target.value)}
+                        spellCheck={false}
                       />
                     </label>
-                  </div>
-                </section>
-              )}
-              {form.protocol === "tun" && (
-                <section>
-                  <div className="panel-section-title mb-3">
-                    {t("TUN interface")}
-                  </div>
-                  <div className="rounded-lg border border-amber-500/20 bg-amber-500/7 px-3 py-2 text-[10px] leading-5 text-amber-500">
-                    {t(
-                      "TUN changes host routing. VeloRay validates the Xray config, but route design should still be tested carefully to avoid loops.",
-                    )}
-                  </div>
-                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                    <Field label={t("Interface name")}>
-                      <input
-                        className="input"
-                        value={form.tun_name}
-                        onChange={(e) => set("tun_name", e.target.value)}
-                      />
-                    </Field>
-                    <Field label={t("MTU")}>
-                      <input
-                        className="input"
-                        type="number"
-                        min="576"
-                        max="9000"
-                        value={form.tun_mtu}
-                        onChange={(e) => set("tun_mtu", e.target.value)}
-                      />
-                    </Field>
-                    <Field label={t("Gateway CIDRs")}>
-                      <input
-                        className="input"
-                        value={form.tun_gateway}
-                        onChange={(e) => set("tun_gateway", e.target.value)}
-                        placeholder="10.66.0.1/16"
-                      />
-                    </Field>
-                    <Field label={t("DNS servers")}>
-                      <input
-                        className="input"
-                        value={form.tun_dns}
-                        onChange={(e) => set("tun_dns", e.target.value)}
-                        placeholder="1.1.1.1, 8.8.8.8"
-                      />
-                    </Field>
-                    <Field
-                      label={t("Automatic route CIDRs")}
-                      className="sm:col-span-2"
-                    >
-                      <input
-                        className="input"
-                        value={form.tun_routes}
-                        onChange={(e) => set("tun_routes", e.target.value)}
-                        placeholder={t("0.0.0.0/0, ::/0 (optional)")}
-                      />
-                    </Field>
-                    <Field
-                      label={t("Outbound interface")}
-                      className="sm:col-span-2"
-                    >
-                      <input
-                        className="input"
-                        value={form.tun_interface}
-                        onChange={(e) => set("tun_interface", e.target.value)}
-                        placeholder={t("auto")}
-                      />
-                    </Field>
-                  </div>
-                </section>
-              )}
-              <details className="rounded-lg border border-[var(--border)] p-3">
-                <summary className="cursor-pointer text-[12px] font-medium">
-                  {t("Advanced stream settings")}
-                </summary>
-                <p className="mt-2 text-[11px] leading-5 text-[var(--muted)]">
-                  {t(
-                    "Configure transport, ALPN, socket and TLS options. Ports, credentials and security mode use the fields above. Xray validates changes before applying them.",
-                  )}
-                </p>
-                <label className="label mt-3">
-                  {t("Stream settings JSON")}
-                  <textarea
-                    className="input min-h-40 font-mono text-[11px]"
-                    value={form.stream_json}
-                    onChange={(e) => set("stream_json", e.target.value)}
-                    spellCheck={false}
-                  />
-                </label>
-              </details>
-              <Button
-                type="submit"
-                className="w-full"
-                disabled={busy || !form.node}
-              >
-                <Plus className="h-3.5 w-3.5" />
-                {busy
-                  ? "Saving…"
-                  : editing
-                    ? t("Save & deploy")
-                    : t("Create & deploy")}
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
+                  </details>
+                  <Button
+                    type="submit"
+                    className="w-full"
+                    disabled={busy || !form.node}
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    {busy
+                      ? "Saving…"
+                      : editing
+                        ? t("Save & deploy")
+                        : t("Create & deploy")}
+                  </Button>
+                </form>
+              </CardContent>
+            </Card>
+          </Dialog>
+        )}
         <Card>
           <CardHeader>
             <div>
               <CardTitle>{t("Configured inbounds")}</CardTitle>
-              <p className="mt-1 text-[11px] text-[var(--muted)]">
-                {items.length} {t("listeners across")} {nodes.length}{" "}
-                {t("nodes")}
-              </p>
             </div>
-            <Badge tone="blue">{t("Xray")}</Badge>
+            <Badge tone="blue">Xray + sing-box</Badge>
           </CardHeader>
           <CardContent className="p-0">
             <div className="hidden md:block table-wrap">
@@ -1414,14 +1494,14 @@ export function InboundsPage() {
           </div>
           <div className="grid gap-3 p-5">
             <Field label={t("Name")}>
-              <input
+              <Input
                 className="input"
                 value={cloneName}
                 onChange={(e) => setCloneName(e.target.value)}
               />
             </Field>
             <Field label={t("Node")}>
-              <select
+              <Select
                 className="input"
                 value={cloneNode}
                 onChange={(e) => setCloneNode(e.target.value)}
@@ -1431,10 +1511,10 @@ export function InboundsPage() {
                     {n.name}
                   </option>
                 ))}
-              </select>
+              </Select>
             </Field>
             <Field label={t("Port")}>
-              <input
+              <Input
                 className="input"
                 type="number"
                 value={clonePort}

@@ -11,16 +11,35 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 )
 
 type Server struct {
 	NodeID, Version, Token string
 	Manager                *Manager
+	SingBox                *Manager
 }
 
 func (s Server) Handler() http.Handler {
 	mux := http.NewServeMux()
+	var coreMu sync.Mutex
+	validate := func(c context.Context, raw []byte) error {
+		x, b, e := splitCore(raw)
+		if e != nil {
+			return e
+		}
+		if e = s.Manager.Validate(c, x); e != nil {
+			return e
+		}
+		if len(b) > 0 {
+			if s.SingBox == nil {
+				return errors.New("sing-box is not installed on this node")
+			}
+			return s.SingBox.Validate(c, b)
+		}
+		return nil
+	}
 	write := func(w http.ResponseWriter, code int, v any) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -65,32 +84,109 @@ func (s Server) Handler() http.Handler {
 		if !st.Running {
 			status = "degraded"
 		}
-		return map[string]any{"status": status, "node_id": s.NodeID, "version": s.Version, "time": time.Now().UTC(), "xray": st}, nil
+		return map[string]any{"status": status, "node_id": s.NodeID, "version": s.Version, "time": time.Now().UTC(), "xray": st, "singbox": func() any {
+			if s.SingBox != nil {
+				return s.SingBox.Status(c)
+			}
+			return nil
+		}()}, nil
 	}, "GET"))
 	mux.HandleFunc("/xray/status", wrap(func(c context.Context, _ map[string]json.RawMessage) (any, error) { return s.Manager.Status(c), nil }, "GET"))
-	mux.HandleFunc("/xray/stats", wrap(func(c context.Context, _ map[string]json.RawMessage) (any, error) { return s.Manager.Stats(c) }, "GET"))
+	mux.HandleFunc("/xray/stats", wrap(func(c context.Context, _ map[string]json.RawMessage) (any, error) {
+		a, e := s.Manager.Stats(c)
+		if e != nil {
+			return a, e
+		}
+		if s.SingBox != nil {
+			b, e := s.SingBox.Stats(c)
+			if e != nil {
+				return a, e
+			}
+			a.CoreLedgers = map[string]string{"singbox": b.LedgerID}
+			a.Stat = append(a.Stat, b.Stat...)
+
+			a.OnlineUsers = append(a.OnlineUsers, b.OnlineUsers...)
+			for name, ips := range b.OnlineIPs {
+				a.OnlineIPs[name] = ips
+			}
+		}
+		return a, nil
+	}, "GET"))
 	mux.HandleFunc("/xray/ports", wrap(func(c context.Context, v map[string]json.RawMessage) (any, error) {
-		checks, err := s.Manager.Ports(c, v["config"])
+		x, b, err := splitCore(v["config"])
+		if err != nil {
+			return nil, err
+		}
+		checks, err := s.Manager.Ports(c, x)
+		if err == nil && len(b) > 0 && s.SingBox != nil {
+			other, e := s.SingBox.Ports(c, b)
+			err = e
+			checks = append(checks, other...)
+		}
 		return map[string]any{"ports": checks}, err
 	}, "POST"))
 	mux.HandleFunc("/xray/validate", wrap(func(c context.Context, v map[string]json.RawMessage) (any, error) {
-		return map[string]string{"status": "valid"}, s.Manager.Validate(c, v["config"])
+		return map[string]string{"status": "valid"}, validate(c, v["config"])
 	}, "POST"))
 	mux.HandleFunc("/xray/apply", wrap(func(c context.Context, v map[string]json.RawMessage) (any, error) {
 		var id string
 		_ = json.Unmarshal(v["operation_id"], &id)
-		return map[string]string{"status": "applied", "operation_id": id}, s.Manager.Apply(c, id, v["config"])
+		coreMu.Lock()
+		defer coreMu.Unlock()
+		if e := validate(c, v["config"]); e != nil {
+			return nil, e
+		}
+		x, b, e := splitCore(v["config"])
+		if e != nil {
+			return nil, e
+		}
+		if e = s.Manager.Apply(c, id, x); e != nil {
+			return nil, e
+		}
+		if len(b) > 0 {
+			if e = s.SingBox.Apply(c, id, b); e != nil {
+				if re := s.Manager.Rollback(c, id); re != nil {
+					return nil, errors.Join(e, re)
+				}
+				return nil, e
+			}
+		}
+		return map[string]string{"status": "applied", "operation_id": id}, nil
 	}, "POST"))
 	mux.HandleFunc("/xray/rollback", wrap(func(c context.Context, v map[string]json.RawMessage) (any, error) {
 		var id string
 		_ = json.Unmarshal(v["operation_id"], &id)
-		return map[string]string{"status": "rolled_back"}, s.Manager.Rollback(c, id)
+		coreMu.Lock()
+		defer coreMu.Unlock()
+		e := s.Manager.Rollback(c, id)
+		if s.SingBox != nil {
+			if s.SingBox.hasOperation(id) {
+				e = errors.Join(e, s.SingBox.Rollback(c, id))
+			}
+		}
+		return map[string]string{"status": "rolled_back"}, e
 	}, "POST"))
 	mux.HandleFunc("/xray/restart", wrap(func(c context.Context, _ map[string]json.RawMessage) (any, error) {
 		return map[string]string{"status": "restarted"}, s.Manager.Restart(c)
 	}, "POST"))
+	mux.HandleFunc("/sni/scan", wrap(func(c context.Context, v map[string]json.RawMessage) (any, error) {
+		var domains []string
+		if b, ok := v["domains"]; ok {
+			if e := json.Unmarshal(b, &domains); e != nil {
+				return nil, e
+			}
+		}
+		result, e := scanSNI(c, domains)
+		return map[string]any{"results": result}, e
+	}, "POST"))
 	for path, wg := range map[string]bool{"/xray/x25519": false, "/xray/wg": true} {
 		mux.HandleFunc(path, wrap(func(c context.Context, _ map[string]json.RawMessage) (any, error) { return s.Manager.Keypair(c, wg) }, "POST"))
+	}
+	if s.SingBox != nil {
+		mux.HandleFunc("/singbox/status", wrap(func(c context.Context, _ map[string]json.RawMessage) (any, error) { return s.SingBox.Status(c), nil }, "GET"))
+		mux.HandleFunc("/singbox/restart", wrap(func(c context.Context, _ map[string]json.RawMessage) (any, error) {
+			return map[string]string{"status": "restarted"}, s.SingBox.Restart(c)
+		}, "POST"))
 	}
 	return mux
 }
@@ -123,7 +219,16 @@ func Serve(ctx context.Context, version string) error {
 		return err
 	}
 	go m.Poll(ctx)
-	s := &http.Server{Addr: listen, Handler: Server{env("VELORAY_NODE_ID", "local"), version, token, m}.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 55 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16384}
+	var second *Manager
+	if _, e := os.Stat(env("VELORAY_SINGBOX_BINARY", "/usr/local/bin/sing-box")); e == nil {
+		second, err = NewManager(env("VELORAY_SINGBOX_BINARY", "/usr/local/bin/sing-box"), env("VELORAY_SINGBOX_CONFIG", "/usr/local/etc/sing-box/config.json"), "sing-box.service", "/var/lib/veloray-agent/sing-box-state.json", nil)
+		if err != nil {
+			return err
+		}
+		second.Core = "singbox"
+		go second.Poll(ctx)
+	}
+	s := &http.Server{Addr: listen, Handler: Server{NodeID: env("VELORAY_NODE_ID", "local"), Version: version, Token: token, Manager: m, SingBox: second}.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 55 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16384}
 	go func() {
 		<-ctx.Done()
 		c, cancel := context.WithTimeout(context.Background(), 10*time.Second)

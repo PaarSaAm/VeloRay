@@ -14,15 +14,24 @@ import (
 )
 
 var editable = map[string]string{
-	"nodes":    "name public_host agent_url agent_token enabled verify_tls config_patch",
-	"inbounds": "name node listen port protocol transport security flow path host_header service_name tls_server_name tls_cert_file tls_key_file reality_dest reality_server_name reality_private_key reality_public_key reality_short_id protocol_settings stream_settings enabled",
-	"clients":  "owner_id inbound name credential protocol_settings subscription_token enabled expires_at traffic_limit_bytes renewal_interval_days next_renewal_at traffic_multiplier note",
-	"users":    "username email is_active is_staff is_superuser password role permissions allowed_inbounds own_clients_only max_clients traffic_budget_bytes",
-	"api_keys": "name scope enabled expires_at user",
+	"nodes":         "name public_host agent_url agent_token enabled verify_tls config_patch",
+	"inbounds":      "name node core listen port protocol transport security flow path host_header service_name tls_server_name tls_cert_file tls_key_file reality_dest reality_server_name reality_private_key reality_public_key reality_short_id protocol_settings stream_settings enabled",
+	"clients":       "device_limit start_after_first_use duration_days owner_id inbound name credential protocol_settings subscription_token enabled expires_at traffic_limit_bytes renewal_interval_days next_renewal_at traffic_multiplier note",
+	"outbounds":     "name node core tag protocol config enabled",
+	"routing_rules": "name node core priority config enabled",
+	"users":         "username email is_active is_staff is_superuser password role permissions allowed_inbounds own_clients_only max_clients traffic_budget_bytes",
+	"api_keys":      "name scope enabled expires_at user",
 }
 
 func (s *Server) view(ctx context.Context, q Query, kind string, d Data) (Data, error) {
 	out := public(d)
+	if kind == "clients" {
+		out["device_count"] = len(obj(d, "_device_seen"))
+		out["device_limit"] = num(d, "device_limit")
+		out["start_after_first_use"] = flag(d, "start_after_first_use")
+		out["duration_days"] = num(d, "duration_days")
+		out["first_used_at"] = d["first_used_at"]
+	}
 	switch kind {
 	case "users":
 		out["two_factor_enabled"] = flag(d, "_totp_enabled")
@@ -110,6 +119,9 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request, path string, a Acto
 		return s.telegramAPI(w, r, path, a)
 	}
 	parts := strings.Split(path, "/")
+	if path == "openapi" && r.Method == "GET" {
+		return openAPISpec(s.Config.PublicURL), 200, nil
+	}
 	if path == "clients/batch" {
 		return s.batchClients(w, r, a)
 	}
@@ -173,6 +185,9 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request, path string, a Acto
 	}
 	if e = s.entityAccess(ctx, a, kind, id); e != nil {
 		return nil, 0, e
+	}
+	if kind == "api_keys" && len(parts) > 2 && parts[2] == "reset" {
+		return s.resetAPIKey(w, r, id, a)
 	}
 	if len(parts) > 2 {
 		return s.action(w, r, kind, id, parts[2], a)
@@ -277,7 +292,7 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request, path string, a Acto
 		}
 	}
 	ids := []int64{}
-	if kind == "inbounds" {
+	if oneOf(kind, "inbounds", "outbounds", "routing_rules") {
 		ids = nodeIDs(num(old, "node"), num(input, "node"))
 	}
 	if kind == "clients" {
@@ -369,6 +384,10 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request, path string, a Acto
 				}
 			}
 			if e := validateInbound(ctx, tx, s.Config, d); e != nil {
+				return nil, fail(400, e.Error())
+			}
+		case "outbounds", "routing_rules":
+			if e := validateNetworkEntity(ctx, tx, kind, d); e != nil {
 				return nil, fail(400, e.Error())
 			}
 		case "clients":
@@ -645,6 +664,12 @@ func (s *Server) action(w http.ResponseWriter, r *http.Request, kind string, id 
 			}
 			cfg, e := buildConfig(ctx, s.Store.Pool, d)
 			return Data{"node": str(d, "name"), "config": cfg}, 200, e
+		case "singbox-status":
+			if r.Method != "GET" {
+				return nil, 0, fail(405, "method not allowed")
+			}
+			out, err := s.nodeCall(ctx, d, "/singbox/status", nil)
+			return out, 200, err
 		case "xray-status":
 			if r.Method != "GET" {
 				return nil, 0, fail(405, "method not allowed")
@@ -659,6 +684,22 @@ func (s *Server) action(w http.ResponseWriter, r *http.Request, kind string, id 
 			return nil, 0, fail(405, "method not allowed")
 		}
 		switch action {
+		case "sni-scan":
+			input, err := readBody(w, r)
+			if err != nil {
+				return nil, 0, err
+			}
+			if err = allowed(input, "domains"); err != nil {
+				return nil, 0, fail(400, err.Error())
+			}
+			out, err := s.nodeCall(ctx, d, "/sni/scan", input)
+			if err != nil {
+				return nil, 0, fail(502, err.Error())
+			}
+			return out, 200, nil
+		case "singbox-restart":
+			out, err := s.nodeCall(ctx, d, "/singbox/restart", Data{})
+			return out, 200, err
 		case "check-listener":
 			input, err := readBody(w, r)
 			if err != nil {

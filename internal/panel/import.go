@@ -68,7 +68,7 @@ func readExternalBackup(ctx context.Context, path string) (Data, error) {
 		if errors.Is(err, exec.ErrNotFound) {
 			return nil, errors.New("Python 3 is required; rerun the VeloRay installer")
 		}
-		return nil, errors.New("Backup is invalid, too large or unsupported. Use a SQLite backup or the documented PasarGuard JSON export")
+		return nil, errors.New("Backup is invalid, too large or unsupported. Use a SQLite backup or the documented Relational JSON export")
 	}
 	return decode(stdout.Bytes())
 }

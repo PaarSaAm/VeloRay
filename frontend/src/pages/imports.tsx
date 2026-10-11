@@ -1,3 +1,4 @@
+import { Select, Input } from "@/components/ui/controls";
 import { useLocale, t } from "@/lib/i18n";
 import { useEffect, useState, type FormEvent } from "react";
 import {
@@ -20,7 +21,7 @@ import { PageHeader } from "@/components/common/page-header";
 
 const bytes = (n: number) => `${(n / 1024 ** 3).toFixed(3)} ${t("GB")}`;
 
-export function ImportsPage() {
+export function ImportsPage({ embedded = false }: { embedded?: boolean }) {
   const [nodes, setNodes] = useState<NodeItem[]>([]);
   const [node, setNode] = useState("");
   const [file, setFile] = useState<File | null>(null);
@@ -134,13 +135,15 @@ export function ImportsPage() {
   }
   return (
     <div className="space-y-5" dir={fa ? "rtl" : "ltr"}>
-      <PageHeader
-        title={t("Import data", "واردسازی داده‌ها")}
-        description={t(
-          "Migrate clients, shared quotas and inbounds with a review before importing.",
-          "انتقال کلاینت‌ها، مصرف و سهمیه‌های مشترک و اینباندها با پیش‌نمایش.",
-        )}
-      />
+      {!embedded && (
+        <PageHeader
+          title={t("Import data", "واردسازی داده‌ها")}
+          description={t(
+            "Migrate clients, shared quotas and inbounds with a review before importing.",
+            "انتقال کلاینت‌ها، مصرف و سهمیه‌های مشترک و اینباندها با پیش‌نمایش.",
+          )}
+        />
+      )}
       <div className="grid gap-3 sm:grid-cols-3">
         {[
           t("1 · Select backup", "۱ · انتخاب فایل"),
@@ -213,7 +216,7 @@ export function ImportsPage() {
               >
                 <label className="label">
                   {t("Target node", "نود مقصد")}
-                  <select
+                  <Select
                     className="input"
                     value={node}
                     disabled={busy}
@@ -229,7 +232,7 @@ export function ImportsPage() {
                         {n.name} · {n.public_host}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </label>
                 <label className="label">
                   {t("Backup file", "فایل بکاپ")}
@@ -241,7 +244,7 @@ export function ImportsPage() {
                       {file?.name ||
                         t("No file selected", "فایلی انتخاب نشده است")}
                     </span>
-                    <input
+                    <Input
                       className="backup-file-input"
                       aria-label={t("Backup file", "فایل بکاپ")}
                       type="file"
@@ -309,7 +312,7 @@ export function ImportsPage() {
                     >
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <label className="flex min-w-0 items-start gap-3">
-                          <input
+                          <Input
                             type="checkbox"
                             className="mt-1"
                             checked={selected.has(i.source_id)}
@@ -352,7 +355,7 @@ export function ImportsPage() {
                           </Badge>
                           <label className="label w-24">
                             {t("Port", "پورت")}
-                            <input
+                            <Input
                               aria-label={`${t("Port for", "پورت")} ${i.name}`}
                               className="input h-8"
                               type="number"
@@ -404,7 +407,7 @@ export function ImportsPage() {
                     </div>
                   </div>
                   <label className="flex items-start gap-3 rounded-md bg-[var(--surface-2)] p-3 text-[12px] leading-6">
-                    <input
+                    <Input
                       type="checkbox"
                       className="mt-1.5"
                       checked={acknowledged}

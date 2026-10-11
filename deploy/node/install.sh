@@ -12,6 +12,7 @@ arch="$(uname -m)";case "$arch" in x86_64) arch=amd64;;aarch64|arm64) arch=arm64
 (cd "bin/linux-$arch" && sha256sum -c SHA256SUMS) >>"$VELORAY_INSTALL_LOG" 2>&1
 vr_packages openssl curl jq unzip ca-certificates iproute2
 [[ -x /usr/local/bin/xray ]]||vr_run bash scripts/xray-install.sh
+if [[ -n "${VELORAY_SINGBOX_DIRECTORY:-}" ]];then vr_run bash scripts/singbox-install.sh;elif [[ ! -x /usr/local/bin/sing-box ]];then echo 'Use the complete VeloRay runtime package to install sing-box.' >&2;exit 1;fi
 install -d -m 0750 /etc/veloray-node
 install -d -m 0700 /var/lib/veloray-agent
 install -d -m 0755 /usr/local/etc/xray
@@ -56,6 +57,8 @@ install -m 0755 "bin/linux-$arch/veloray-agent" /usr/local/bin/veloray-agent
 install -m 0644 deploy/systemd/{veloray-agent,xray}.service /etc/systemd/system/
 vr_step 'Start and verify the node' 'راه‌اندازی و بررسی سلامت نود'
 vr_run systemctl daemon-reload
+vr_run systemctl enable sing-box.service
+vr_run systemctl restart sing-box.service
 vr_run systemctl enable xray.service veloray-agent.service
 vr_ports_check
 vr_run systemctl reset-failed xray.service

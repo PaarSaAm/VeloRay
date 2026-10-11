@@ -103,7 +103,7 @@ exec 9>/run/lock/veloray-install.lock
 flock -n 9||fail 'Another VeloRay installation is running. Wait for it to finish.'
 export VELORAY_INSTALL_LOCKED=true
 trap 'vr_error "$LINENO" "$?"' ERR
-printf '\nVeloRay 0.2.0\n'
+printf '\nVeloRay 1.0\n'
 vr_say 'Server installation' 'نصب روی سرور'
 vr_step 'Prepare system packages' 'آماده‌سازی بسته‌های سیستم'
 packages=(ca-certificates curl jq tar xz-utils unzip openssl iproute2)
@@ -141,6 +141,11 @@ prepare_runtime() {
  mkdir -p "$bundle"
  tar --no-same-owner --no-same-permissions -xf "$archive" -C "$bundle" || fail 'Cannot extract runtime archive.'
  [[ -f "$bundle/source.SHA256SUMS" && -x "$bundle/bin/linux-$arch/veloray" && -x "$bundle/bin/linux-$arch/veloray-agent" && -f "$bundle/frontend/dist/index.html" ]]||fail 'Runtime archive is incomplete.'
+ if [[ -z "${VELORAY_XRAY_ARCHIVE:-}" && -x "$bundle/xray/xray" && -f "$bundle/xray/SHA256SUMS" ]];then
+  (cd "$bundle/xray" && sha256sum -c SHA256SUMS) >>"$VELORAY_INSTALL_LOG" 2>&1 || fail 'Bundled Xray checksum mismatch.'
+  export VELORAY_XRAY_DIRECTORY="$bundle/xray"
+ fi
+ if [[ -x "$bundle/singbox/sing-box" && -f "$bundle/singbox/SHA256SUMS" ]];then (cd "$bundle/singbox" && sha256sum -c SHA256SUMS) >>"$VELORAY_INSTALL_LOG" 2>&1||fail 'Bundled sing-box checksum mismatch.';export VELORAY_SINGBOX_DIRECTORY="$bundle/singbox";fi
  bash "$source_directory/scripts/build-runtime.sh" --manifest >"$temporary/current-source.SHA256SUMS" || fail 'Cannot verify runtime source files.'
  if ! cmp -s "$temporary/current-source.SHA256SUMS" "$bundle/source.SHA256SUMS";then
   printf 'Runtime source manifest mismatch:\n' >>"$VELORAY_INSTALL_LOG"
@@ -154,10 +159,6 @@ prepare_runtime() {
  rm -rf -- "$source_directory/bin/linux-$arch" "$source_directory/frontend/dist"
  cp -a "$bundle/bin/linux-$arch" "$source_directory/bin/" || fail 'Cannot copy runtime binaries.'
  cp -a "$bundle/frontend/dist" "$source_directory/frontend/" || fail 'Cannot copy runtime frontend.'
- if [[ -z "${VELORAY_XRAY_ARCHIVE:-}" && -x "$bundle/xray/xray" && -f "$bundle/xray/SHA256SUMS" ]];then
-  (cd "$bundle/xray" && sha256sum -c SHA256SUMS) >>"$VELORAY_INSTALL_LOG" 2>&1 || fail 'Bundled Xray checksum mismatch.'
-  export VELORAY_XRAY_DIRECTORY="$bundle/xray"
- fi
  vr_say "Using verified $arch runtime." "بستهٔ آمادهٔ $arch تأیید شد."
 }
 
@@ -251,6 +252,11 @@ if [[ ! -x /usr/local/bin/xray && -z "${VELORAY_XRAY_ARCHIVE:-}" && -z "${VELORA
  export VELORAY_XRAY_ARCHIVE="$temporary/$xray_asset" VELORAY_XRAY_SHA256="${digest#sha256:}"
  fetch "https://github.com/XTLS/Xray-core/releases/download/$xray_version/$xray_asset" "$VELORAY_XRAY_ARCHIVE"
  verify "$VELORAY_XRAY_SHA256" "$VELORAY_XRAY_ARCHIVE"
+fi
+if [[ ! -x /usr/local/bin/sing-box && -z "${VELORAY_SINGBOX_DIRECTORY:-}" ]];then
+ prepare_build_tools
+ vr_run bash "$source_directory/scripts/build-singbox.sh" "$arch" "$temporary/singbox"
+ export VELORAY_SINGBOX_DIRECTORY="$temporary/singbox"
 fi
 export VELORAY_INSTALL_REPO="$repository" VELORAY_INSTALL_REF="$reference"
 installer="$source_directory/scripts/install-panel.sh"

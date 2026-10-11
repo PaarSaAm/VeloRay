@@ -24,7 +24,7 @@ type Query interface {
 }
 type Store struct{ Pool *pgxpool.Pool }
 
-var tables = map[string]string{"nodes": "vr_nodes", "inbounds": "vr_inbounds", "clients": "vr_clients", "users": "vr_users", "api_keys": "vr_api_keys", "audit": "vr_audit"}
+var tables = map[string]string{"nodes": "vr_nodes", "inbounds": "vr_inbounds", "clients": "vr_clients", "users": "vr_users", "api_keys": "vr_api_keys", "audit": "vr_audit", "outbounds": "vr_outbounds", "routing_rules": "vr_routing_rules"}
 
 func OpenStore(ctx context.Context, dsn string) (*Store, error) {
 	cfg, err := pgxpool.ParseConfig(dsn)

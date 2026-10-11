@@ -120,9 +120,6 @@ export function TrafficPage() {
         <CardHeader>
           <div>
             <CardTitle>{t("Per-client usage")}</CardTitle>
-            <p className="mt-1 text-[11px] text-[var(--muted)]">
-              {t("Usage and quotas update every 5 seconds.")}
-            </p>
           </div>
           <BarChart3 className="h-4 w-4 text-[var(--muted)]" />
         </CardHeader>

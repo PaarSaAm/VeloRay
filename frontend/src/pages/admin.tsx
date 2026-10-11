@@ -1,3 +1,4 @@
+import { Select, Input } from "@/components/ui/controls";
 import { t } from "@/lib/i18n";
 import { useLocale, tx } from "@/lib/i18n";
 const permissionOptions = [
@@ -270,9 +271,6 @@ export function AdminPage() {
           <CardHeader>
             <div>
               <CardTitle>{t("New API key")}</CardTitle>
-              <p className="mt-1 text-[10px] text-[var(--muted)]">
-                {t("This secret will not be shown again.")}
-              </p>
             </div>
             <Badge tone="green">{t("One-time secret")}</Badge>
           </CardHeader>
@@ -344,13 +342,10 @@ export function AdminPage() {
           <CardHeader>
             <div>
               <CardTitle>{t("Account directory")}</CardTitle>
-              <p className="mt-1 text-[10px] text-[var(--muted)]">
-                {t("Administrators, resellers and custom access.")}
-              </p>
             </div>
             <div className="relative w-full max-w-64">
               <Search className="pointer-events-none absolute left-3 top-2.5 h-3.5 w-3.5 text-[var(--muted)]" />
-              <input
+              <Input
                 className="input h-9 pl-8"
                 placeholder={t("Search users")}
                 value={query}
@@ -455,11 +450,6 @@ export function AdminPage() {
           <CardHeader>
             <div>
               <CardTitle>{t("Scoped API keys")}</CardTitle>
-              <p className="mt-1 text-[10px] text-[var(--muted)]">
-                {t(
-                  "Use Bearer tokens for automation without sharing a panel password.",
-                )}
-              </p>
             </div>
             <Badge tone={cfg?.api_keys_enabled ? "green" : "amber"}>
               {cfg?.api_keys_enabled ? t("Enabled") : t("Disabled in Settings")}
@@ -571,7 +561,7 @@ export function AdminPage() {
           <form onSubmit={save}>
             <div className="grid gap-4 p-5 sm:grid-cols-2">
               <Field label={t("Username")}>
-                <input
+                <Input
                   className="input"
                   value={editor.username}
                   onChange={(e) =>
@@ -581,7 +571,7 @@ export function AdminPage() {
                 />
               </Field>
               <Field label={t("Email")}>
-                <input
+                <Input
                   className="input"
                   type="email"
                   value={editor.email}
@@ -594,7 +584,7 @@ export function AdminPage() {
                 label={editor.id ? t("New password (optional)") : t("Password")}
                 className="sm:col-span-2"
               >
-                <input
+                <Input
                   className="input"
                   type="password"
                   minLength={12}
@@ -611,7 +601,7 @@ export function AdminPage() {
                 onChange={(v) => setEditor({ ...editor, is_active: v })}
               />
               <Field label={t("Role")}>
-                <select
+                <Select
                   className="input"
                   aria-label={t("Role")}
                   value={editor.role}
@@ -626,7 +616,7 @@ export function AdminPage() {
                   <option value="reseller">{t("Reseller")}</option>
                   <option value="viewer">{t("Viewer")}</option>
                   <option value="custom">{t("Custom access")}</option>
-                </select>
+                </Select>
               </Field>
               {editor.role !== "administrator" && (
                 <>
@@ -640,7 +630,7 @@ export function AdminPage() {
                     }
                   />
                   <Field label={t("Client limit")}>
-                    <input
+                    <Input
                       className="input"
                       type="number"
                       min="0"
@@ -651,7 +641,7 @@ export function AdminPage() {
                     />
                   </Field>
                   <Field label={t("Traffic budget (GB)")}>
-                    <input
+                    <Input
                       className="input"
                       type="number"
                       min="0"
@@ -672,7 +662,7 @@ export function AdminPage() {
                           key={i.id}
                           className="flex items-center gap-2 text-xs"
                         >
-                          <input
+                          <Input
                             type="checkbox"
                             checked={editor.allowed_inbounds.includes(i.id)}
                             onChange={(e) =>
@@ -710,7 +700,7 @@ export function AdminPage() {
                             key={key}
                             className="flex items-center gap-2 text-xs"
                           >
-                            <input
+                            <Input
                               type="checkbox"
                               checked={editor.permissions.includes(key)}
                               onChange={(e) =>
@@ -771,7 +761,7 @@ export function AdminPage() {
           <form onSubmit={createKey}>
             <div className="grid gap-4 p-5 sm:grid-cols-2">
               <Field label={t("Key name")}>
-                <input
+                <Input
                   className="input"
                   value={keyEditor.name}
                   onChange={(e) =>
@@ -781,7 +771,7 @@ export function AdminPage() {
                 />
               </Field>
               <Field label={t("Owner")}>
-                <select
+                <Select
                   className="input"
                   value={keyEditor.user}
                   onChange={(e) =>
@@ -795,10 +785,10 @@ export function AdminPage() {
                         {u.username}
                       </option>
                     ))}
-                </select>
+                </Select>
               </Field>
               <Field label={t("Scope")}>
-                <select
+                <Select
                   className="input"
                   value={keyEditor.scope}
                   onChange={(e) =>
@@ -808,10 +798,10 @@ export function AdminPage() {
                   <option value="read">{t("Read only")}</option>
                   <option value="write">{t("Read + write")}</option>
                   <option value="admin">{t("Administrator")}</option>
-                </select>
+                </Select>
               </Field>
               <Field label={t("Expires in days")}>
-                <input
+                <Input
                   className="input"
                   type="number"
                   min="1"
@@ -892,7 +882,7 @@ function Toggle({
   return (
     <label className="flex items-center justify-between rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2.5 text-[11px]">
       <span>{label}</span>
-      <input
+      <Input
         type="checkbox"
         checked={checked}
         onChange={(e) => onChange(e.target.checked)}

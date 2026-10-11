@@ -1,7 +1,22 @@
 import { t } from "@/lib/i18n";
 import { useLocale, tx } from "@/lib/i18n";
 import { can, useSession } from "@/lib/session";
-import { smoothPath } from "@/lib/chart";
+import * as echarts from "echarts/core";
+import { LineChart } from "echarts/charts";
+import {
+  GridComponent,
+  TooltipComponent,
+  DataZoomComponent,
+} from "echarts/components";
+import { CanvasRenderer } from "echarts/renderers";
+echarts.use([
+  LineChart,
+  GridComponent,
+  TooltipComponent,
+  DataZoomComponent,
+  CanvasRenderer,
+]);
+import { useTheme } from "@/components/theme/theme-provider";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowUpRight,
@@ -105,173 +120,156 @@ function Metric({
   );
 }
 function TrafficChart({ points }: { points: TrafficPoint[] }) {
-  useLocale();
-  const data = points.length
-    ? points
-    : [
-        {
-          at: new Date().toISOString(),
-          used_traffic_bytes: 0,
-          active_clients: 0,
-          online_nodes: 0,
+  const root = useRef<HTMLDivElement>(null),
+    chart = useRef<echarts.ECharts | null>(null);
+  const { resolved } = useTheme();
+  const [mode, setMode] = useState("usage");
+  useEffect(() => {
+    if (!root.current) return;
+    chart.current = echarts.init(root.current);
+    const observer = new ResizeObserver(() => chart.current?.resize());
+    observer.observe(root.current);
+    return () => {
+      observer.disconnect();
+      chart.current?.dispose();
+      chart.current = null;
+    };
+  }, []);
+  useEffect(() => {
+    const css = getComputedStyle(document.documentElement),
+      color = css.getPropertyValue("--chart-line").trim();
+    const data = points.map((p, i) => [
+      new Date(p.at).getTime(),
+      mode === "usage"
+        ? p.used_traffic_bytes
+        : i
+          ? Math.max(
+              0,
+              p.used_traffic_bytes - points[i - 1].used_traffic_bytes,
+            ) /
+            Math.max(
+              1,
+              (new Date(p.at).getTime() -
+                new Date(points[i - 1].at).getTime()) /
+                1000,
+            )
+          : 0,
+    ]);
+    chart.current?.setOption(
+      {
+        animation: !matchMedia("(prefers-reduced-motion: reduce)").matches,
+        animationDurationUpdate: 500,
+        textStyle: { fontFamily: "Inter, Vazirmatn, sans-serif" },
+        grid: { left: 64, right: 24, top: 18, bottom: 56 },
+        tooltip: {
+          className: "chart-tooltip",
+          trigger: "axis",
+          confine: true,
+          backgroundColor: css.getPropertyValue("--card"),
+          borderColor: css.getPropertyValue("--border"),
+          textStyle: { color: css.getPropertyValue("--fg") },
+          axisPointer: {
+            type: "line",
+            lineStyle: {
+              color: css.getPropertyValue("--muted"),
+              type: "dashed",
+            },
+          },
+          valueFormatter: (v: unknown) =>
+            fmt(Number(v)) + (mode === "rate" ? "/s" : ""),
         },
-      ];
-  const width = 900,
-    height = 250,
-    padX = 20,
-    padTop = 16,
-    padBottom = 28;
-  const values = data.map((x) => x.used_traffic_bytes),
-    max = Math.max(1, ...values),
-    min = Math.min(...values),
-    span = Math.max(1, max - min);
-  const coords = data.map((d, i) => ({
-    x: padX + (i / Math.max(1, data.length - 1)) * (width - padX * 2),
-    y:
-      padTop +
-      (1 - (d.used_traffic_bytes - min) / span) * (height - padTop - padBottom),
-    d,
-  }));
-  const line = smoothPath(coords);
-  const area = tx(
-    "{0} L {1} {2} L {3} {4} Z",
-    line,
-    coords.at(-1)?.x ?? padX,
-    height - padBottom,
-    coords[0]?.x ?? padX,
-    height - padBottom,
-  );
-  const ticks = [0, 0.25, 0.5, 0.75, 1].map((v) => ({
-    label: fmt(min + span * (1 - v)),
-    y: padTop + v * (height - padTop - padBottom),
-  }));
-  const [hover, setHover] = useState<number | null>(null);
-  if (points.length === 0) {
-    return (
-      <div className="flex h-[220px] items-center justify-center text-sm text-[var(--muted)]">
-        {t("No traffic recorded yet.")}
-      </div>
+        xAxis: {
+          type: "time",
+          boundaryGap: false,
+          axisLine: { show: false },
+          axisTick: { show: false },
+          axisLabel: {
+            color: css.getPropertyValue("--muted"),
+            hideOverlap: true,
+            fontSize: 10,
+          },
+          splitLine: { show: false },
+        },
+        yAxis: {
+          type: "value",
+          scale: true,
+          axisLabel: {
+            color: css.getPropertyValue("--muted"),
+            fontSize: 10,
+            formatter: (v: number) => fmt(v) + (mode === "rate" ? "/s" : ""),
+          },
+          splitLine: {
+            lineStyle: {
+              color: css.getPropertyValue("--chart-grid"),
+              type: "dashed",
+            },
+          },
+        },
+        dataZoom: [
+          { type: "inside", zoomOnMouseWheel: false },
+          {
+            type: "slider",
+            height: 16,
+            bottom: 4,
+            borderColor: "transparent",
+            showDetail: false,
+            handleSize: "70%",
+            backgroundColor: css.getPropertyValue("--surface-2"),
+            fillerColor: color + "22",
+            dataBackground: { lineStyle: { color }, areaStyle: { color } },
+          },
+        ],
+        series: [
+          {
+            name: mode === "usage" ? t("Used") : t("Transfer rate"),
+            type: "line",
+            smooth: 0.25,
+            showSymbol: false,
+            sampling: "lttb",
+            lineStyle: { color, width: 2.5 },
+            itemStyle: { color },
+            areaStyle: {
+              color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                { offset: 0, color: color + "38" },
+                { offset: 1, color: color + "00" },
+              ]),
+            },
+            data,
+          },
+        ],
+      },
+      true,
     );
-  }
-  const hp = hover === null ? null : coords[hover];
-  function move(e: React.MouseEvent<SVGSVGElement>) {
-    const r = e.currentTarget.getBoundingClientRect(),
-      x = ((e.clientX - r.left) / r.width) * width;
-    let best = 0,
-      dist = Infinity;
-    coords.forEach((p, i) => {
-      const d = Math.abs(p.x - x);
-      if (d < dist) {
-        dist = d;
-        best = i;
-      }
-    });
-    setHover(best);
-  }
+  }, [points, resolved, mode]);
   return (
-    <div
-      className="chart-shell h-[280px] w-full"
-      onMouseLeave={() => setHover(null)}
-    >
-      {hp && (
-        <div
-          className="chart-tooltip"
-          style={{
-            left: tx(
-              "clamp(90px, {0}%, calc(100% - 90px))",
-              (hp.x / width) * 100,
-            ),
-            top: `${(hp.y / height) * 100}%`,
-            transform:
-              hp.y < 75
-                ? "translate(-50%, 12px)"
-                : "translate(-50%, calc(-100% - 12px))",
-          }}
+    <div>
+      <div className="chart-mode">
+        <button
+          type="button"
+          className={mode === "usage" ? "selected" : ""}
+          onClick={() => setMode("usage")}
         >
-          <div className="font-semibold">{fmt(hp.d.used_traffic_bytes)}</div>
-          <div className="mt-0.5 text-[var(--muted)]">
-            {new Date(hp.d.at).toLocaleString()}
-          </div>
-        </div>
-      )}
-      <svg
-        role="img"
-        aria-label={tx(
-          "Recorded traffic from {0} to {1}",
-          fmt(values[0]),
-          fmt(values.at(-1) ?? 0),
-        )}
-        viewBox={`0 0 ${width} ${height}`}
-        className="h-full w-full"
-        preserveAspectRatio="none"
-        onMouseMove={move}
-      >
-        <defs>
-          <linearGradient id="trafficFill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="var(--chart-line)" stopOpacity=".25" />
-            <stop offset="100%" stopColor="var(--chart-line)" stopOpacity="0" />
-          </linearGradient>
-        </defs>
-        {ticks.map((t, i) => (
-          <g key={i}>
-            <line
-              x1={padX}
-              x2={width - padX}
-              y1={t.y}
-              y2={t.y}
-              stroke="var(--chart-grid)"
-              strokeWidth="1"
-              vectorEffect="non-scaling-stroke"
-            />
-            <text x={padX + 2} y={t.y - 5} fill="var(--muted)" fontSize="9">
-              {t.label}
-            </text>
-          </g>
-        ))}
-        <path d={area} fill="url(#trafficFill)" />
-        <path
-          d={line}
-          fill="none"
-          stroke="var(--chart-line)"
-          strokeWidth="2"
-          vectorEffect="non-scaling-stroke"
-          strokeLinejoin="round"
-          strokeLinecap="round"
-        />
-        {hp && (
-          <>
-            <line
-              x1={hp.x}
-              x2={hp.x}
-              y1={padTop}
-              y2={height - padBottom}
-              stroke="var(--border-strong)"
-              strokeDasharray="3 4"
-              vectorEffect="non-scaling-stroke"
-            />
-            <circle
-              cx={hp.x}
-              cy={hp.y}
-              r="4"
-              fill="var(--card)"
-              stroke="var(--chart-line)"
-              strokeWidth="2"
-              vectorEffect="non-scaling-stroke"
-            />
-          </>
-        )}
-      </svg>
-      <div className="pointer-events-none absolute bottom-2 left-5 right-5 flex justify-between text-[9px] text-[var(--muted)]">
-        <span>
-          {data.length > 1
-            ? new Date(data[0].at).toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit",
-              })
-            : t("24h ago")}
-        </span>
-        <span>{t("Now")}</span>
+          {t("Used")}
+        </button>
+        <button
+          type="button"
+          className={mode === "rate" ? "selected" : ""}
+          onClick={() => setMode("rate")}
+        >
+          {t("Transfer rate")}
+        </button>
       </div>
+      <div
+        ref={root}
+        className="h-[300px] w-full"
+        role="img"
+        aria-label={t("Traffic chart")}
+      />
+      {!points.length && (
+        <p className="text-center text-xs text-[var(--muted)]">
+          {t("No traffic recorded yet.")}
+        </p>
+      )}
     </div>
   );
 }
@@ -450,7 +448,7 @@ export function Dashboard() {
         <Metric
           label={t("CPU")}
           value={`${(sys?.cpu_percent ?? 0).toFixed(1)}%`}
-          note={tx("{0} logical cores", sys?.cpu_count ?? 0)}
+          note={`${sys?.cpu_count ?? 0} ${(sys?.cpu_count ?? 0) === 1 ? "Core" : "Cores"}`}
           icon="microchip"
           tone={(sys?.cpu_percent ?? 0) > 85 ? "amber" : "blue"}
         />
@@ -490,24 +488,20 @@ export function Dashboard() {
         <Metric
           label={t("Healthy nodes")}
           value={`${o?.nodes_online ?? 0}/${o?.nodes_total ?? 0}`}
-          note={local ? t("Local node enrolled") : t("Waiting for local node")}
+          note={""}
           icon="server"
           tone="blue"
         />
         <Metric
           label={t("Recorded traffic")}
           value={fmt(o?.traffic_used_bytes ?? 0)}
-          note={
-            quota
-              ? tx("{0}% of quotas", usagePct.toFixed(1))
-              : t("Across all clients")
-          }
+          note={quota ? tx("{0}% of quotas", usagePct.toFixed(1)) : ""}
           icon="chart-area"
         />
         <Metric
           label={t("Inbounds")}
           value={String(o?.inbounds_total ?? 0)}
-          note={tx("{0} protocol families", o?.protocols?.length ?? 0)}
+          note={""}
           icon="diagram-project"
           tone="amber"
         />
@@ -524,9 +518,6 @@ export function Dashboard() {
           <CardHeader>
             <div>
               <CardTitle>{t("Traffic overview")}</CardTitle>
-              <p className="mt-1 text-[10px] text-[var(--muted)]">
-                {t("Traffic collected during the last 24 hours")}
-              </p>
             </div>
             <div className="text-right">
               <div className="text-[18px] font-semibold">
@@ -545,9 +536,6 @@ export function Dashboard() {
           <CardHeader>
             <div>
               <CardTitle>{t("Client health")}</CardTitle>
-              <p className="mt-1 text-[10px] text-[var(--muted)]">
-                {t("Current availability")}
-              </p>
             </div>
             <CircleGauge className="h-4 w-4 text-[var(--muted)]" />
           </CardHeader>
@@ -583,9 +571,6 @@ export function Dashboard() {
           <CardHeader>
             <div>
               <CardTitle>{t("Protocol mix")}</CardTitle>
-              <p className="mt-1 text-[10px] text-[var(--muted)]">
-                {t("Configured inbound families")}
-              </p>
             </div>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -617,9 +602,6 @@ export function Dashboard() {
           <CardHeader>
             <div>
               <CardTitle>{t("Nodes")}</CardTitle>
-              <p className="mt-1 text-[10px] text-[var(--muted)]">
-                {t("Panel node and remote agents")}
-              </p>
             </div>
             <Badge
               tone={nodes.some((n) => n.status === "ok") ? "green" : "amber"}
@@ -678,9 +660,6 @@ export function Dashboard() {
           <CardHeader>
             <div>
               <CardTitle>{t("Top consumers")}</CardTitle>
-              <p className="mt-1 text-[10px] text-[var(--muted)]">
-                {t("Clients ranked by traffic")}
-              </p>
             </div>
             <ArrowUpRight className="h-4 w-4 text-[var(--muted)]" />
           </CardHeader>

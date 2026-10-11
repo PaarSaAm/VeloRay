@@ -162,7 +162,7 @@ func buildConfig(ctx context.Context, q Query, node Data) (Data, error) {
 	}
 	items := []any{}
 	for _, i := range inbounds {
-		if !flag(i, "enabled") || !flag(node, "enabled") {
+		if !flag(i, "enabled") || !flag(node, "enabled") || str(i, "core") == "singbox" {
 			continue
 		}
 		all, e := list(ctx, q, "clients", "WHERE inbound_id=$1", num(i, "id"))
@@ -197,6 +197,9 @@ func buildConfig(ctx context.Context, q Query, node Data) (Data, error) {
 	}
 	cfg := Data{"log": Data{"loglevel": "warning"}, "inbounds": items, "outbounds": []any{Data{"protocol": "freedom", "tag": "direct"}, Data{"protocol": "blackhole", "tag": "blocked"}}, "routing": Data{"domainStrategy": "AsIs", "rules": []any{}}}
 	cfg = deepMerge(cfg, obj(node, "config_patch"))
+	if e = applyNetworkEntities(ctx, q, node, cfg, "xray"); e != nil {
+		return nil, e
+	}
 	cfg["api"] = Data{"tag": "api", "services": []any{"StatsService"}}
 	cfg["stats"] = Data{}
 	policy := obj(cfg, "policy")
@@ -231,15 +234,27 @@ func buildConfig(ctx context.Context, q Query, node Data) (Data, error) {
 			rules = append(rules, r)
 		}
 	}
+	deviceRules, e := deviceRulesForNode(ctx, q, node, "xray")
+	if e != nil {
+		return nil, e
+	}
+	rules = append(deviceRules, rules...)
 	routing["rules"] = rules
 	cfg["routing"] = routing
+	sing, e := buildSingBoxConfig(ctx, q, node)
+	if e != nil {
+		return nil, e
+	}
+	if sing != nil {
+		cfg["_singbox"] = sing
+	}
 	return cfg, nil
 }
 func shareLink(c, i, node Data) string {
 	p := str(i, "protocol")
 	host := str(node, "public_host")
 	addr := net.JoinHostPort(host, strconv.FormatInt(num(i, "port"), 10))
-	name := "VeloRay · " + str(c, "name") + " · " + str(i, "name")
+	name := connectionName(c, i)
 	t := str(i, "transport")
 	if t == "raw" {
 		t = "tcp"

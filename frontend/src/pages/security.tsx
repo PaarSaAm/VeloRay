@@ -1,3 +1,4 @@
+import { Input } from "@/components/ui/controls";
 import { useLocale, t } from "@/lib/i18n";
 import { FormEvent, useEffect, useState } from "react";
 import {
@@ -100,9 +101,6 @@ export function SecurityPage() {
               </div>
               <div>
                 <CardTitle>{t("Two-factor authentication")}</CardTitle>
-                <p className="mt-1 text-[11px] text-[var(--muted)]">
-                  {t("TOTP with single-use recovery codes")}
-                </p>
               </div>
             </div>
           </CardHeader>
@@ -117,7 +115,7 @@ export function SecurityPage() {
                   onSubmit={disable}
                   className="grid gap-3 md:grid-cols-[1fr_1fr_auto]"
                 >
-                  <input
+                  <Input
                     className="input"
                     type="password"
                     placeholder={t("Current password")}
@@ -125,7 +123,7 @@ export function SecurityPage() {
                     onChange={(e) => setPassword(e.target.value)}
                     required
                   />
-                  <input
+                  <Input
                     className="input"
                     placeholder={t("Authenticator / recovery code")}
                     value={disableCode}
@@ -151,7 +149,7 @@ export function SecurityPage() {
                   </div>
                 </div>
                 <div className="flex flex-col gap-2 sm:flex-row">
-                  <input
+                  <Input
                     className="input"
                     placeholder={t("6-digit code")}
                     value={code}

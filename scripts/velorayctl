@@ -5,7 +5,7 @@ ENV_FILE="${VELORAY_ENV_FILE:-/etc/veloray/veloray.env}"
 command="${1:-menu}"; shift || true
 if [[ "$command" == help || "$command" == --help ]];then
  cat <<'HELP'
-VeloRay 0.2.0 · Server management
+VeloRay 1.0 · Server management
   veloray                         Interactive menu
   veloray status | doctor | url
   veloray start | stop | restart
@@ -25,6 +25,7 @@ fi
 set -a
 source "$ENV_FILE"
 set +a
+export VELORAY_LANGUAGE=en
 source /opt/veloray/current/scripts/common.sh
 vr_log_init
 WEB=veloray-web.service
@@ -32,10 +33,10 @@ AGENT=veloray-agent.service
 trap 'vr_error "$LINENO" "$?"' ERR
 VR_STEP="$(vr_text 'Server management' 'مدیریت سرور')"
 summary() {
- printf '\nVeloRay 0.2.0\n'
+ printf 'VeloRay 1.0\n\n'
  vr_say "Panel: $VELORAY_PUBLIC_URL" "آدرس پنل: $VELORAY_PUBLIC_URL"
  local unit state label
- for unit in "$WEB" "$AGENT" xray.service;do
+ for unit in "$WEB" "$AGENT" xray.service sing-box.service;do
   state="$(systemctl is-active "$unit" 2>/dev/null)"||true
   label="${state:-unknown}"
   if [[ "${VELORAY_LANGUAGE:-en}" == fa ]];then case "$state" in active) label=فعال;;inactive) label=خاموش;;failed) label=خطا;;activating) label=درحال‌راه‌اندازی;;esac;fi
@@ -44,7 +45,7 @@ summary() {
 }
 doctor() {
  local unit body failed=0
- for unit in "$WEB" "$AGENT" xray.service postgresql.service nginx.service;do
+ for unit in "$WEB" "$AGENT" xray.service sing-box.service postgresql.service nginx.service;do
   if systemctl is-active --quiet "$unit";then printf '  ✓ %s\n' "$unit";else printf '  ✗ %s\n' "$unit";failed=1;fi
  done
  if vr_run nginx -t;then vr_say '  ✓ HTTPS configuration' '  ✓ پیکربندی HTTPS';else vr_say '  ✗ HTTPS configuration' '  ✗ پیکربندی HTTPS';failed=1;fi
@@ -58,40 +59,40 @@ doctor() {
 menu() {
  local selection value
  while true;do
+  [[ ! -t 1 ]]||printf '\033[2J\033[H'
   summary
-  if [[ "${VELORAY_LANGUAGE:-en}" == fa ]];then
-   cat <<'MENU'
+  cat <<'MENU'
 
-   1  وضعیت سرویس‌ها           2  آدرس پنل
-   3  راه‌اندازی مجدد          4  روشن کردن
-   5  خاموش کردن               6  مشاهدهٔ گزارش‌ها
-   7  تغییر رمز مدیر           8  تغییر دامنه یا آی‌پی
-   9  تغییر پورت              10  گواهی HTTPS
-  11  پشتیبان‌گیری            12  بازیابی پشتیبان
-  13  پشتیبان‌گیری روزانه     14  بررسی سلامت
-  15  عیب‌یابی و بازیابی Xray 16  به‌روزرسانی
-  17  حذف برنامه              18  زبان / Language
-  19  بررسی پورت‌های VPN      20  تغییر پورت اتصال
-  21  فهرست اتصال‌ها
-   0  خروج
-MENU
-  else
-   cat <<'MENU'
+  SERVICES
+   1  Service status
+   2  Panel address
+   3  Restart services
+   4  Start services
+   5  Stop services
+   6  View logs
 
-   1  Service status            2  Panel address
-   3  Restart                   4  Start
-   5  Stop                      6  Logs
-   7  Administrator password    8  Domain or IP
-   9  Panel port               10  HTTPS certificate
-  11  Backup                   12  Restore backup
-  13  Daily backups            14  Health check
-  15  Recover Xray             16  Update
-  17  Uninstall                18  Language / زبان
-  19  VPN port inspection      20  Move inbound port
+  CONFIGURATION
+   7  Reset administrator password
+   8  Change domain or IP
+   9  Change panel port
+  10  HTTPS certificate
+
+  MAINTENANCE
+  11  Create backup
+  12  Restore backup
+  13  Schedule daily backups
+  14  Health check
+  15  Recover Xray
+  16  Update VeloRay
+  17  Uninstall VeloRay
+
+  NETWORK
+  19  Inspect VPN ports
+  20  Change inbound port
   21  List inbounds
+
    0  Exit
 MENU
-  fi
   [[ -t 0 ]]||return 0
   read -rp "$(vr_text 'Select [0–21]: ' 'انتخاب [۰ تا ۲۱]: ')" selection||return 0
   local -a operation=()
@@ -106,7 +107,6 @@ MENU
    12) read -rp "$(vr_text 'Backup path: ' 'مسیر فایل پشتیبان: ')" value;operation=(restore "$value");;
    13) read -rp "$(vr_text 'Daily backups [daily/off]: ' 'پشتیبان روزانه [daily/off]: ')" value;operation=(backup-schedule "$value");;
    14) operation=(doctor);;15) operation=(repair);;16) operation=(update);;17) operation=(uninstall);;
-   18) read -rp 'Language [en/fa]: ' value;operation=(language "$value");;
    19) operation=(ports);;
    20) veloray host-inbounds|jq -r '.[]|"ID=\(.id)  \(.name)  :\(.port)"';read -rp "$(vr_text 'Inbound ID: ' 'شناسه اتصال: ')" value;read -rp "$(vr_text 'New VPN port: ' 'پورت جدید VPN: ')" port;operation=(inbound-port "$value" "$port");;
    21) operation=(inbounds);;
@@ -114,7 +114,7 @@ MENU
   esac
   "$0" "${operation[@]}"||true
   [[ "$selection" != 17 || -x "$0" ]]||return 0
-  set -a;source "$ENV_FILE";set +a
+  set -a;source "$ENV_FILE";set +a;export VELORAY_LANGUAGE=en
   read -rp "$(vr_text 'Press Enter to return…' 'برای بازگشت Enter بزنید…')" value||return 0
  done
 }
@@ -129,16 +129,16 @@ case "$command" in
  doctor) doctor;;
  start|stop|restart)
  vr_step "${command^} services" 'مدیریت سرویس‌های پنل و Xray'
- if [[ "$command" == stop ]];then vr_run systemctl stop "$WEB" "$AGENT" xray.service;else
+ if [[ "$command" == stop ]];then vr_run systemctl stop "$WEB" "$AGENT" xray.service sing-box.service;else
   vr_ports_check
   vr_run systemctl reset-failed xray.service
-  vr_run systemctl "$command" xray.service "$AGENT" "$WEB"
+  vr_run systemctl "$command" xray.service sing-box.service "$AGENT" "$WEB"
   vr_wait http://127.0.0.1:8610/api/health
   vr_wait http://127.0.0.1:9191/health "$VELORAY_LOCAL_NODE_TOKEN"
   doctor
  fi
  summary;;
- logs) unit="$WEB";case "${1:-web}" in agent) unit="$AGENT";;xray) unit=xray.service;;web) ;;
+ logs) unit="$WEB";case "${1:-web}" in agent) unit="$AGENT";;singbox) unit=sing-box.service;;xray) unit=xray.service;;web) ;;
  install) latest="$(find /var/log/veloray -maxdepth 1 -name 'install-*.log' -type f | sort | tail -1)";[[ -n "$latest" ]]||{ vr_say 'No installation log found.' 'گزارش نصب موجود نیست.';exit 1; };exec tail -n 100 "$latest";;
  *) vr_say 'Use web, agent, xray or install.' 'گزینهٔ web، agent، xray یا install را انتخاب کنید.';exit 2;;esac;exec journalctl -u "$unit" -n 100 -f;;
  language) [[ "${1:-}" == en || "${1:-}" == fa ]]||exit 2;veloray set-env VELORAY_LANGUAGE "$1";vr_say 'Language saved.' 'زبان ذخیره شد.';;
@@ -150,14 +150,14 @@ case "$command" in
  [[ "$confirmation" == RESTORE ]]||{ vr_say 'Cancelled.' 'لغو شد.';exit 0; }
  # Always create a recovery point before replacing data and secrets.
  "$0" backup
- systemctl stop "$WEB" "$AGENT" xray.service
+ systemctl stop "$WEB" "$AGENT" xray.service sing-box.service
  trap 'echo "Restore stopped. Inspect the error and recovery backup before restarting services." >&2' ERR
  veloray restore-data "$1"
  chown root:veloray "$ENV_FILE";chmod 0640 "$ENV_FILE"
  chown root:veloray "$(dirname "$ENV_FILE")";chmod 0750 "$(dirname "$ENV_FILE")"
  # Discard old application keys before loading the restored environment.
  while IFS='=' read -r key _;do [[ "$key" =~ ^(VELORAY_[A-Z0-9_]+|DATABASE_URL)$ ]]&&unset "$key"||true;done < "$ENV_FILE"
- set -a;source "$ENV_FILE";set +a
+ set -a;source "$ENV_FILE";set +a;export VELORAY_LANGUAGE=en
  if [[ -d /usr/local/etc/xray ]];then
   find /usr/local/etc/xray -type d -exec chmod 0755 {} +
   find /usr/local/etc/xray -type f -exec chown root:nogroup {} + -exec chmod 0640 {} +
@@ -168,7 +168,7 @@ case "$command" in
  fi
  veloray render-nginx
  systemctl daemon-reload
- systemctl start xray.service "$AGENT" "$WEB"
+ systemctl start xray.service sing-box.service "$AGENT" "$WEB"
  "$0" doctor
  ;;
  reset|admin-reset)
@@ -186,7 +186,7 @@ case "$command" in
  if [[ "$command" == domain ]];then [[ "$1" =~ ^[a-zA-Z0-9.-]+$ ]]||exit 2;host="$1";port="$VELORAY_PANEL_PORT";else [[ "$1" =~ ^[0-9]+$ ]]&&(( $1>0&&$1<65536 ))||exit 2;host="$VELORAY_PUBLIC_HOST";port="$1";fi
  # Reject reserved/listening inbound ports via the Go command before changing host files.
  veloray configure-origin "$host" "$port"
- set -a;source "$ENV_FILE";set +a
+ set -a;source "$ENV_FILE";set +a;export VELORAY_LANGUAGE=en
  if ! veloray render-nginx;then veloray set-env VELORAY_PUBLIC_URL "$old_origin";veloray set-env VELORAY_PUBLIC_HOST "$old_host";veloray set-env VELORAY_PANEL_PORT "$old_port";echo 'Nginx rejected the change. Environment origin restored.' >&2;exit 1;fi
  systemctl restart "$WEB"
  ;;
@@ -204,7 +204,7 @@ case "$command" in
  vr_run systemctl restart "$AGENT"
  vr_resolve_ports
  vr_run systemctl reset-failed xray.service
- vr_run systemctl restart xray.service "$AGENT"
+ vr_run systemctl restart xray.service sing-box.service "$AGENT"
  vr_wait http://127.0.0.1:9191/health "$VELORAY_LOCAL_NODE_TOKEN"
  doctor;;
  backup-schedule)
@@ -245,9 +245,9 @@ TIMER
   vr_say 'Remove services and program files. Configuration, database and backups are preserved.' 'سرویس‌ها و فایل‌های برنامه حذف می‌شوند؛ تنظیمات، پایگاه داده و پشتیبان‌ها حفظ می‌شوند.'
   read -rp "$(vr_text 'Type REMOVE to continue: ' 'برای ادامه REMOVE را وارد کنید: ')" confirmation
   [[ "$confirmation" == REMOVE ]]||{ vr_say 'Cancelled.' 'لغو شد.';exit 0; }
-  systemctl disable --now veloray-web.service veloray-agent.service veloray-reconcile.timer veloray-backup.timer xray.service 2>/dev/null||true
+  systemctl disable --now veloray-web.service veloray-agent.service veloray-reconcile.timer veloray-backup.timer xray.service sing-box.service 2>/dev/null||true
   systemctl stop veloray-reconcile.service 2>/dev/null||true
-  rm -f /etc/systemd/system/{veloray-web,veloray-agent,veloray-reconcile,xray}.service /etc/systemd/system/veloray-reconcile.timer /etc/systemd/system/veloray-backup.{service,timer}
+  rm -f /etc/systemd/system/{veloray-web,veloray-agent,veloray-reconcile,xray,sing-box}.service /etc/systemd/system/veloray-reconcile.timer /etc/systemd/system/veloray-backup.{service,timer}
   rm -f /etc/nginx/sites-enabled/veloray /etc/nginx/sites-available/veloray /etc/letsencrypt/renewal-hooks/deploy/veloray-nginx
   systemctl daemon-reload
   if vr_run nginx -t;then vr_run systemctl reload nginx||true;fi

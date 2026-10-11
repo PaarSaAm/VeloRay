@@ -26,12 +26,13 @@ for arch in "${architectures[@]}";do
   diff -u "$bundle/source.SHA256SUMS" "$temporary/current-source.SHA256SUMS" >&2 || true
   exit 1
  fi
- [[ -x "$bundle/bin/linux-$arch/veloray" && -x "$bundle/bin/linux-$arch/veloray-agent" && -f "$bundle/frontend/dist/index.html" && -x "$bundle/xray/xray" ]]||{ echo "Incomplete runtime for $arch." >&2;exit 1; }
+ [[ -x "$bundle/bin/linux-$arch/veloray" && -x "$bundle/bin/linux-$arch/veloray-agent" && -f "$bundle/frontend/dist/index.html" && -x "$bundle/singbox/sing-box" && -x "$bundle/xray/xray" ]]||{ echo "Incomplete runtime for $arch." >&2;exit 1; }
  # Fonts, licenses and other public assets must be present in the built panel.
  while IFS= read -r -d '' public;do
   cmp -s "$public" "$bundle/frontend/dist/${public#frontend/public/}"||{ echo "Missing or changed public asset in $arch runtime: $public" >&2;exit 1; }
  done < <(find frontend/public -type f -print0)
  (cd "$bundle/bin/linux-$arch" && sha256sum -c SHA256SUMS)
  (cd "$bundle/xray" && sha256sum -c SHA256SUMS)
+ (cd "$bundle/singbox" && sha256sum -c SHA256SUMS)
  echo "Verified $arch runtime matches the extracted source."
 done

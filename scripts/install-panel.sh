@@ -37,6 +37,7 @@ release="$(mktemp -d "/opt/veloray/releases/$version-$(date -u +%Y%m%dT%H%M%SZ)-
 chmod 0755 "$release"
 mkdir -p "$release/frontend"
 cp -a frontend/dist "$release/frontend/"
+if [[ -d /opt/veloray/current/frontend/dist/assets ]];then cp -an /opt/veloray/current/frontend/dist/assets/. "$release/frontend/dist/assets/";fi
 cp -a frontend/package-lock.json frontend/package.json "$release/frontend/"
 find "$release/frontend" -type d -exec chmod 0755 {} +
 find "$release/frontend" -type f -exec chmod 0644 {} +
@@ -44,6 +45,7 @@ cp -a deploy scripts install.sh go.mod "$release/"
 mkdir -p "$release/bin/linux-$arch"
 cp -a "bin/linux-$arch/"* "$release/bin/linux-$arch/"
 [[ -x /usr/local/bin/xray ]]||vr_run bash scripts/xray-install.sh
+if [[ -n "${VELORAY_SINGBOX_DIRECTORY:-}" ]];then vr_run bash scripts/singbox-install.sh;elif [[ ! -x /usr/local/bin/sing-box ]];then echo 'Use the complete VeloRay runtime package to install sing-box.' >&2;exit 1;fi
 vr_run systemctl enable --now postgresql nginx
 existing=false
 if [[ -f /etc/veloray/veloray.env ]];then
@@ -156,6 +158,8 @@ ln -sfn "$release" /opt/veloray/current
 systemctl disable --now veloray-reconcile.timer 2>/dev/null||true
 vr_step 'Start HTTPS and panel services' 'راه‌اندازی HTTPS و سرویس‌های پنل'
 vr_run systemctl daemon-reload
+vr_run systemctl enable sing-box.service
+vr_run systemctl restart sing-box.service
 vr_run systemctl enable xray.service veloray-agent.service veloray-web.service
 vr_run systemctl restart veloray-agent.service
 vr_run veloray render-nginx

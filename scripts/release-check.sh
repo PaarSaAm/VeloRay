@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 cd "$(dirname "$0")/.."
+[[ "$(cat VERSION)" == 1.0 ]]||{ echo 'The product version is fixed at 1.0.' >&2;exit 1; }
 go test -race ./... -count=1
 go vet ./...
 (cd frontend && npm ci --no-audit --no-fund && npm run format:check && npm run build)

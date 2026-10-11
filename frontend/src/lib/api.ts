@@ -162,6 +162,7 @@ export type NodeItem = {
   config_patch: Record<string, unknown>;
 };
 export type InboundItem = {
+  core?: "xray" | "singbox";
   id: number;
   node: number;
   node_name: string;
@@ -190,6 +191,11 @@ export type InboundItem = {
   supports_clients: boolean;
 };
 export type ClientItem = {
+  device_limit: number;
+  device_count: number;
+  start_after_first_use: boolean;
+  duration_days: number;
+  first_used_at: string | null;
   owner_id: number;
   online: boolean | null;
   connection_status: string;

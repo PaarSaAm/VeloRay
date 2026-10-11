@@ -69,3 +69,7 @@ ALTER TABLE vr_telegram_updates ADD COLUMN IF NOT EXISTS sent_at timestamptz;
 
 CREATE TABLE IF NOT EXISTS vr_owner_traffic_windows (at timestamptz NOT NULL, owner_id bigint NOT NULL, bytes bigint NOT NULL CHECK(bytes>=0), PRIMARY KEY(at,owner_id));
 CREATE INDEX IF NOT EXISTS vr_owner_traffic_lookup ON vr_owner_traffic_windows(owner_id,at);
+
+CREATE TABLE IF NOT EXISTS vr_outbounds (id BIGSERIAL PRIMARY KEY, data JSONB NOT NULL, node_id BIGINT GENERATED ALWAYS AS ((data->>'node')::bigint) STORED REFERENCES vr_nodes(id));
+CREATE TABLE IF NOT EXISTS vr_routing_rules (id BIGSERIAL PRIMARY KEY, data JSONB NOT NULL, node_id BIGINT GENERATED ALWAYS AS ((data->>'node')::bigint) STORED REFERENCES vr_nodes(id));
+CREATE UNIQUE INDEX IF NOT EXISTS vr_outbounds_tag ON vr_outbounds (node_id,(data->>'core'),(data->>'tag'));

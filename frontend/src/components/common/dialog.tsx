@@ -29,6 +29,7 @@ export function Dialog({
     const key = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
+        e.stopPropagation();
         close.current();
       }
       if (e.key === "Tab") {

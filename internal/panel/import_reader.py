@@ -29,10 +29,10 @@ def normalize(tables):
     inbound_rows = tables.get("inbounds", [])
     users = tables.get("users", [])
     if users and "proxy_settings" in users[0] or "core_configs" in tables:
-        source = "pasarguard"
+        source = "relational"
         configs = tables.get("core_configs", [])
         if not configs:
-            raise ValueError("PasarGuard export is missing core_configs; the database inbound table only stores tags")
+            raise ValueError("Relational export is missing core_configs; the database inbound table only stores tags")
         tags = {integer(r["id"]): r["tag"] for r in inbound_rows}
         group_tags = defaultdict(set)
         for r in tables.get("inbounds_groups_association", []):
@@ -69,13 +69,13 @@ def normalize(tables):
         unattached = sum("user:" + str(u["id"]) not in matched for u in users)
         if unattached:
             warnings.append(str(unattached) + " users have no matching Xray inbound/group and cannot be imported")
-        warnings.append("PasarGuard subscription tokens are regenerated; distribute the new VeloRay subscription addresses")
+        warnings.append("Relational subscription tokens are regenerated; distribute the new VeloRay subscription addresses")
         warnings.append("Calendar resets, on-hold activation, host overrides and node credentials need review in VeloRay")
         return {"source": source, "inbounds": out, "warnings": warnings}
 
     if not inbound_rows or "protocol" not in inbound_rows[0] or "settings" not in inbound_rows[0]:
-        raise ValueError("Unrecognized database schema; use a 3x-ui SQLite backup or a PasarGuard tables JSON export")
-    source = "3x-ui"
+        raise ValueError("Unrecognized database schema; use a inline SQLite backup or a Relational tables JSON export")
+    source = "inline"
     traffic = defaultdict(int)
     traffic_by_email = defaultdict(int)
     for r in tables.get("client_traffics", []):
@@ -131,7 +131,7 @@ def main(path):
                 continue
             if "VIRTUAL TABLE" in available[table].upper():
                 raise ValueError("Virtual tables are not accepted")
-            # Do not read 3x-ui panel administrator credentials from the users table.
+            # Do not read inline panel administrator credentials from the users table.
             if table == "users" and "proxy_settings" not in [r["name"] for r in db.execute('pragma table_info("users")')]:
                 continue
             rows = [dict(r) for r in db.execute('select * from "' + table + '" limit ' + str(MAX_ROWS + 1))]

@@ -101,7 +101,14 @@ func (s *Server) collect(ctx context.Context, q Query, node Data) error {
 	if prev := str(node, "_ledger_id"); prev != "" && prev != ledgerID {
 		return errors.New("node accounting ledger changed; restore its state before continuing")
 	}
+	for core, value := range obj(stats, "core_ledgers") {
+		if prev := str(obj(node, "_core_ledgers"), core); prev != "" && prev != fmt.Sprint(value) {
+			return errors.New("secondary core accounting ledger changed; restore its state before continuing")
+		}
+	}
+	node["_core_ledgers"] = obj(stats, "core_ledgers")
 	node["_ledger_id"] = ledgerID
+	node["_online_ips"] = obj(stats, "online_ips")
 	node["_online_available"] = flag(stats, "online_available")
 	node["_online_tracking_required"] = flag(stats, "online_tracking_required")
 	node["_telemetry_at"] = stamp()
@@ -334,6 +341,9 @@ func (s *Server) change(ctx context.Context, ids []int64, actor Actor, action, t
 		applied = append(applied, n)
 		if _, e = s.nodeCall(ctx, n, "/xray/apply", Data{"config": configs[j], "operation_id": op}); e != nil {
 			return nil, failCode(502, "node_deploy_failed", e.Error())
+		}
+		if configs[j]["_singbox"] != nil {
+			n["_singbox_deployed"] = true
 		}
 		n["_last_operation"] = op
 		n["deploy_state"] = "applied"

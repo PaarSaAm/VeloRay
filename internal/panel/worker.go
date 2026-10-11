@@ -46,6 +46,9 @@ func (s *Server) reconcileNode(ctx context.Context, id int64) error {
 		return e
 	}
 	defer tx.Rollback(ctx)
+	if _, e = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(842100,2)`); e != nil {
+		return e
+	}
 	if e = lockNodes(ctx, tx, id); e != nil {
 		return e
 	}
@@ -117,6 +120,55 @@ func (s *Server) reconcileNode(ctx context.Context, id int64) error {
 				c["disabled_reason"] = ""
 			}
 			changed = true
+		}
+		if activateFirstUse(c, now, flag(obj(n, "_online_clients"), fmt.Sprint(num(c, "id")))) {
+			changed = true
+		}
+		if num(c, "device_limit") > 0 || len(obj(c, "_device_denied")) > 0 {
+			online := Data{}
+			members := []Data{c}
+			if account := num(c, "_account"); account > 0 {
+				members, e = list(ctx, tx, "clients", "WHERE account_id=$1", account)
+				if e != nil {
+					return e
+				}
+			}
+			memberNodes := map[int64]bool{}
+			for _, member := range members {
+				inbound, err := get(ctx, tx, "inbounds", num(member, "inbound"))
+				if err != nil {
+					return err
+				}
+				nodeID := num(inbound, "node")
+				memberNodes[nodeID] = true
+				other := n
+				if nodeID != id {
+					other, err = get(ctx, tx, "nodes", nodeID)
+					if err != nil {
+						return err
+					}
+					if observed, err := timestamp(other, "_telemetry_at"); err != nil || now.Sub(observed) > 90*time.Second {
+						continue
+					}
+				}
+				for ip, at := range obj(obj(other, "_online_ips"), fmt.Sprintf("veloray:%d:%s", num(member, "id"), str(member, "name"))) {
+					online[ip] = at
+				}
+			}
+			policyChanged := updateDevicePolicy(c, online, now)
+			if policyChanged {
+				changed = true
+				for nodeID := range memberNodes {
+					if nodeID != id {
+						if e = queueJob(ctx, tx, nodeID, "device policy changed", nil); e != nil {
+							return e
+						}
+					}
+				}
+			}
+			if e = save(ctx, tx, "clients", c); e != nil {
+				return e
+			}
 		}
 		reason := ""
 		if exp, te := timestamp(c, "expires_at"); te == nil && !exp.After(now) {
@@ -201,6 +253,9 @@ func (s *Server) runJob(ctx context.Context, id int64) error {
 			return qe
 		}
 	} else {
+		if cfg, ce := buildConfig(ctx, tx, n); ce == nil && cfg["_singbox"] != nil {
+			n["_singbox_deployed"] = true
+		}
 		n["deploy_state"] = "applied"
 		n["last_deploy_error"] = ""
 		if _, e = tx.Exec(ctx, `DELETE FROM vr_jobs WHERE node_id=$1`, id); e != nil {

@@ -1,3 +1,4 @@
+import { Input } from "@/components/ui/controls";
 import { t } from "@/lib/i18n";
 import { useLocale, tx } from "@/lib/i18n";
 import { FormEvent, useEffect, useState } from "react";
@@ -149,11 +150,6 @@ export function NodesPage() {
           <CardTitle>
             {editingMode ? t("Edit remote node") : t("Remote node")}
           </CardTitle>
-          <p className="mt-1 text-[11px] text-[var(--muted)]">
-            {editingMode
-              ? t("Leave the token blank to keep the current secret.")
-              : t("Paste the credentials printed by the node installer.")}
-          </p>
         </div>
         {editingMode && (
           <Button variant="ghost" size="icon" onClick={closeEditor}>
@@ -168,7 +164,7 @@ export function NodesPage() {
         >
           <label className="label">
             {t("Node name")}
-            <input
+            <Input
               className="input"
               placeholder={t("Frankfurt 01")}
               value={form.name}
@@ -178,7 +174,7 @@ export function NodesPage() {
           </label>
           <label className="label">
             {t("Public host")}
-            <input
+            <Input
               className="input"
               placeholder={t("node.example.com")}
               value={form.public_host}
@@ -190,7 +186,7 @@ export function NodesPage() {
           </label>
           <label className="label">
             {t("Agent URL")}
-            <input
+            <Input
               className="input"
               placeholder={t("https://node.example.com:9191")}
               value={form.agent_url}
@@ -200,7 +196,7 @@ export function NodesPage() {
           </label>
           <label className="label">
             {t("Agent token")}
-            <input
+            <Input
               className="input mono"
               type="password"
               placeholder={
@@ -214,7 +210,7 @@ export function NodesPage() {
             />
           </label>
           <label className="col-span-full flex items-center gap-2 text-[11px] text-[var(--muted-strong)]">
-            <input
+            <Input
               type="checkbox"
               checked={form.verify_tls}
               onChange={(e) =>
@@ -285,10 +281,6 @@ export function NodesPage() {
         <CardHeader>
           <div>
             <CardTitle>{t("Fleet")}</CardTitle>
-            <p className="mt-1 text-[11px] text-[var(--muted)]">
-              {nodes.length} {t("registered node")}
-              {nodes.length === 1 ? "" : "s"}
-            </p>
           </div>
           <Badge tone="green">
             <ShieldCheck className="h-3 w-3" />

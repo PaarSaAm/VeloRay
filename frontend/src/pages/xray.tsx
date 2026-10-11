@@ -1,3 +1,5 @@
+import { Textarea } from "@/components/ui/controls";
+import { Select } from "@/components/ui/controls";
 import { t } from "@/lib/i18n";
 import { useLocale, tx } from "@/lib/i18n";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -22,6 +24,7 @@ export function XrayPage() {
   const [nodeId, setNodeId] = useState("");
   const [preview, setPreview] = useState<Preview | null>(null);
   const [status, setStatus] = useState<XrayStatus | null>(null);
+  const [secondary, setSecondary] = useState<XrayStatus | null>(null);
   const [ports, setPorts] = useState<PortReport | null>(null);
   const [patch, setPatch] = useState("{}");
   const [msg, setMsg] = useState("");
@@ -53,6 +56,9 @@ export function XrayPage() {
       if (sequence !== refreshSequence.current) return;
       setPreview(p);
       setStatus(s);
+      setSecondary(
+        await api<XrayStatus>(`/nodes/${id}/singbox-status/`).catch(() => null),
+      );
       setPorts(listeners);
       const n = nodes.find((x) => String(x.id) === id);
       if (n) setPatch(JSON.stringify(n.config_patch || {}, null, 2));
@@ -181,7 +187,7 @@ export function XrayPage() {
   function downloadDiagnostics() {
     if (!selected) return;
     const data = {
-      version: "0.2.0",
+      version: "1.0",
       at: new Date().toISOString(),
       node: { id: selected.id, name: selected.name },
       runtime: status,
@@ -236,6 +242,53 @@ export function XrayPage() {
           </div>
         }
       />
+      <div className="grid gap-3 sm:grid-cols-2">
+        {[
+          ["Xray · Primary", status],
+          ["sing-box", secondary],
+        ].map(([label, state]) => {
+          const st = state as XrayStatus | null;
+          return (
+            <Card key={String(label)}>
+              <CardContent className="flex justify-between items-center p-5">
+                <div>
+                  <h3 className="text-sm font-semibold">{String(label)}</h3>
+                  <p className="text-xs text-[var(--muted)] mt-1">
+                    {st?.version || "—"}
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Badge tone={st?.running ? "green" : "neutral"}>
+                    {st?.running ? t("Active") : t("Stopped")}
+                  </Badge>
+                  {label === "sing-box" && st?.installed && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={busy}
+                      onClick={async () => {
+                        setBusy(true);
+                        try {
+                          await api(`/nodes/${nodeId}/singbox-restart`, {
+                            method: "POST",
+                          });
+                          await refresh();
+                        } catch (e: any) {
+                          setMsg(e.message);
+                        } finally {
+                          setBusy(false);
+                        }
+                      }}
+                    >
+                      {t("Restart")}
+                    </Button>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
       {msg && (
         <div
           role="status"
@@ -265,11 +318,6 @@ export function XrayPage() {
         <CardHeader>
           <div>
             <CardTitle>{t("Listener checks")}</CardTitle>
-            <p className="mt-1 text-[11px] text-[var(--muted)]">
-              {t(
-                "Current socket owners for this configuration. Refresh after changing a port.",
-              )}
-            </p>
           </div>
           <a
             href="/inbounds"
@@ -349,16 +397,13 @@ export function XrayPage() {
             <CardHeader>
               <div>
                 <CardTitle>{t("Runtime")}</CardTitle>
-                <p className="mt-1 text-[11px] text-[var(--muted)]">
-                  {t("Select a node.")}
-                </p>
               </div>
               <FaIcon icon="microchip" className="text-[var(--muted)]" />
             </CardHeader>
             <CardContent className="space-y-4">
               <label className="label">
                 {t("Node")}
-                <select
+                <Select
                   className="input"
                   value={nodeId}
                   onChange={(e) => setNodeId(e.target.value)}
@@ -369,7 +414,7 @@ export function XrayPage() {
                       {n.name}
                     </option>
                   ))}
-                </select>
+                </Select>
               </label>
               <div className="grid grid-cols-2 gap-2">
                 <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-3">
@@ -414,16 +459,11 @@ export function XrayPage() {
             <CardHeader>
               <div>
                 <CardTitle>{t("Advanced merge patch")}</CardTitle>
-                <p className="mt-1 text-[11px] text-[var(--muted)]">
-                  {t(
-                    "Add DNS, routing and outbound settings. Xray validates the result before applying it.",
-                  )}
-                </p>
               </div>
               <FaIcon icon="code" className="text-[var(--info)]" />
             </CardHeader>
             <CardContent>
-              <textarea
+              <Textarea
                 className="input mono min-h-[280px] text-[10px] leading-5"
                 spellCheck={false}
                 value={patch}
@@ -453,11 +493,6 @@ export function XrayPage() {
           <CardHeader>
             <div>
               <CardTitle>{t("Generated config preview")}</CardTitle>
-              <p className="mt-1 text-[11px] text-[var(--muted)]">
-                {t(
-                  "Configuration for the selected node. Downloads contain private connection credentials.",
-                )}
-              </p>
             </div>
             <div className="flex flex-wrap gap-1">
               <Button

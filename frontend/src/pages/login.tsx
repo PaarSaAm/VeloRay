@@ -1,3 +1,4 @@
+import { Input } from "@/components/ui/controls";
 import { useLocale, type Locale } from "@/lib/i18n";
 import { FormEvent, useMemo, useState } from "react";
 import {
@@ -28,7 +29,7 @@ const copy = {
     back: "Back to login",
     loading: "Please wait…",
     secure: "Secure administrator access",
-    version: "VeloRay v0.2.0",
+    version: "VeloRay v1.0",
     usernamePlaceholder: "Username",
     passwordPlaceholder: "Password",
     codePlaceholder: "000000",
@@ -47,7 +48,7 @@ const copy = {
     back: "بازگشت به ورود",
     loading: "لطفاً صبر کنید…",
     secure: "دسترسی امن مدیر سیستم",
-    version: "VeloRay v0.2.0",
+    version: "VeloRay v1.0",
     usernamePlaceholder: "نام کاربری",
     passwordPlaceholder: "رمز عبور",
     codePlaceholder: "000000",
@@ -168,7 +169,7 @@ export function LoginPage({ onSuccess }: { onSuccess: () => void }) {
                   <>
                     <label className="block">
                       <span className="sr-only">{t.username}</span>
-                      <input
+                      <Input
                         autoFocus
                         autoComplete="username"
                         value={username}
@@ -181,7 +182,7 @@ export function LoginPage({ onSuccess }: { onSuccess: () => void }) {
 
                     <label className="relative block">
                       <span className="sr-only">{t.password}</span>
-                      <input
+                      <Input
                         type={showPassword ? "text" : "password"}
                         autoComplete="current-password"
                         value={password}
@@ -212,7 +213,7 @@ export function LoginPage({ onSuccess }: { onSuccess: () => void }) {
                     <KeyRound
                       className={`pointer-events-none absolute top-3.5 h-4 w-4 text-[var(--muted)] ${rtl ? "right-3.5" : "left-3.5"}`}
                     />
-                    <input
+                    <Input
                       autoFocus
                       inputMode="numeric"
                       autoComplete="one-time-code"
@@ -270,10 +271,6 @@ export function LoginPage({ onSuccess }: { onSuccess: () => void }) {
         </section>
 
         <footer className="flex flex-col items-center gap-1.5 pb-1 text-center">
-          <div className="flex items-center gap-1.5 text-[10px] text-[var(--muted)]">
-            <ShieldCheck className="h-3.5 w-3.5" />
-            <span>{t.secure}</span>
-          </div>
           <div className="text-[9px] font-medium uppercase tracking-[.12em] text-[var(--muted)] opacity-80">
             {t.version}
           </div>

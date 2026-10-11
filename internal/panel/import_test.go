@@ -27,7 +27,7 @@ func TestImportedCredentialsRetainSharedAccountIdentity(t *testing.T) {
 	var key string
 	for _, protocol := range []string{"vless", "trojan"} {
 		row := Data{"source_id": protocol, "name": protocol, "protocol": protocol, "port": 2083, "clients": []any{Data{"name": "shared", "source_account": "user:7", "credential": protocol + "-credential"}}}
-		_, clients, _, err := convertImportedInbound(row, "pasarguard", 1)
+		_, clients, _, err := convertImportedInbound(row, "relational", 1)
 		if err != nil || len(clients) != 1 {
 			t.Fatal("normalization failed", err)
 		}
@@ -104,12 +104,12 @@ func importCommit(s *Server, ctx context.Context, a Actor, p Data, overrides Dat
 	return result.(Data), nil
 }
 
-func TestExternalReaderRecognizesSharedXUIAndPasarGuard(t *testing.T) {
+func TestExternalReaderRecognizesSharedInlineAndRelational(t *testing.T) {
 	source, e := readExternalBackup(context.Background(), syntheticBackup(t))
 	if e != nil {
 		t.Fatal(e)
 	}
-	if str(source, "source") != "3x-ui" || len(array(source, "inbounds")) != 2 {
+	if str(source, "source") != "inline" || len(array(source, "inbounds")) != 2 {
 		t.Fatal("source format not recognized")
 	}
 	for _, v := range array(source, "inbounds") {
@@ -119,7 +119,7 @@ func TestExternalReaderRecognizesSharedXUIAndPasarGuard(t *testing.T) {
 			t.Fatal("shared traffic was not preserved")
 		}
 	}
-	path := filepath.Join(t.TempDir(), "pasarguard.json")
+	path := filepath.Join(t.TempDir(), "relational.json")
 	raw := `{"tables":{"users":[{"id":7,"username":"migrated","proxy_settings":{"vless":{"id":"11111111-1111-4111-8111-111111111111"}},"used_traffic":500,"data_limit":10000,"status":"active","expire":"2030-01-01T00:00:00Z"}],"inbounds":[{"id":2,"tag":"vless"}],"users_groups_association":[{"user_id":7,"groups_id":1}],"inbounds_groups_association":[{"inbound_id":2,"group_id":1}],"core_configs":[{"id":1,"type":"xray","config":{"inbounds":[{"tag":"vless","protocol":"vless","port":2096,"settings":{"decryption":"none"},"streamSettings":{"network":"tcp","security":"none"}}]}}],"user_usage_logs":[{"user_id":7,"used_traffic_at_reset":1000}]}}`
 	_ = os.WriteFile(path, []byte(raw), 0600)
 	source, e = readExternalBackup(context.Background(), path)
@@ -128,8 +128,8 @@ func TestExternalReaderRecognizesSharedXUIAndPasarGuard(t *testing.T) {
 	}
 	row := asData(array(source, "inbounds")[0])
 	c := asData(array(row, "clients")[0])
-	if str(source, "source") != "pasarguard" || num(c, "used_traffic_bytes") != 500 || num(c, "lifetime_traffic_bytes") != 1500 {
-		t.Fatal("PasarGuard counters or group membership changed")
+	if str(source, "source") != "relational" || num(c, "used_traffic_bytes") != 500 || num(c, "lifetime_traffic_bytes") != 1500 {
+		t.Fatal("Relational counters or group membership changed")
 	}
 	_ = os.WriteFile(path, []byte("DROP TABLE users;"), 0600)
 	if _, e = readExternalBackup(context.Background(), path); e == nil {

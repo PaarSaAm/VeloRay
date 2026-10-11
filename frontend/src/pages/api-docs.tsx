@@ -1,3 +1,4 @@
+import { APIKeys } from "@/components/api-keys";
 import { useLocale, t } from "@/lib/i18n";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/common/page-header";
@@ -116,6 +117,7 @@ export function ApiDocsPage() {
   useLocale();
   return (
     <div className="space-y-6">
+      <APIKeys />
       <PageHeader
         title={t("API reference")}
         description={t(
@@ -127,7 +129,6 @@ export function ApiDocsPage() {
         {t(
           "Browser API uses secure sessions and CSRF protection. Public subscription routes are token-scoped and do not expose panel administration.",
         )}
-        <p className="mt-2">{t("1G => 3G")}</p>
       </div>
       {groups.map((g) => (
         <Card key={g.name}>

@@ -31,6 +31,7 @@ import {
   RefreshCw,
   Rocket,
   Rss,
+  Route,
   Save,
   Send,
   Server,
@@ -48,6 +49,8 @@ import {
 import { cn } from "@/lib/cn";
 const icons: Record<string, LucideIcon> = {
   "gauge-high": Gauge,
+  route: Route,
+  "arrow-right-from-bracket": ArrowUpRight,
   "chart-line": Activity,
   signal: Activity,
   "chart-area": ChartArea,

@@ -1,6 +1,6 @@
 import { tx } from "@/lib/i18n";
 import { t, useLocale } from "@/lib/i18n";
-import { LogOut, Menu, Monitor, Moon, Sun } from "lucide-react";
+import { LogOut, Menu, Moon, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "@/components/theme/theme-provider";
 import type { Session } from "@/lib/api";
@@ -21,9 +21,8 @@ export function Header({
 }) {
   const { locale, setLocale } = useLocale();
   const { theme, setTheme } = useTheme();
-  const next =
-    theme === "dark" ? "light" : theme === "light" ? "system" : "dark";
-  const ThemeIcon = theme === "dark" ? Moon : theme === "light" ? Sun : Monitor;
+  const next = theme === "dark" ? "light" : "dark";
+  const ThemeIcon = theme === "dark" ? Moon : Sun;
   return (
     <header className="glass sticky top-0 z-30 flex h-16 items-center justify-between gap-3 border-b border-[var(--border)] px-4 sm:px-6">
       <div className="flex min-w-0 items-center gap-3">

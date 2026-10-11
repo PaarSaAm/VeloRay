@@ -11,6 +11,7 @@ sed -e 's|source /etc/os-release|source "$TEST_ROOT/os-release"|' \
  -e '/^\[\[ ${EUID:/d' \
  -e 's|/opt/veloray/toolchains|$TEST_ROOT/toolchains|g' \
  -e 's|/usr/local/bin/xray|$TEST_ROOT/installed-xray|g' \
+ -e 's|/usr/local/bin/sing-box|$TEST_ROOT/installed-singbox|g' \
  -e 's|/var/log/veloray|$TEST_ROOT/logs|g' \
  -e 's|/run/lock/veloray-install.lock|$TEST_ROOT/install.lock|g' \
  "$project/install.sh" >"$TEST_ROOT/bootstrap.sh"
@@ -19,6 +20,7 @@ printf '{}\n' >"$TEST_ROOT/fixture/frontend/package-lock.json"
 manifest_root="$TEST_ROOT/manifest-fixture"
 mkdir -p "$manifest_root/scripts" "$manifest_root/cmd" "$manifest_root/internal/panel" "$manifest_root/frontend/src"
 cp "$project/scripts/build-runtime.sh" "$manifest_root/scripts/"
+cp "$project/scripts/build-singbox.sh" "$manifest_root/scripts/"
 printf 'module manifest-test\ngo 1.26.0\n' >"$manifest_root/go.mod"
 touch "$manifest_root/go.sum"
 printf '0.1.0\n' >"$manifest_root/VERSION"
@@ -54,6 +56,13 @@ fi
 echo "panel=$VELORAY_INSTALL_LANG" >>"$TEST_ROOT/calls"
 PANEL
 sed 's/panel=/node=/' "$TEST_ROOT/fixture/scripts/install-panel.sh" >"$TEST_ROOT/fixture/deploy/node/install.sh"
+cat >"$TEST_ROOT/fixture/scripts/build-singbox.sh" <<'SECONDARY'
+#!/usr/bin/env bash
+mkdir -p "$2"
+printf '#!/usr/bin/env bash\nexit 0\n' >"$2/sing-box"
+chmod +x "$2/sing-box"
+(cd "$2" && sha256sum sing-box >SHA256SUMS)
+SECONDARY
 tar -czf "$TEST_ROOT/source.tar.gz" -C "$TEST_ROOT" fixture
 printf 'fixture-Xray-archive' >"$TEST_ROOT/xray.zip"
 export TEST_XRAY_SHA="$(sha256sum "$TEST_ROOT/xray.zip" | cut -d' ' -f1)"
@@ -224,13 +233,14 @@ for arch in amd64 arm64;do
  bash "$TEST_ROOT/fixture/scripts/build.sh" "$arch"
  bundle="$TEST_ROOT/bundle-$arch"
  mkdir -p "$bundle/bin" "$bundle/frontend" "$bundle/xray"
+ bash "$TEST_ROOT/fixture/scripts/build-singbox.sh" "$arch" "$bundle/singbox"
  cp -a "$TEST_ROOT/fixture/bin/linux-$arch" "$bundle/bin/"
  cp -a "$TEST_ROOT/fixture/frontend/dist" "$bundle/frontend/"
  printf '#!/usr/bin/env bash\nexit 0\n' >"$bundle/xray/xray";chmod +x "$bundle/xray/xray"
  printf fixture >"$bundle/xray/geoip.dat";cp "$bundle/xray/geoip.dat" "$bundle/xray/geosite.dat"
  (cd "$bundle/xray" && sha256sum xray geoip.dat geosite.dat >SHA256SUMS)
  bash "$TEST_ROOT/fixture/scripts/build-runtime.sh" --manifest >"$bundle/source.SHA256SUMS"
- tar -cJf "$TEST_ROOT/fixture/runtime/linux-$arch.tar.xz" -C "$bundle" bin frontend xray source.SHA256SUMS
+ tar -cJf "$TEST_ROOT/fixture/runtime/linux-$arch.tar.xz" -C "$bundle" bin frontend xray singbox source.SHA256SUMS
 done
 (cd "$TEST_ROOT/fixture/runtime" && sha256sum linux-*.tar.xz >SHA256SUMS)
 rm -rf -- "$TEST_ROOT/fixture/bin" "$TEST_ROOT/fixture/frontend/dist"
@@ -282,7 +292,7 @@ cat >"$host_project/bin/linux-amd64/veloray" <<'APP'
 set -e
 echo "$1" >>"$HOST_ROOT/app-calls"
 case "$1" in
- version) echo 0.1.0;;
+ version) echo 1.0;;
  bootstrap) [[ "${TEST_BOOTSTRAP_FAIL:-}" != 1 ]]||exit 1;touch "$HOST_ROOT/admin";;
  backup) printf fixture-backup >"$2";;
  reset-password) [[ "${#VELORAY_ADMIN_PASSWORD}" -ge 12 ]]||exit 1;touch "$HOST_ROOT/password-reset";;
@@ -367,6 +377,7 @@ reset_host() {
  rm -rf -- "$HOST_ROOT"
  mkdir -p "$HOST_ROOT/usr/local/bin" "$HOST_ROOT/opt/veloray" "$HOST_ROOT/etc/systemd/system"
  printf '#!/usr/bin/env bash\n[[ "${TEST_XRAY_CONFIG_FAIL:-}" != 1 ]]\n' >"$HOST_ROOT/usr/local/bin/xray";chmod +x "$HOST_ROOT/usr/local/bin/xray"
+ printf '#!/usr/bin/env bash\nexit 0\n' >"$HOST_ROOT/usr/local/bin/sing-box";chmod +x "$HOST_ROOT/usr/local/bin/sing-box"
 }
 host_install() { bash "$host_project/scripts/install-panel.sh" >"$TEST_ROOT/host-result" 2>&1; }
 reset_host
@@ -406,7 +417,7 @@ host_install
 [[ "$(sha256sum "$HOST_ROOT/etc/veloray/veloray.env")" == "$original_env" ]]
 test -f "$HOST_ROOT/admin";pass reinstall-after-uninstall
 bash "$HOST_ROOT/usr/local/bin/velorayctl" >"$TEST_ROOT/host-result" 2>&1
-grep -Fq 'Administrator password' "$TEST_ROOT/host-result"
+grep -Fq 'Reset administrator password' "$TEST_ROOT/host-result"
 grep -Fq 'Panel address' "$TEST_ROOT/host-result";pass default-management-menu
 export TEST_DEGRADED=1
 if bash "$HOST_ROOT/usr/local/bin/velorayctl" doctor >"$TEST_ROOT/host-result" 2>&1;then echo 'Degraded Xray accepted by doctor' >&2;exit 1;fi
@@ -446,15 +457,15 @@ bash "$HOST_ROOT/usr/local/bin/velorayctl" help >"$TEST_ROOT/host-result" 2>&1
 grep -Fq 'veloray reset' "$TEST_ROOT/host-result";pass management-help
 printf '\nVELORAY_LANGUAGE=fa\n' >>"$HOST_ROOT/etc/veloray/veloray.env"
 bash "$HOST_ROOT/usr/local/bin/velorayctl" menu >"$TEST_ROOT/host-result" 2>&1
-grep -Fq 'تغییر رمز مدیر' "$TEST_ROOT/host-result";pass persisted-persian-menu
+grep -Fq 'Reset administrator password' "$TEST_ROOT/host-result";pass management-menu-stays-english
 [[ "$(stat -c '%a' "$HOST_ROOT/var/log/veloray")" == 700 ]]
 if find "$HOST_ROOT/var/log/veloray" -type f ! -perm 0600 | grep -q .;then echo 'Operation log is not private' >&2;exit 1;fi
 pass private-operation-logs
 if [[ -n "${VELORAY_TEST_PANEL_BINARY:-}" ]];then
  VELORAY_ENV_FILE="$HOST_ROOT/etc/veloray/veloray.env" "$VELORAY_TEST_PANEL_BINARY" >"$TEST_ROOT/host-result" 2>&1
- grep -Fq 'تغییر رمز مدیر' "$TEST_ROOT/host-result";pass compiled-default-opens-menu
+ grep -Fq 'Reset administrator password' "$TEST_ROOT/host-result";pass compiled-default-opens-menu
  VELORAY_ENV_FILE="$HOST_ROOT/etc/veloray/veloray.env" "$VELORAY_TEST_PANEL_BINARY" reset >"$TEST_ROOT/host-result" 2>&1
- grep -Fq 'نشست‌های قبلی' "$TEST_ROOT/host-result";pass compiled-reset-alias
+ grep -Fq 'Existing sessions were revoked' "$TEST_ROOT/host-result";pass compiled-reset-alias
 fi
 reset_host;touch "$HOST_ROOT/database" "$HOST_ROOT/role"
 if host_install;then echo 'Preserved database with lost keys accepted' >&2;exit 1;fi

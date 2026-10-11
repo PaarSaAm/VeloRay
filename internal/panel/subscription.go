@@ -19,7 +19,7 @@ func clashConfig(c, i, n Data) (Data, error) {
 	if !oneOf(t, "raw", "ws", "grpc", "xhttp", "hysteria") {
 		return nil, fmt.Errorf("Clash output is unavailable for %s transport", t)
 	}
-	name := "VeloRay · " + str(c, "name")
+	name := connectionName(c, i)
 	v := Data{"name": name, "server": str(n, "public_host"), "port": num(i, "port"), "udp": true}
 	switch p {
 	case "vless", "vmess":
@@ -138,6 +138,7 @@ func (s *Server) subscription(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Subscription-Userinfo", fmt.Sprintf("upload=0; download=%d; total=%d; expire=%d", num(c, "used_traffic_bytes"), num(c, "traffic_limit_bytes"), exp))
 	w.Header().Set("Profile-Title", "base64:"+base64.StdEncoding.EncodeToString([]byte(str(cfg, "site_name")+" · "+str(c, "name"))))
 	w.Header().Set("Profile-Update-Interval", "12")
+	w.Header().Set("Profile-Web-Page-URL", strings.TrimRight(s.Config.PublicURL, "/")+"/sub/"+token+"?format=portal")
 	for key, field := range map[string]string{"Support-URL": "support_url", "Announce-URL": "announcement_url"} {
 		if str(cfg, field) != "" {
 			w.Header().Set(key, str(cfg, field))
@@ -147,10 +148,16 @@ func (s *Server) subscription(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Announce", "base64:"+base64.StdEncoding.EncodeToString([]byte(str(cfg, "announcement"))))
 	}
 	w.Header().Set("Vary", "Accept, User-Agent")
+	w.Header().Set("Cache-Control", "private, no-store")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	format := r.URL.Query().Get("format")
 	if format == "" {
 		if strings.Contains(r.Header.Get("Accept"), "text/html") {
 			format = "portal"
+		} else if ua := strings.ToLower(r.UserAgent()); strings.Contains(ua, "clash") || strings.Contains(ua, "mihomo") {
+			format = "clash"
+		} else if strings.Contains(ua, "sing-box") || strings.Contains(ua, "singbox") {
+			format = "singbox"
 		} else {
 			format = "base64"
 		}
@@ -160,9 +167,6 @@ func (s *Server) subscription(w http.ResponseWriter, r *http.Request) {
 	details := []any{}
 	for _, item := range connections {
 		client := clone(item.client)
-		if len(connections) > 1 {
-			client["name"] = str(client, "name") + " · " + str(item.inbound, "name")
-		}
 		uri := shareLink(client, item.inbound, item.node)
 		if uri != "" {
 			links = append(links, uri)
@@ -186,6 +190,23 @@ func (s *Server) subscription(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, 400, Data{"detail": "No portable URI is available for this protocol"})
 			return
 		}
+	case "singbox", "sing-box":
+		outbounds := []any{}
+		names := []any{}
+		for _, item := range connections {
+			out, err := singClientOutbound(item.client, item.inbound, item.node)
+			if err != nil {
+				writeJSON(w, 400, Data{"detail": err.Error()})
+				return
+			}
+			outbounds = append(outbounds, out)
+			names = append(names, str(out, "tag"))
+		}
+		all := []any{Data{"type": "selector", "tag": "VeloRay", "outbounds": names}, Data{"type": "direct", "tag": "direct"}}
+		all = append(all, outbounds...)
+		raw, _ := json.MarshalIndent(Data{"outbounds": all, "route": Data{"final": "VeloRay"}}, "", "  ")
+		body = string(raw) + "\n"
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	case "json":
 		writeJSON(w, 200, Data{"name": str(c, "name"), "protocol": str(i, "protocol"), "link": link, "profile": profile, "used_traffic_bytes": num(c, "used_traffic_bytes"), "traffic_limit_bytes": num(c, "traffic_limit_bytes"), "expires_at": c["expires_at"], "raw_used_traffic_bytes": num(c, "raw_used_traffic_bytes"), "traffic_multiplier": c["traffic_multiplier"], "connections": details})
 		return
@@ -194,9 +215,6 @@ func (s *Server) subscription(w http.ResponseWriter, r *http.Request) {
 		names := []any{}
 		for _, item := range connections {
 			client := clone(item.client)
-			if len(connections) > 1 {
-				client["name"] = str(client, "name") + " · " + str(item.inbound, "name")
-			}
 			data, err := clashConfig(client, item.inbound, item.node)
 			if err != nil {
 				writeJSON(w, 400, Data{"detail": err.Error()})
@@ -242,7 +260,7 @@ func fmtBytes(value int64) string {
 	return fmt.Sprintf("%.1f %s", v, unit)
 }
 
-var portalTemplate = template.Must(template.New("portal").Parse(`<!doctype html><html lang="{{.Locale}}" dir="{{.Direction}}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>{{.Site}} · {{.Name}}</title><style>:root{color-scheme:dark;font-family:system-ui,sans-serif;background:#101316;color:#edf2f4}*{box-sizing:border-box}body{margin:0;padding:32px 18px}main{max-width:640px;margin:auto}header{display:flex;justify-content:space-between;align-items:center;margin:16px 0 28px}h1{font-size:28px;margin:6px 0}p{color:#a8b7c2;line-height:1.7}section{border:1px solid #2d373e;border-radius:16px;padding:24px;margin:18px 0;background:#181e23}h2{font-size:16px;margin:0 0 16px}.badge{border:1px solid #397457;color:#8defb4;padding:6px 12px;border-radius:24px;font-size:12px}.usage{display:grid;grid-template-columns:1fr 1fr;gap:24px}.usage small{display:block;color:#a8b7c2;margin-bottom:8px}.usage strong{font-size:20px}.links{display:flex;gap:10px;flex-wrap:wrap}a{color:#9aedba}a.button{background:#94eab2;color:#14291c;border-radius:8px;padding:12px 16px;text-decoration:none;font-weight:600}input,textarea{width:100%;border:1px solid #40525e;background:#101316;color:#eee;border-radius:8px;padding:12px;margin:10px 0;direction:ltr;font:12px ui-monospace,monospace}textarea{height:110px}img{background:white;border-radius:12px;max-width:100%;height:auto}footer{color:#a8b7c2;text-align:center;font-size:12px;margin:28px 0}meter{width:100%;height:16px;margin-top:22px}label{display:block;color:#b7c3cb;font-size:13px}:focus-visible{outline:3px solid #9aebba;outline-offset:3px}.compact main{max-width:480px}.compact section{padding:18px}.compact header{margin-bottom:18px}.compact h1{font-size:24px}@media(max-width:480px){section{padding:18px}.usage{gap:18px}}</style></head><body class="{{if .Compact}}compact{{end}}"><main><header><strong>{{.Site}}</strong><span class="badge">{{.Active}}</span></header><h1>{{.Name}}</h1><p>{{.Protocol}} · {{.Host}}</p>{{if .Announcement}}<section>{{.Announcement}}{{if .AnnouncementURL}} <a href="{{.AnnouncementURL}}">↗</a>{{end}}</section>{{end}}<section><div class="usage"><div><small>{{.UsageLabel}}</small><strong>{{.Used}} / {{.Quota}}</strong></div><div><small>{{.ExpiryLabel}}</small><strong>{{.Expiry}}</strong></div></div><p>{{.ActualLabel}}: {{.Actual}} · {{.FactorLabel}}: {{.Factor}}x</p>{{if .Limited}}<meter min="0" max="100" value="{{.Percent}}">{{.Percent}}%</meter>{{end}}</section><section><h2>{{.Connect}}</h2><label for="subscription">{{.URLLabel}}</label><input id="subscription" readonly value="{{.URL}}" aria-label="{{.URLLabel}}">{{if .ShowQR}}<p><img width="192" height="192" src="{{.QR}}" alt="{{.QRLabel}}"></p>{{end}}<div class="links">{{if .Link}}<a class="button" href="{{.URL}}?format=base64">Base64</a>{{if .Clash}}<a class="button" href="{{.URL}}?format=clash">Clash / Mihomo</a>{{end}}{{end}}{{if .Profile}}<a class="button" href="{{.URL}}?format=wireguard">WireGuard</a>{{end}}<a class="button" href="{{.URL}}?format=json">JSON</a></div>{{if .ShowURI}}{{if .Link}}<label for="uri">{{.URILabel}}</label><textarea id="uri" readonly>{{.Link}}</textarea>{{end}}{{end}}{{if .Proxy}}<p>{{.ProxyLabel}}</p><pre>{{.Proxy}}</pre>{{end}}{{if .ShowApps}}<p>{{.AppsLabel}}: v2rayNG · Hiddify · Streisand · Mihomo</p>{{end}}</section>{{if .Support}}<p><a href="{{.Support}}">{{.SupportLabel}}</a></p>{{end}}<footer>{{.Footer}}</footer></main></body></html>`))
+var portalTemplate = template.Must(template.New("portal").Parse(`<!doctype html><html lang="{{.Locale}}" dir="{{.Direction}}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>{{.Site}} · {{.Name}}</title><style>:root{color-scheme:dark;font-family:system-ui,sans-serif;background:#101316;color:#edf2f4}*{box-sizing:border-box}body{margin:0;padding:32px 18px}main{max-width:640px;margin:auto}header{display:flex;justify-content:space-between;align-items:center;margin:16px 0 28px}h1{font-size:28px;margin:6px 0}p{color:#a8b7c2;line-height:1.7}section{border:1px solid #2d373e;border-radius:16px;padding:24px;margin:18px 0;background:#181e23}h2{font-size:16px;margin:0 0 16px}.badge{border:1px solid #397457;color:#8defb4;padding:6px 12px;border-radius:24px;font-size:12px}.usage{display:grid;grid-template-columns:1fr 1fr;gap:24px}.usage small{display:block;color:#a8b7c2;margin-bottom:8px}.usage strong{font-size:20px}.links{display:flex;gap:10px;flex-wrap:wrap}a{color:#9aedba}a.button{background:#94eab2;color:#14291c;border-radius:8px;padding:12px 16px;text-decoration:none;font-weight:600}input,textarea{width:100%;border:1px solid #40525e;background:#101316;color:#eee;border-radius:8px;padding:12px;margin:10px 0;direction:ltr;font:12px ui-monospace,monospace}textarea{height:110px}img{background:white;border-radius:12px;max-width:100%;height:auto}footer{color:#a8b7c2;text-align:center;font-size:12px;margin:28px 0}meter{width:100%;height:16px;margin-top:22px}label{display:block;color:#b7c3cb;font-size:13px}:focus-visible{outline:3px solid #9aebba;outline-offset:3px}.compact main{max-width:480px}.compact section{padding:18px}.compact header{margin-bottom:18px}.compact h1{font-size:24px}@media(max-width:480px){section{padding:18px}.usage{gap:18px}}</style></head><body class="{{if .Compact}}compact{{end}}"><main><header><strong>{{.Site}}</strong><span class="badge">{{.Active}}</span></header><h1>{{.Name}}</h1><p>{{.Protocol}} · {{.Host}}</p>{{if .Announcement}}<section>{{.Announcement}}{{if .AnnouncementURL}} <a href="{{.AnnouncementURL}}">↗</a>{{end}}</section>{{end}}<section><div class="usage"><div><small>{{.UsageLabel}}</small><strong>{{.Used}} / {{.Quota}}</strong></div><div><small>{{.ExpiryLabel}}</small><strong>{{.Expiry}}</strong></div></div><p>{{.Factor}}x</p>{{if .Limited}}<meter min="0" max="100" value="{{.Percent}}">{{.Percent}}%</meter>{{end}}</section><section><h2>{{.Connect}}</h2><label for="subscription">{{.URLLabel}}</label><input id="subscription" readonly value="{{.URL}}" aria-label="{{.URLLabel}}">{{if .ShowQR}}<p><img width="192" height="192" src="{{.QR}}" alt="{{.QRLabel}}"></p>{{end}}<div class="links">{{if .Link}}<a class="button" href="{{.URL}}?format=base64">Base64</a>{{if .Clash}}<a class="button" href="{{.URL}}?format=clash">Clash / Mihomo</a>{{end}}{{end}}{{if .Profile}}<a class="button" href="{{.URL}}?format=wireguard">WireGuard</a>{{end}}<a class="button" href="{{.URL}}?format=json">JSON</a></div>{{if .ShowURI}}{{if .Link}}<label for="uri">{{.URILabel}}</label><textarea id="uri" readonly>{{.Link}}</textarea>{{end}}{{end}}{{if .Proxy}}<p>{{.ProxyLabel}}</p><pre>{{.Proxy}}</pre>{{end}}{{if .ShowApps}}<p>{{.AppsLabel}}: V2Box · v2rayNG · Hiddify · Streisand · Mihomo</p>{{end}}</section>{{if .Support}}<p><a href="{{.Support}}">{{.SupportLabel}}</a></p>{{end}}<footer>{{.Footer}}</footer></main></body></html>`))
 
 func (s *Server) portal(w http.ResponseWriter, r *http.Request, c, i, n, cfg Data, link, profile string) {
 	url := strings.TrimRight(s.Config.PublicURL, "/") + "/sub/" + str(c, "subscription_token")

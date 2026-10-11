@@ -84,13 +84,13 @@ func run() error {
 		return syscall.Exec(controller, append([]string{"velorayctl"}, args...), os.Environ())
 	}
 	if command == "help" || command == "--help" {
-		fmt.Println(`VeloRay 0.2.0
+		fmt.Println(`VeloRay 1.0
 
   veloray                         Open the management menu
   veloray status | doctor | url    Service health and panel address
-  veloray start | stop | restart   Manage panel, agent and Xray
+  veloray start | stop | restart   Manage panel, agent and both cores
   veloray reset [USERNAME]         Change an administrator password
-  veloray logs [web|agent|xray]     Follow service logs
+  veloray logs [web|agent|xray|singbox] Follow service logs
   veloray audit [LIMIT]            Read server audit events
   veloray backup [FILE]            Create a private recovery backup
   veloray restore FILE            Verify and restore a backup

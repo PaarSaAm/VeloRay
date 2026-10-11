@@ -235,7 +235,7 @@ func (m *Manager) Ports(ctx context.Context, raw []byte) ([]PortCheck, error) {
 			return nil, err
 		}
 	}
-	return InspectConfigPorts(ctx, m.Runtime, m.ServiceName, raw)
+	return m.inspectPorts(ctx, raw)
 }
 
 type Counter struct {
@@ -243,13 +243,15 @@ type Counter struct {
 	Value int64  `json:"value"`
 }
 type Snapshot struct {
-	Stat                   []Counter `json:"stat"`
-	Accounting             string    `json:"accounting"`
-	LedgerID               string    `json:"ledger_id"`
-	OnlineUsers            []string  `json:"online_users"`
-	OnlineAvailable        bool      `json:"online_available"`
-	OnlineTrackingRequired bool      `json:"online_tracking_required"`
-	ObservedAt             string    `json:"observed_at"`
+	CoreLedgers            map[string]string           `json:"core_ledgers"`
+	Stat                   []Counter                   `json:"stat"`
+	Accounting             string                      `json:"accounting"`
+	LedgerID               string                      `json:"ledger_id"`
+	OnlineUsers            []string                    `json:"online_users"`
+	OnlineIPs              map[string]map[string]int64 `json:"online_ips"`
+	OnlineAvailable        bool                        `json:"online_available"`
+	OnlineTrackingRequired bool                        `json:"online_tracking_required"`
+	ObservedAt             string                      `json:"observed_at"`
 }
 type counterState struct {
 	Raw   int64  `json:"raw"`
@@ -269,6 +271,7 @@ type ledger struct {
 }
 type Manager struct {
 	Binary, ConfigPath, ServiceName, StatePath string
+	Core                                       string
 	Runtime                                    Runtime
 	mu                                         sync.Mutex
 	state                                      ledger
@@ -382,8 +385,13 @@ func (m *Manager) observe(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	b, err := m.Runtime.Run(ctx, m.Binary, "api", "statsquery", "--server=127.0.0.1:10085")
-	if err != nil {
+	var b []byte
+	if m.Core == "singbox" {
+		b, err = m.querySingStats(ctx)
+	} else {
+		b, err = m.Runtime.Run(ctx, m.Binary, "api", "statsquery", "--server=127.0.0.1:10085")
+	}
+	if err != nil && m.Core != "singbox" {
 		b, err = m.Runtime.Run(ctx, m.Binary, "api", "statsquery", "--server=127.0.1.0:10085")
 	} // Upgrade bridge for v0.1.0 loopback configuration.
 	if err != nil {
@@ -431,7 +439,16 @@ func (m *Manager) Stats(ctx context.Context) (Snapshot, error) {
 		}
 	}
 	s := Snapshot{Accounting: "durable-v1", LedgerID: m.state.ID, Stat: []Counter{}, OnlineUsers: []string{}, ObservedAt: time.Now().UTC().Format(time.RFC3339Nano)}
-	if !running {
+	s.OnlineIPs = map[string]map[string]int64{}
+	if m.Core == "singbox" {
+		if running {
+			s.OnlineIPs = m.singOnlineIPs(ctx)
+			for name := range s.OnlineIPs {
+				s.OnlineUsers = append(s.OnlineUsers, name)
+			}
+		}
+		s.OnlineAvailable = true
+	} else if !running {
 		s.OnlineAvailable = true
 	} else {
 		var cfg struct {
@@ -464,6 +481,18 @@ func (m *Manager) Stats(ctx context.Context) (Snapshot, error) {
 			}
 		}
 	}
+	if running && m.Core != "singbox" {
+		if _, ok := m.Runtime.(Commands); ok {
+			if ips, e := xrayOnlineIPs(ctx); e == nil {
+				s.OnlineIPs = ips
+				s.OnlineAvailable = true
+				s.OnlineUsers = []string{}
+				for name := range ips {
+					s.OnlineUsers = append(s.OnlineUsers, name)
+				}
+			}
+		}
+	}
 	for k, v := range m.state.Counters {
 		s.Stat = append(s.Stat, Counter{k, v.Total})
 	}
@@ -479,7 +508,7 @@ func (m *Manager) validate(ctx context.Context, raw []byte) error {
 	if err := json.Unmarshal(raw, &value); err != nil || value == nil {
 		return errors.New("config must be a JSON object")
 	}
-	checks, err := InspectConfigPorts(ctx, m.Runtime, m.ServiceName, raw)
+	checks, err := m.inspectPorts(ctx, raw)
 	if err != nil {
 		return err
 	}
@@ -504,7 +533,11 @@ func (m *Manager) validate(ctx context.Context, raw []byte) error {
 	if e != nil {
 		return e
 	}
-	out, e := m.Runtime.Run(ctx, m.Binary, "run", "-test", "-config", f.Name())
+	args := []string{"run", "-test", "-config", f.Name()}
+	if m.Core == "singbox" {
+		args = []string{"check", "-c", f.Name()}
+	}
+	out, e := m.Runtime.Run(ctx, m.Binary, args...)
 	if e != nil {
 		return fmt.Errorf("Xray rejected config: %.2000s", out)
 	}
@@ -513,7 +546,7 @@ func (m *Manager) validate(ctx context.Context, raw []byte) error {
 func hash(raw []byte) string { v := sha256.Sum256(raw); return hex.EncodeToString(v[:]) }
 func (m *Manager) restart(ctx context.Context) error {
 	if raw, err := os.ReadFile(m.ConfigPath); err == nil {
-		checks, err := InspectConfigPorts(ctx, m.Runtime, m.ServiceName, raw)
+		checks, err := m.inspectPorts(ctx, raw)
 		if err != nil {
 			return err
 		}
@@ -603,6 +636,11 @@ func (m *Manager) Apply(ctx context.Context, id string, raw []byte) error {
 		before = prior.Before
 	}
 	op := operation{Before: before, After: hash(raw), State: "prepared", At: time.Now().UTC()}
+	if hash(before) == hash(raw) && m.status(ctx).Running {
+		op.State = "applied"
+		m.state.Operations[id] = op
+		return m.persist()
+	}
 	for key, item := range m.state.Operations {
 		if time.Since(item.At) > 7*24*time.Hour && oneTerminal(item.State) {
 			delete(m.state.Operations, key)
@@ -663,6 +701,11 @@ func (m *Manager) Rollback(ctx context.Context, id string) error {
 			return m.persist()
 		}
 		return errors.New("refusing rollback: config changed since this operation")
+	}
+	if hash(current) == hash(op.Before) {
+		op.State = "rolled_back"
+		m.state.Operations[id] = op
+		return m.persist()
 	}
 	if m.status(ctx).Running {
 		if e = m.observe(ctx); e != nil {
@@ -735,3 +778,10 @@ func (m *Manager) Poll(ctx context.Context) {
 }
 
 func oneTerminal(state string) bool { return state == "applied" || state == "rolled_back" }
+
+func (m *Manager) hasOperation(id string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	_, ok := m.state.Operations[id]
+	return ok
+}

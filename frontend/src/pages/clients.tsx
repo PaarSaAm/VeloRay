@@ -1,3 +1,5 @@
+import { Textarea } from "@/components/ui/controls";
+import { Select, Input } from "@/components/ui/controls";
 import { t } from "@/lib/i18n";
 import { useLocale, tx } from "@/lib/i18n";
 import { can, useSession } from "@/lib/session";
@@ -16,6 +18,7 @@ import {
   Search,
   Trash2,
   Users,
+  UserRound,
   X,
 } from "lucide-react";
 import {
@@ -83,6 +86,8 @@ type Editor = {
   multiplier: string;
   owner_id?: number;
   note: string;
+  devices: string;
+  startAfter: boolean;
 };
 const blank = (
   inbound = "",
@@ -98,6 +103,8 @@ const blank = (
   renewal,
   multiplier: "1",
   note: "",
+  devices: "0",
+  startAfter: false,
 });
 
 export function ClientsPage() {
@@ -308,7 +315,9 @@ export function ClientsPage() {
       limit: c.traffic_limit_bytes
         ? String(Number((c.traffic_limit_bytes / 1024 ** 3).toFixed(2)))
         : "0",
-      days: "0",
+      days: String(c.duration_days || 30),
+      devices: String(c.device_limit || 0),
+      startAfter: !!c.start_after_first_use,
       expiry: toLocalInput(c.expires_at),
       renewal: String(c.renewal_interval_days || 0),
       multiplier: String(c.traffic_multiplier ?? 1),
@@ -344,11 +353,18 @@ export function ClientsPage() {
           ? { owner_id: editor.owner_id }
           : {}),
         note: editor.note,
+        device_limit: Number(editor.devices) || 0,
+        start_after_first_use: editor.startAfter,
+        duration_days: Number(editor.days) || 30,
       };
       if (editor.id) {
-        body.expires_at = editor.expiry
-          ? new Date(editor.expiry).toISOString()
-          : null;
+        body.expires_at =
+          editor.startAfter &&
+          !items.find((c) => c.id === editor.id)?.first_used_at
+            ? null
+            : editor.expiry
+              ? new Date(editor.expiry).toISOString()
+              : null;
         await api(`/clients/${editor.id}/`, {
           method: "PATCH",
           body: JSON.stringify(body),
@@ -357,7 +373,9 @@ export function ClientsPage() {
       } else {
         const d = Math.max(0, Number(editor.days) || 0);
         body.expires_at =
-          d > 0 ? new Date(Date.now() + d * 86400000).toISOString() : null;
+          !editor.startAfter && d > 0
+            ? new Date(Date.now() + d * 86400000).toISOString()
+            : null;
         body.enabled = true;
         if (editor.count !== undefined) {
           delete body.enabled;
@@ -494,17 +512,7 @@ export function ClientsPage() {
         <Mini
           title={t("Recorded traffic")}
           value={fmt(total)}
-          detail={tx(
-            "{0} accounts · {1} actual",
-            distinctAccounts(items).length,
-            fmt(
-              distinctAccounts(items).reduce(
-                (sum, c) =>
-                  sum + (c.raw_used_traffic_bytes ?? c.used_traffic_bytes),
-                0,
-              ),
-            ),
-          )}
+          detail=""
           icon="chart-area"
         />
         <Mini
@@ -526,28 +534,17 @@ export function ClientsPage() {
       </section>
       <Card>
         <CardHeader className="clients-directory-header">
-          <div>
-            <CardTitle>{t("Client directory")}</CardTitle>
-            <p className="mt-1 text-[11px] text-[var(--muted)]">
-              {filtered.length} {t("of")} {items.length} {t("clients ·")}{" "}
-              {updatedAt?.toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit",
-                second: "2-digit",
-              })}
-            </p>
-          </div>
           <div className="client-filters">
             <div className="search-field">
               <Search className="search-icon h-3.5 w-3.5 text-[var(--muted)]" />
-              <input
+              <Input
                 className="input h-9 pl-8"
                 placeholder={t("Search clients...")}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
               />
             </div>
-            <select
+            <Select
               className="input h-9 w-auto min-w-[120px]"
               value={status}
               onChange={(e) => setStatus(e.target.value)}
@@ -559,8 +556,8 @@ export function ClientsPage() {
               <option value="expiring">{t("Expiring within 7 days")}</option>
               <option value="near-quota">{t("Usage above 80%")}</option>
               <option value="disabled">{t("Disabled")}</option>
-            </select>
-            <select
+            </Select>
+            <Select
               className="input h-9 w-auto min-w-[150px]"
               value={inboundFilter}
               onChange={(e) => setInboundFilter(e.target.value)}
@@ -571,7 +568,7 @@ export function ClientsPage() {
                   {i.name}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
         </CardHeader>
         {selected.size > 0 && (
@@ -625,7 +622,7 @@ export function ClientsPage() {
               <thead>
                 <tr>
                   <th className="w-10">
-                    <input
+                    <Input
                       type="checkbox"
                       aria-label={t("Select all visible clients")}
                       checked={allVisible}
@@ -652,7 +649,7 @@ export function ClientsPage() {
                   return (
                     <tr key={c.id}>
                       <td>
-                        <input
+                        <Input
                           type="checkbox"
                           aria-label={tx("Select {0}", c.name)}
                           checked={selected.has(c.id)}
@@ -661,8 +658,10 @@ export function ClientsPage() {
                       </td>
                       <td>
                         <div className="flex min-w-0 items-center gap-3">
-                          <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[var(--surface-2)] text-[10px] font-semibold text-[var(--fg)]">
-                            {c.name.slice(0, 2).toUpperCase()}
+                          <div
+                            className={`client-avatar ${c.enabled ? "active" : ["expired", "quota"].includes(c.disabled_reason || "") ? "ended" : "disabled"}`}
+                          >
+                            <UserRound size={16} />
                           </div>
                           <div className="min-w-0">
                             <div className="truncate font-semibold text-[var(--fg)]">
@@ -691,7 +690,10 @@ export function ClientsPage() {
                           <div className="min-w-[150px]">
                             <div className="flex justify-between gap-3 text-[10px]">
                               <span className="font-medium text-[var(--fg)]">
-                                {fmt(c.used_traffic_bytes)} {t("billed")}
+                                {fmt(c.used_traffic_bytes)} {t("Used")}{" "}
+                                <span className="traffic-factor">
+                                  {c.effective_traffic_multiplier ?? 1}x
+                                </span>
                               </span>
                               <span>
                                 {c.traffic_limit_bytes
@@ -699,21 +701,7 @@ export function ClientsPage() {
                                   : t("Unlimited")}
                               </span>
                             </div>
-                            <div className="mt-1 text-[9px] text-[var(--muted)]">
-                              {fmt(
-                                c.raw_used_traffic_bytes ??
-                                  c.used_traffic_bytes,
-                              )}{" "}
-                              {t("actual ·")}{" "}
-                              {c.effective_traffic_multiplier ?? 1}
-                              {t("x")}
-                              {c.account_id
-                                ? tx(
-                                    " · Shared across {0} connections",
-                                    c.account_connections,
-                                  )
-                                : ""}
-                            </div>
+
                             {c.traffic_limit_bytes > 0 ? (
                               <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[var(--surface-3)]">
                                 <div
@@ -733,7 +721,9 @@ export function ClientsPage() {
                       </td>
                       <td>
                         <div className="font-medium text-[var(--fg)]">
-                          {expiry(c.expires_at)}
+                          {c.start_after_first_use && !c.first_used_at
+                            ? `${c.duration_days} ${t("days · after first use")}`
+                            : expiry(c.expires_at)}
                         </div>
                         <div className="mt-0.5 text-[9px] text-[var(--muted)]">
                           {c.expires_at
@@ -853,7 +843,12 @@ export function ClientsPage() {
               return (
                 <div key={c.id} className="p-4">
                   <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
+                    <div
+                      className={`client-avatar ${c.enabled ? "active" : ["expired", "quota"].includes(c.disabled_reason || "") ? "ended" : "disabled"}`}
+                    >
+                      <UserRound size={16} />
+                    </div>
+                    <div className="min-w-0 flex-1">
                       <div className="truncate text-[13px] font-semibold">
                         {c.name}
                       </div>
@@ -877,20 +872,17 @@ export function ClientsPage() {
                     {c.usage_metered ? (
                       <>
                         <div className="flex justify-between text-[10px]">
-                          <span>{fmt(c.used_traffic_bytes)}</span>
+                          <span>
+                            {fmt(c.used_traffic_bytes)} {t("Used")}{" "}
+                            <span className="traffic-factor">
+                              {c.effective_traffic_multiplier ?? 1}x
+                            </span>
+                          </span>
                           <span>
                             {c.traffic_limit_bytes
                               ? fmt(c.traffic_limit_bytes)
                               : t("Unlimited")}
                           </span>
-                        </div>
-                        <div className="mt-1 text-[10px] text-[var(--muted)]">
-                          {t("Actual:")}{" "}
-                          {fmt(
-                            c.raw_used_traffic_bytes ?? c.used_traffic_bytes,
-                          )}{" "}
-                          · {c.effective_traffic_multiplier ?? 1}
-                          {t("x")}
                         </div>
                         <div className="mt-2 h-1.5 rounded-full bg-[var(--surface-3)]">
                           <div
@@ -1032,7 +1024,7 @@ function ClientModal({
 }) {
   useLocale();
   const session = useSession();
-  const set = (k: keyof Editor, v: string | number) =>
+  const set = (k: keyof Editor, v: string | number | boolean) =>
     setEditor({ ...editor, [k]: v });
   const ib = inbounds.find((i) => String(i.id) === editor.inbound);
   const usageMetered =
@@ -1071,7 +1063,7 @@ function ClientModal({
         <div className="grid gap-4 p-5 sm:grid-cols-2">
           <label className="label sm:col-span-2">
             {editor.count !== undefined ? t("Name prefix") : t("Client name")}
-            <input
+            <Input
               className="input"
               value={editor.name}
               onChange={(e) => set("name", e.target.value)}
@@ -1082,7 +1074,7 @@ function ClientModal({
           {editor.count !== undefined && (
             <label className="label sm:col-span-2">
               {t("Number of clients")}
-              <input
+              <Input
                 className="input"
                 type="number"
                 min="1"
@@ -1100,7 +1092,7 @@ function ClientModal({
           )}
           <label className="label sm:col-span-2">
             {t("Inbound")}
-            <select
+            <Select
               className="input"
               aria-label={t("Inbound")}
               value={editor.inbound}
@@ -1119,7 +1111,7 @@ function ClientModal({
                     {i.port}
                   </option>
                 ))}
-            </select>
+            </Select>
           </label>
           {!usageMetered && (
             <div className="sm:col-span-2 rounded-lg border border-amber-500/20 bg-amber-500/8 px-3 py-2.5 text-[10px] leading-5 text-amber-600 dark:text-amber-400">
@@ -1130,7 +1122,7 @@ function ClientModal({
           )}
           <label className="label">
             {t("Traffic limit (GB)")}
-            <input
+            <Input
               className="input"
               type="number"
               min="0"
@@ -1145,10 +1137,10 @@ function ClientModal({
                 : t("Per-user metering unavailable for this protocol.")}
             </span>
           </label>
-          {editor.id ? (
+          {editor.id && !editor.startAfter ? (
             <label className="label">
               {t("Expires at")}
-              <input
+              <Input
                 className="input"
                 type="datetime-local"
                 value={editor.expiry}
@@ -1158,7 +1150,7 @@ function ClientModal({
           ) : (
             <label className="label">
               {t("Expiry after (days)")}
-              <input
+              <Input
                 className="input"
                 type="number"
                 min="0"
@@ -1170,9 +1162,31 @@ function ClientModal({
               </span>
             </label>
           )}
+          <label className="check-row sm:col-span-2">
+            <Input
+              type="checkbox"
+              checked={editor.startAfter}
+              onChange={(e) => set("startAfter", e.target.checked)}
+            />
+            <span>{t("Start after first use")}</span>
+          </label>
+          <label className="label">
+            {t("Devices")}
+            <Input
+              className="input"
+              type="number"
+              min="0"
+              max="10000"
+              value={editor.devices}
+              onChange={(e) => set("devices", e.target.value)}
+            />
+            <span className="field-hint">
+              {t("0 = unlimited · concurrent IPs")}
+            </span>
+          </label>
           <label className="label">
             {t("Quota renewal (days)")}
-            <input
+            <Input
               className="input"
               type="number"
               min="0"
@@ -1188,7 +1202,7 @@ function ClientModal({
           </label>
           <label className="label sm:col-span-2">
             {t("Traffic multiplier")}
-            <input
+            <Input
               className="input"
               type="number"
               step="0.001"
@@ -1214,7 +1228,7 @@ function ClientModal({
           {session?.is_superuser && (
             <label className="label sm:col-span-2">
               {t("Owner")}
-              <select
+              <Select
                 className="input"
                 value={editor.owner_id || session.id}
                 onChange={(e) => set("owner_id", Number(e.target.value))}
@@ -1224,12 +1238,12 @@ function ClientModal({
                     {u.username} · {t(u.role)}
                   </option>
                 ))}
-              </select>
+              </Select>
             </label>
           )}
           <label className="label sm:col-span-2">
             {t("Note")}
-            <textarea
+            <Textarea
               className="input"
               value={editor.note}
               onChange={(e) => set("note", e.target.value)}

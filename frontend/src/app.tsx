@@ -1,41 +1,20 @@
+import { OutboundsPage, RoutingPage } from "@/pages/network";
 import { SessionContext, can } from "@/lib/session";
 import { useLocale, t } from "@/lib/i18n";
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { Shell } from "@/components/layout/shell";
 import type { RouteKey } from "@/components/layout/sidebar";
-const Dashboard = lazy(() =>
-  import("@/pages/dashboard").then((m) => ({ default: m.Dashboard })),
-);
-const NodesPage = lazy(() =>
-  import("@/pages/nodes").then((m) => ({ default: m.NodesPage })),
-);
-const InboundsPage = lazy(() =>
-  import("@/pages/inbounds").then((m) => ({ default: m.InboundsPage })),
-);
-const ImportsPage = lazy(() =>
-  import("@/pages/imports").then((m) => ({ default: m.ImportsPage })),
-);
-const ClientsPage = lazy(() =>
-  import("@/pages/clients").then((m) => ({ default: m.ClientsPage })),
-);
-const TrafficPage = lazy(() =>
-  import("@/pages/traffic").then((m) => ({ default: m.TrafficPage })),
-);
-const SecurityPage = lazy(() =>
-  import("@/pages/security").then((m) => ({ default: m.SecurityPage })),
-);
-const SettingsPage = lazy(() =>
-  import("@/pages/settings").then((m) => ({ default: m.SettingsPage })),
-);
-const XrayPage = lazy(() =>
-  import("@/pages/xray").then((m) => ({ default: m.XrayPage })),
-);
-const ApiDocsPage = lazy(() =>
-  import("@/pages/api-docs").then((m) => ({ default: m.ApiDocsPage })),
-);
-const AdminPage = lazy(() =>
-  import("@/pages/admin").then((m) => ({ default: m.AdminPage })),
-);
+import { Dashboard as Dashboard } from "@/pages/dashboard";
+import { NodesPage as NodesPage } from "@/pages/nodes";
+import { InboundsPage as InboundsPage } from "@/pages/inbounds";
+import { ImportsPage as ImportsPage } from "@/pages/imports";
+import { ClientsPage as ClientsPage } from "@/pages/clients";
+import { TrafficPage as TrafficPage } from "@/pages/traffic";
+import { SecurityPage as SecurityPage } from "@/pages/security";
+import { SettingsPage as SettingsPage } from "@/pages/settings";
+import { XrayPage as XrayPage } from "@/pages/xray";
+import { ApiDocsPage as ApiDocsPage } from "@/pages/api-docs";
+import { AdminPage as AdminPage } from "@/pages/admin";
 import { LoginPage } from "@/pages/login";
 import {
   api,
@@ -50,6 +29,8 @@ const meta: Record<RouteKey, [string, string]> = {
   dashboard: ["Dashboard", "Traffic and server status"],
   imports: ["Import data", "Review and migrate panel backups"],
   clients: ["Clients", "Credentials, quotas, expiry and subscription access"],
+  outbounds: ["Outbounds", ""],
+  routing: ["Routing", ""],
   inbounds: ["Inbounds", "Ports, protocols and connection security"],
   nodes: ["Nodes", "Local server and remote VeloRay agents"],
   traffic: ["Traffic", "Client usage and traffic history"],
@@ -65,6 +46,8 @@ const routes: Record<string, RouteKey> = {
   "/clients": "clients",
   "/imports": "imports",
   "/inbounds": "inbounds",
+  "/outbounds": "outbounds",
+  "/routing": "routing",
   "/nodes": "nodes",
   "/subscriptions": "clients",
   "/traffic": "traffic",
@@ -81,6 +64,8 @@ const paths: Record<RouteKey, string> = {
   clients: "/clients",
   imports: "/imports",
   inbounds: "/inbounds",
+  outbounds: "/outbounds",
+  routing: "/routing",
   nodes: "/nodes",
   traffic: "/traffic",
   xray: "/xray",
@@ -159,6 +144,8 @@ export default function App() {
       dashboard: "dashboard.read",
       clients: "clients.read",
       inbounds: "inbounds.read",
+      outbounds: "outbounds.read",
+      routing: "routing_rules.read",
       nodes: "nodes.read",
       traffic: "traffic.read",
       xray: "xray.read",
@@ -171,16 +158,20 @@ export default function App() {
     switch (route) {
       case "dashboard":
         return <Dashboard />;
+      case "outbounds":
+        return <OutboundsPage />;
+      case "routing":
+        return <RoutingPage />;
       case "nodes":
         return <NodesPage />;
       case "inbounds":
         return <InboundsPage />;
       case "imports":
-        return user?.is_superuser ? <ImportsPage /> : <SettingsPage />;
+        return <SettingsPage initialTab="imports" />;
       case "clients":
         return <ClientsPage />;
       case "traffic":
-        return <TrafficPage />;
+        return <Dashboard />;
       case "xray":
         return <XrayPage />;
       case "security":
@@ -211,7 +202,7 @@ export default function App() {
         route={route}
         setRoute={setRoute}
         title={t(title)}
-        subtitle={t(subtitle)}
+        subtitle=""
         user={user}
         onLogout={async () => {
           try {

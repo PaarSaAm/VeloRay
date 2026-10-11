@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-var permissionCatalog = []string{"dashboard.read", "clients.read", "clients.write", "clients.delete", "inbounds.read", "inbounds.write", "nodes.read", "nodes.write", "traffic.read", "xray.read", "xray.write", "settings.read", "settings.write", "api.read"}
+var permissionCatalog = []string{"dashboard.read", "clients.read", "clients.write", "clients.delete", "inbounds.read", "inbounds.write", "nodes.read", "nodes.write", "traffic.read", "xray.read", "xray.write", "settings.read", "settings.write", "api.read", "outbounds.read", "outbounds.write", "routing_rules.read", "routing_rules.write"}
 
 func accountRole(u Data) string {
 	if flag(u, "is_superuser") {
@@ -24,9 +24,9 @@ func permissions(u Data) []string {
 	}
 	switch str(u, "role") {
 	case "reseller":
-		return []string{"dashboard.read", "clients.read", "clients.write", "clients.delete", "inbounds.read", "traffic.read", "settings.read", "api.read"}
+		return []string{"dashboard.read", "clients.read", "clients.write", "clients.delete", "inbounds.read", "traffic.read", "settings.read", "api.read", "outbounds.read", "routing_rules.read"}
 	case "viewer":
-		return []string{"dashboard.read", "clients.read", "inbounds.read", "nodes.read", "traffic.read", "xray.read", "settings.read", "api.read"}
+		return []string{"dashboard.read", "clients.read", "inbounds.read", "nodes.read", "traffic.read", "xray.read", "settings.read", "api.read", "outbounds.read", "routing_rules.read"}
 	case "custom":
 		out := []string{}
 		for _, p := range array(u, "permissions") {
@@ -218,6 +218,8 @@ func (s *Server) roleAuthorize(a Actor, method, path string) error {
 	} // Only safe defaults are exposed to restricted accounts.
 	resource := strings.Split(path, "/")[0]
 	switch resource {
+	case "openapi":
+		resource = "api"
 	case "overview":
 		resource = "dashboard"
 	case "traffic-history":
@@ -243,7 +245,7 @@ func (s *Server) roleAuthorize(a Actor, method, path string) error {
 			operation = "write"
 		}
 	}
-	if resource == "nodes" && strings.Contains(path, "/xray-") {
+	if resource == "nodes" && (strings.Contains(path, "/xray-") || strings.Contains(path, "/singbox-")) {
 		resource = "xray"
 	}
 	if !permitted(a.User, resource+"."+operation) {

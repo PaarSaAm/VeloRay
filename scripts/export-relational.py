@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Export only the PasarGuard tables needed by VeloRay. Does not migrate admins."""
+"""Export only the Relational tables needed by VeloRay. Does not migrate admins."""
 import argparse
 import json
 import os
@@ -12,8 +12,8 @@ from urllib.parse import urlparse, unquote, parse_qs
 TABLES = ["users", "inbounds", "core_configs", "users_groups_association", "inbounds_groups_association", "user_usage_logs"]
 
 def main():
-    parser = argparse.ArgumentParser(description="Export a PasarGuard SQLite or PostgreSQL database to VeloRay import JSON")
-    parser.add_argument("--sqlite", help="Path to a PasarGuard SQLite backup")
+    parser = argparse.ArgumentParser(description="Export a Relational SQLite or PostgreSQL database to VeloRay import JSON")
+    parser.add_argument("--sqlite", help="Path to a Relational SQLite backup")
     parser.add_argument("--output", required=True, help="New private JSON file; existing files are not replaced")
     args = parser.parse_args()
     output = Path(args.output).resolve()
@@ -34,7 +34,7 @@ def main():
         dsn = os.environ.get("SQLALCHEMY_DATABASE_URL", os.environ.get("DATABASE_URL", ""))
         url = urlparse(dsn.replace("postgresql+asyncpg://", "postgresql://").replace("postgresql+psycopg://", "postgresql://"))
         if url.scheme not in ("postgresql", "postgres") or not url.hostname:
-            raise SystemExit("Set SQLALCHEMY_DATABASE_URL or DATABASE_URL to the PasarGuard PostgreSQL connection URL, or use --sqlite")
+            raise SystemExit("Set SQLALCHEMY_DATABASE_URL or DATABASE_URL to the Relational PostgreSQL connection URL, or use --sqlite")
         env = dict(os.environ, PGHOST=url.hostname, PGPORT=str(url.port or 5432), PGDATABASE=unquote(url.path.lstrip("/")), PGUSER=unquote(url.username or ""), PGPASSWORD=unquote(url.password or ""))
         query = parse_qs(url.query)
         if "sslmode" in query:
@@ -49,7 +49,7 @@ def main():
     with tempfile.NamedTemporaryFile(mode="w", dir=output.parent, prefix=".veloray-export-", delete=False, encoding="utf-8") as target:
         temporary = Path(target.name)
         os.chmod(temporary, 0o600)
-        json.dump({"source": "pasarguard", "tables": tables}, target, ensure_ascii=False, allow_nan=False)
+        json.dump({"source": "relational", "tables": tables}, target, ensure_ascii=False, allow_nan=False)
     try:
         os.link(temporary, output)
     finally:

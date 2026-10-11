@@ -154,6 +154,14 @@ func validateInbound(ctx context.Context, q Query, c Config, d Data) error {
 		return errors.New("node does not exist")
 	}
 	p, t, s := str(d, "protocol"), str(d, "transport"), str(d, "security")
+	core := fallback(str(d, "core"), "xray")
+	d["core"] = core
+	if !oneOf(core, "xray", "singbox") {
+		return errors.New("invalid core")
+	}
+	if core == "singbox" && (!oneOf(p, "vless", "vmess", "trojan", "shadowsocks", "hysteria", "http", "socks") || !oneOf(t, "raw", "ws", "grpc", "httpupgrade", "hysteria")) {
+		return errors.New("unsupported sing-box protocol or transport")
+	}
 	if !oneOf(p, "vless", "vmess", "trojan", "shadowsocks", "hysteria", "wireguard", "http", "socks", "tunnel", "tun") || !oneOf(t, "raw", "ws", "grpc", "xhttp", "httpupgrade", "mkcp", "hysteria") || !oneOf(s, "none", "tls", "reality") {
 		return errors.New("unsupported protocol, transport or security")
 	}
@@ -163,7 +171,7 @@ func validateInbound(ctx context.Context, q Query, c Config, d Data) error {
 	} else if port < 1 || port > 65535 {
 		return errors.New("port must be between 1 and 65535")
 	}
-	if port == 10085 || port == 9191 || flag(node, "is_local") && (port == 8610 || port == int64(c.PanelPort)) {
+	if port == 10085 || port == 10086 || port == 10087 || port == 9191 || flag(node, "is_local") && (port == 8610 || port == int64(c.PanelPort)) {
 		return errors.New("port is reserved by the panel, agent or Xray API")
 	}
 	if net.ParseIP(str(d, "listen")) == nil {
@@ -222,6 +230,17 @@ func validateInbound(ctx context.Context, q Query, c Config, d Data) error {
 	return nil
 }
 func validateClient(ctx context.Context, q Query, d Data) error {
+	if num(d, "device_limit") < 0 || num(d, "device_limit") > 10000 {
+		return errors.New("device limit must be 0–10000")
+	}
+	if flag(d, "start_after_first_use") {
+		if num(d, "duration_days") < 1 || num(d, "duration_days") > 36500 {
+			return errors.New("duration must be 1–36500 days")
+		}
+		if str(d, "first_used_at") == "" {
+			d["expires_at"] = nil
+		}
+	}
 	if _, err := multiplierMilli(d); err != nil {
 		return err
 	}
@@ -233,6 +252,9 @@ func validateClient(ctx context.Context, q Query, d Data) error {
 		return errors.New("inbound does not exist")
 	}
 	p := str(i, "protocol")
+	if num(d, "device_limit") > 0 && !oneOf(p, "vless", "vmess", "trojan", "hysteria") {
+		return errors.New("device limits require VLESS, VMess, Trojan or Hysteria2")
+	}
 	if !supportsClients(p) {
 		return errors.New("this inbound has no client accounts")
 	}

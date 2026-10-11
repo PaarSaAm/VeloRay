@@ -106,6 +106,9 @@ func TestIntegrationTelegramConfirmationOwnerReplayAnd2FA(t *testing.T) {
 func TestIntegrationTelegramRepliesRetryWithoutRepeatingChanges(t *testing.T) {
 	s, ctx := integration(t)
 	cfg := defaultSettings()
+	for _, field := range []string{"telegram_alert_cpu_percent", "telegram_alert_memory_percent", "telegram_alert_disk_percent"} {
+		cfg[field] = 101
+	}
 	cfg["telegram_enabled"] = true
 	cfg["telegram_owner_ids"] = []any{"123"}
 	token, e := seal(s.Config.FieldKey, "12345:fake_token_for_tests")

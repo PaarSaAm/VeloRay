@@ -6,6 +6,7 @@ import (
 	"math"
 	"math/big"
 	"strconv"
+	"time"
 )
 
 // Negative values are discounts: -0.5 bills 50%, -0.25 bills 75%.
@@ -84,6 +85,7 @@ func applyTrafficDelta(c Data, delta int64) error {
 	}
 	c["_charge_remainder"] = remainder.Int64()
 	c["last_traffic_at"] = stamp()
+	activateFirstUse(c, time.Now(), delta > 0)
 	return nil
 }
 
@@ -96,7 +98,7 @@ func effectiveTrafficMultiplier(c Data) float64 {
 	return value
 }
 
-var accountFields = []string{"owner_id", "enabled", "expires_at", "traffic_limit_bytes", "used_traffic_bytes", "lifetime_traffic_bytes", "raw_used_traffic_bytes", "raw_lifetime_traffic_bytes", "traffic_multiplier", "_charge_remainder", "last_traffic_at", "disabled_reason", "renewal_interval_days", "next_renewal_at"}
+var accountFields = []string{"device_limit", "start_after_first_use", "duration_days", "first_used_at", "_device_seen", "_device_denied", "owner_id", "enabled", "expires_at", "traffic_limit_bytes", "used_traffic_bytes", "lifetime_traffic_bytes", "raw_used_traffic_bytes", "raw_lifetime_traffic_bytes", "traffic_multiplier", "_charge_remainder", "last_traffic_at", "disabled_reason", "renewal_interval_days", "next_renewal_at"}
 
 func accountKey(c Data) string {
 	if id := num(c, "_account"); id > 0 {

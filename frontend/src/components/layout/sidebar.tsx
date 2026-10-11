@@ -7,6 +7,8 @@ import { FaIcon } from "@/components/ui/fa-icon";
 export type RouteKey =
   | "dashboard"
   | "clients"
+  | "outbounds"
+  | "routing"
   | "inbounds"
   | "nodes"
   | "traffic"
@@ -19,17 +21,19 @@ export type RouteKey =
 const groups = [
   {
     label: "Overview",
-    items: [
-      { key: "dashboard", label: "Dashboard", icon: "gauge-high" },
-      { key: "traffic", label: "Traffic", icon: "chart-line" },
-    ],
+    items: [{ key: "dashboard", label: "Dashboard", icon: "gauge-high" }],
   },
   {
     label: "Management",
     items: [
       { key: "clients", label: "Clients", icon: "users" },
       { key: "inbounds", label: "Inbounds", icon: "diagram-project" },
-      { key: "imports", label: "Import data", icon: "download" },
+      {
+        key: "outbounds",
+        label: "Outbounds",
+        icon: "arrow-right-from-bracket",
+      },
+      { key: "routing", label: "Routing", icon: "route" },
     ],
   },
   {
@@ -73,6 +77,8 @@ export function Sidebar({
     clients: "clients.read",
     inbounds: "inbounds.read",
     nodes: "nodes.read",
+    outbounds: "outbounds.read",
+    routing: "routing_rules.read",
     traffic: "traffic.read",
     xray: "xray.read",
     api: "api.read",

@@ -13,7 +13,7 @@ import zipfile
 def main():
     project = Path(__file__).resolve().parents[1]
     version = (project / "VERSION").read_text().strip()
-    if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9.-]+)?", version):
+    if not re.fullmatch(r"[0-9]+\.[0-9]+(?:\.[0-9]+)?(?:-[A-Za-z0-9.-]+)?", version):
         raise SystemExit("Invalid release version.")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=project.parent / f"VeloRay-v{version}-GitHub.zip")

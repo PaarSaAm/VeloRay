@@ -3,7 +3,7 @@ set -Eeuo pipefail
 cd "$(dirname -- "${BASH_SOURCE[0]}")/.."
 manifest() {
  {
-  printf '%s\n' go.mod go.sum VERSION
+  printf '%s\n' go.mod go.sum VERSION scripts/build-singbox.sh
   # Python bytecode is local build state, never an input to the Go binaries.
   find cmd internal -type f ! -name '*_test.go' ! -name '*.pyc' ! -path '*/__pycache__/*'
   find frontend -maxdepth 1 -type f ! -name '*.tsbuildinfo'
@@ -43,12 +43,13 @@ for arch in amd64 arm64;do
  chmod 0755 "$temporary/$arch/xray/xray"
  printf '%s\n' "$xray_version" >"$temporary/$arch/xray/VERSION"
  (cd "$temporary/$arch/xray" && sha256sum xray geoip.dat geosite.dat >SHA256SUMS)
+ bash scripts/build-singbox.sh "$arch" "$temporary/$arch/singbox"
  find frontend/node_modules -type f \( -iname 'license*' -o -iname 'copying*' \) | while IFS= read -r file;do
   name="${file#frontend/node_modules/}";name="${name//\//_}";cp "$file" "$temporary/licenses/npm/$name"
  done
  cp -a "$temporary/licenses" "$temporary/$arch/"
  cp "$temporary/source.SHA256SUMS" "$temporary/$arch/source.SHA256SUMS"
- XZ_OPT='-T2 -6' tar -cJf "runtime/linux-$arch.tar.xz" -C "$temporary/$arch" bin frontend xray licenses source.SHA256SUMS
+ XZ_OPT='-T2 -6' tar -cJf "runtime/linux-$arch.tar.xz" -C "$temporary/$arch" bin frontend xray singbox licenses source.SHA256SUMS
 done
 # A build must not modify its source inputs after recording the manifest.
 manifest >"$temporary/current.SHA256SUMS"
