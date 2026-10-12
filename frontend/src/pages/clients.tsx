@@ -1,3 +1,4 @@
+import { FloatingMenu } from "@/components/common/floating-menu";
 import { ClientConnections } from "@/components/client-connections";
 import { Textarea } from "@/components/ui/controls";
 import { Select, Input } from "@/components/ui/controls";
@@ -10,7 +11,6 @@ import {
   Check,
   Copy,
   ExternalLink,
-  MoreHorizontal,
   Globe,
   MonitorSmartphone,
   Pause,
@@ -129,6 +129,7 @@ export function ClientsPage() {
     client: ClientItem;
     kind: "ips" | "devices";
   } | null>(null);
+  useEffect(() => setMenu(null), [query, status, inboundFilter]);
   const [owners, setOwners] = useState<import("@/lib/api").AdminUser[]>([]);
   useEffect(() => {
     if (session?.is_superuser)
@@ -782,72 +783,67 @@ export function ClientsPage() {
                         </div>
                       </td>
                       <td className="relative">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          aria-label={tx("Actions for {0}", c.name)}
-                          onClick={() => setMenu(menu === c.id ? null : c.id)}
+                        <FloatingMenu
+                          label={tx("Actions for {0}", c.name)}
+                          open={menu === c.id}
+                          onToggle={() => setMenu(menu === c.id ? null : c.id)}
+                          onClose={() => setMenu(null)}
                         >
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                        {menu === c.id && (
-                          <div className="absolute right-3 top-10 z-20 w-44 overflow-hidden rounded-md border border-[var(--border)] bg-[var(--card)] p-1 shadow-xl">
-                            <MenuItem
-                              icon="pen"
-                              disabled={!can(session, "clients.write")}
-                              label={t("Edit")}
-                              onClick={() => {
-                                setMenu(null);
-                                openEdit(c);
-                              }}
-                            />
-                            <MenuItem
-                              icon={c.enabled ? "pause" : "play"}
-                              disabled={!can(session, "clients.write")}
-                              label={c.enabled ? t("Disable") : t("Enable")}
-                              onClick={() => {
-                                setMenu(null);
-                                toggle(c);
-                              }}
-                            />
-                            <MenuItem
-                              icon="globe"
-                              label={t("IP's")}
-                              onClick={() => {
-                                setMenu(null);
-                                setConnections({ client: c, kind: "ips" });
-                              }}
-                            />
-                            <MenuItem
-                              icon="device"
-                              label={t("Device's")}
-                              onClick={() => {
-                                setMenu(null);
-                                setConnections({ client: c, kind: "devices" });
-                              }}
-                            />
-                            <MenuItem
-                              icon="rotate-left"
-                              disabled={!can(session, "clients.write")}
-                              label={t("Reset usage")}
-                              onClick={() => {
-                                setMenu(null);
-                                reset(c);
-                              }}
-                            />
-                            <div className="my-1 h-px bg-[var(--border)]" />
-                            <MenuItem
-                              icon="trash"
-                              disabled={!can(session, "clients.delete")}
-                              label={t("Delete")}
-                              danger
-                              onClick={() => {
-                                setMenu(null);
-                                remove(c);
-                              }}
-                            />
-                          </div>
-                        )}
+                          <MenuItem
+                            icon="pen"
+                            disabled={!can(session, "clients.write")}
+                            label={t("Edit")}
+                            onClick={() => {
+                              setMenu(null);
+                              openEdit(c);
+                            }}
+                          />
+                          <MenuItem
+                            icon={c.enabled ? "pause" : "play"}
+                            disabled={!can(session, "clients.write")}
+                            label={c.enabled ? t("Disable") : t("Enable")}
+                            onClick={() => {
+                              setMenu(null);
+                              toggle(c);
+                            }}
+                          />
+                          <MenuItem
+                            icon="globe"
+                            label={t("IP's")}
+                            onClick={() => {
+                              setMenu(null);
+                              setConnections({ client: c, kind: "ips" });
+                            }}
+                          />
+                          <MenuItem
+                            icon="device"
+                            label={t("Device's")}
+                            onClick={() => {
+                              setMenu(null);
+                              setConnections({ client: c, kind: "devices" });
+                            }}
+                          />
+                          <MenuItem
+                            icon="rotate-left"
+                            disabled={!can(session, "clients.write")}
+                            label={t("Reset usage")}
+                            onClick={() => {
+                              setMenu(null);
+                              reset(c);
+                            }}
+                          />
+                          <div className="my-1 h-px bg-[var(--border)]" />
+                          <MenuItem
+                            icon="trash"
+                            disabled={!can(session, "clients.delete")}
+                            label={t("Delete")}
+                            danger
+                            onClick={() => {
+                              setMenu(null);
+                              remove(c);
+                            }}
+                          />
+                        </FloatingMenu>
                       </td>
                     </tr>
                   );
@@ -1047,6 +1043,7 @@ function MenuItem({
   useLocale();
   return (
     <button
+      role="menuitem"
       disabled={disabled}
       onClick={onClick}
       className={`disabled:opacity-40 disabled:cursor-not-allowed flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-[11px] ${danger ? "text-red-500 hover:bg-red-500/8" : "text-[var(--muted-strong)] hover:bg-[var(--surface-2)] hover:text-[var(--fg)]"}`}
@@ -1090,6 +1087,7 @@ function ClientModal({
       onClose={() => {
         if (!busy) setEditor(null);
       }}
+      padded={false}
     >
       <div className="flex items-start justify-between border-b border-[var(--border)] px-5 py-4">
         <div>

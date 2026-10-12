@@ -128,7 +128,13 @@ export function LoginPage({ onSuccess }: { onSuccess: () => void }) {
 
           <button
             type="button"
-            onClick={() => setTheme(resolved === "dark" ? "light" : "dark")}
+            onClick={(event) => {
+              const rect = event.currentTarget.getBoundingClientRect();
+              setTheme(resolved === "dark" ? "light" : "dark", {
+                x: rect.left + rect.width / 2,
+                y: rect.top + rect.height / 2,
+              });
+            }}
             className="grid h-9 w-9 place-items-center rounded-md border border-[var(--border)] bg-[var(--card)] text-[var(--muted-strong)] shadow-sm transition hover:bg-[var(--surface-2)] hover:text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
             aria-label="Toggle theme"
           >

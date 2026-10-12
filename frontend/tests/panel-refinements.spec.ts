@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { test, expect, type Page } from "@playwright/test";
 import {
   outboundTemplate,
@@ -14,7 +15,11 @@ const node = {
   status: "ok",
   config_patch: {},
 };
-async function panel(page: Page, path: string) {
+async function panel(
+  page: Page,
+  path: string,
+  overrides: Record<string, { json: any; status?: number }> = {},
+) {
   const outbounds: any[] = [],
     rules: any[] = [];
   await page.addInitScript(() => {
@@ -25,6 +30,10 @@ async function panel(page: Page, path: string) {
     const url = new URL(route.request().url()),
       resource = url.pathname.replace(/^\/api\//, "").replace(/\/$/, "");
     let json: any = {};
+    if (overrides[resource]) {
+      await route.fulfill(overrides[resource]);
+      return;
+    }
     if (resource === "auth/me")
       json = { id: 1, username: "admin", is_superuser: true, permissions: [] };
     else if (resource === "settings")
@@ -35,6 +44,48 @@ async function panel(page: Page, path: string) {
         dashboard_refresh_seconds: 60,
       };
     else if (resource === "nodes") json = [node];
+    else if (resource === "inbounds" || resource.startsWith("admin/"))
+      json = [];
+    else if (resource === "health")
+      json = {
+        status: "ok",
+        database: "ok",
+        version: "1.0",
+        uptime_seconds: 95,
+        started_at: new Date(Date.now() - 95000).toISOString(),
+      };
+    else if (resource === "system-info")
+      json = {
+        hostname: "Local",
+        uptime_seconds: 9876543,
+        panel_uptime_seconds: 95,
+        cpu_percent: 0,
+        cpu_count: 2,
+        memory_total_bytes: 100,
+        memory_used_bytes: 50,
+        memory_available_bytes: 50,
+        memory_percent: 50,
+        swap_total_bytes: 0,
+        swap_used_bytes: 0,
+        swap_free_bytes: 0,
+        swap_percent: 0,
+        disk_total_bytes: 100,
+        disk_used_bytes: 50,
+        disk_free_bytes: 50,
+        disk_percent: 50,
+        load_average: [0, 0, 0],
+      };
+    else if (resource.endsWith("/sni-scan"))
+      json = {
+        results: Array.from({ length: 14 }, (_, index) => ({
+          domain: index === 0 ? "www.cloudflare.com" : `edge-${index}.example`,
+          valid: index % 2 === 0,
+          latency_ms: 30 + index,
+          tls_version: "TLS 1.3",
+          alpn: "h2",
+          error: "Certificate validation failed",
+        })),
+      };
     else if (
       resource.startsWith("outbounds") ||
       resource.startsWith("routing_rules")
@@ -114,6 +165,7 @@ test("original dark and light palette, raw upload and download", async ({
     ),
   ).toBe("#000000");
   await page.getByRole("button", { name: "Theme: dark" }).click();
+  await expect(page.locator("html")).toHaveClass(/light/);
   expect(
     await page.evaluate(() =>
       getComputedStyle(document.documentElement)
@@ -134,9 +186,9 @@ test("outbound defaults, guided creation, duplicate, status and delete", async (
   page,
 }) => {
   await panel(page, "/outbounds");
-  await expect(page.locator(".network-system-card")).toHaveCount(2);
+  await expect(page.locator(".network-builtin-row")).toHaveCount(2);
   await expect(
-    page.locator(".network-system-card").getByText("direct", { exact: true }),
+    page.getByRole("button", { name: "Inspect direct", exact: true }),
   ).toBeVisible();
   await page.getByRole("button", { name: "New outbound", exact: true }).click();
   const form = page.getByRole("dialog");
@@ -181,7 +233,9 @@ test("outbound defaults, guided creation, duplicate, status and delete", async (
     .getByRole("dialog")
     .getByRole("button", { name: "Delete", exact: true })
     .click();
-  await expect(page.locator("tbody tr")).toHaveCount(0);
+  await expect(page.locator("tbody tr:not(.network-builtin-row)")).toHaveCount(
+    0,
+  );
 });
 test("routing defaults, presets and sing-box block action", async ({
   page,
@@ -340,9 +394,18 @@ test("client IP and registered device dialogs on desktop and mobile", async ({
     await route.fulfill({ json });
   });
   await page.goto("/clients");
+  await page.getByPlaceholder("Search clients...").fill("alice");
   await page.getByRole("button", { name: "Actions for alice" }).click();
+  const menu = page.getByRole("menu");
+  expect(
+    await menu.evaluate((element) => element.parentElement === document.body),
+  ).toBeTruthy();
+  const box = await menu.boundingBox();
+  expect(box!.y).toBeGreaterThanOrEqual(0);
+  expect(box!.y + box!.height).toBeLessThanOrEqual(1000);
+  await page.screenshot({ path: "test-results/client-menu-overlay.png" });
   await page
-    .getByRole("button", { name: "IP's", exact: true })
+    .getByRole("menuitem", { name: "IP's", exact: true })
     .filter({ visible: true })
     .click();
   let dialog = page.getByRole("dialog");
@@ -363,7 +426,7 @@ test("client IP and registered device dialogs on desktop and mobile", async ({
   await expect(dialog).toHaveCount(0);
   await page.getByRole("button", { name: "Actions for alice" }).click();
   await page
-    .getByRole("button", { name: "Device's", exact: true })
+    .getByRole("menuitem", { name: "Device's", exact: true })
     .filter({ visible: true })
     .click();
   dialog = page.getByRole("dialog");
@@ -387,4 +450,186 @@ test("client IP and registered device dialogs on desktop and mobile", async ({
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBeTruthy();
+});
+
+test("SNI and configuration dialogs have bounded size, padding and nested focus", async ({
+  page,
+}) => {
+  await panel(page, "/outbounds");
+  await page
+    .getByRole("button", { name: "Inspect direct", exact: true })
+    .click();
+  const config = page.getByRole("dialog", {
+    name: "Configuration",
+    exact: true,
+  });
+  expect(
+    await config.evaluate((el) => parseFloat(getComputedStyle(el).paddingLeft)),
+  ).toBeGreaterThanOrEqual(18);
+  await page.screenshot({ path: "test-results/configuration-dialog.png" });
+  await page.keyboard.press("Escape");
+  await page
+    .getByRole("button", { name: "Inbounds", exact: true })
+    .filter({ visible: true })
+    .click();
+  await page.getByRole("button", { name: "New inbound", exact: true }).click();
+  const parent = page.getByRole("dialog", { name: "New inbound", exact: true });
+  await parent.getByRole("button", { name: "Scan SNI", exact: true }).click();
+  const scanner = page.getByRole("dialog", {
+    name: "SNI scanner",
+    exact: true,
+  });
+  await scanner.getByRole("button", { name: "Find SNI", exact: true }).click();
+  await expect(scanner.locator(".sni-result")).toHaveCount(14);
+  const box = await scanner.boundingBox();
+  expect(box!.width).toBeLessThanOrEqual(540);
+  expect(box!.height).toBeLessThanOrEqual(880);
+  expect(
+    await scanner.evaluate((el) =>
+      parseFloat(getComputedStyle(el).paddingLeft),
+    ),
+  ).toBeGreaterThanOrEqual(18);
+  await page.screenshot({ path: "test-results/sni-dialog-dark.png" });
+  await page.keyboard.press("Escape");
+  await expect(scanner).toHaveCount(0);
+  await expect(parent).toBeVisible();
+  expect(await page.evaluate(() => document.body.style.overflow)).toBe(
+    "hidden",
+  );
+  await page.keyboard.press("Escape");
+  await expect(parent).toHaveCount(0);
+  expect(await page.evaluate(() => document.body.style.overflow)).not.toBe(
+    "hidden",
+  );
+  await page.getByRole("button", { name: "Theme: dark" }).click();
+  await expect(page.locator("html")).toHaveClass(/light/);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("button", { name: "New inbound", exact: true }).click();
+  await parent.getByRole("button", { name: "Scan SNI", exact: true }).click();
+  await scanner.getByRole("button", { name: "Find SNI", exact: true }).click();
+  await expect(scanner.locator(".sni-result")).toHaveCount(14);
+  const small = await scanner.boundingBox();
+  expect(small!.x).toBeGreaterThanOrEqual(12);
+  expect(small!.x + small!.width).toBeLessThanOrEqual(378);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBeTruthy();
+  await page.screenshot({ path: "test-results/sni-dialog-light-mobile.png" });
+});
+
+test("Settings reports database and panel uptime even if host information fails", async ({
+  page,
+}) => {
+  await panel(page, "/settings", {
+    "system-info": {
+      status: 503,
+      json: { detail: "Host metrics unavailable" },
+    },
+  });
+  await expect(page.getByText("Connected", { exact: true })).toBeVisible();
+  await expect(page.getByText("1m", { exact: true })).toBeVisible();
+  await expect(page.getByText("Checking…", { exact: true })).toHaveCount(0);
+  await page.screenshot({ path: "test-results/settings-status.png" });
+});
+
+test("custom chart range supports keyboard and pointer controls", async ({
+  page,
+}) => {
+  await panel(page, "/dashboard");
+  const start = page.getByRole("slider", { name: "Chart start", exact: true }),
+    end = page.getByRole("slider", { name: "Chart end", exact: true });
+  await start.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(start).toHaveAttribute("aria-valuenow", "1");
+  await end.focus();
+  await page.keyboard.press("ArrowLeft");
+  await expect(end).toHaveAttribute("aria-valuenow", "99");
+  const box = await page.locator(".chart-window-track").boundingBox();
+  await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box!.x + box!.width * 0.55, box!.y + box!.height / 2);
+  await page.mouse.up();
+  await page.getByRole("button", { name: "Full range", exact: true }).click();
+  await expect(start).toHaveAttribute("aria-valuenow", "0");
+  await expect(end).toHaveAttribute("aria-valuenow", "100");
+  await expect(page.locator('input[type="range"]')).toHaveCount(0);
+  await page.screenshot({ path: "test-results/chart-range.png" });
+});
+
+test("compact subscription portal fits desktop and mobile while preserving connection details", async ({
+  page,
+}) => {
+  const file = process.env.VELORAY_TEST_PORTAL_HTML;
+  test.skip(!file, "portal render fixture is required");
+  const html = readFileSync(file!, "utf8");
+  await page.route("**/portal-preview", (route) =>
+    route.fulfill({ contentType: "text/html", body: html }),
+  );
+  await page.goto("/portal-preview");
+  for (const viewport of [
+    { width: 1280, height: 720 },
+    { width: 390, height: 844 },
+    { width: 320, height: 568 },
+  ]) {
+    await page.setViewportSize(viewport);
+    expect(
+      await page.evaluate(
+        () =>
+          document.documentElement.scrollWidth <= innerWidth &&
+          document.documentElement.scrollHeight <= innerHeight,
+      ),
+    ).toBeTruthy();
+  }
+  await expect(page.locator("details[open]")).toHaveCount(0);
+  await expect(
+    page.getByRole("link", { name: "Base64", exact: true }),
+  ).toHaveAttribute("href", /format=base64$/);
+  await page.getByText("Connection URI", { exact: true }).click();
+  await expect(
+    page.getByRole("textbox", { name: "Connection URI", exact: true }),
+  ).toHaveValue("vless://example");
+  await page.getByText("Connection URI", { exact: true }).click();
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.screenshot({ path: "test-results/subscription-light-mobile.png" });
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.screenshot({ path: "test-results/subscription-dark-desktop.png" });
+});
+
+test("theme reveals a circular palette and respects reduced motion", async ({
+  page,
+}) => {
+  await panel(page, "/dashboard");
+  await page.evaluate(() => {
+    const original = Element.prototype.animate;
+    Element.prototype.animate = function (keyframes, options) {
+      if (
+        typeof options === "object" &&
+        options.pseudoElement === "::view-transition-new(root)"
+      )
+        document.documentElement.dataset.themeReveal =
+          JSON.stringify(keyframes);
+      return original.call(this, keyframes, options);
+    };
+  });
+  await page.getByRole("button", { name: "Theme: dark", exact: true }).click();
+  await expect(page.locator("html")).toHaveClass(/light/);
+  await expect(page.locator("html")).toHaveAttribute(
+    "data-theme-reveal",
+    /circle\(0px/,
+  );
+  expect(
+    await page
+      .locator('nav [aria-current="page"]')
+      .evaluate((el) => getComputedStyle(el).boxShadow),
+  ).toBe("none");
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.evaluate(
+    () => delete document.documentElement.dataset.themeReveal,
+  );
+  await page.getByRole("button", { name: "Theme: light", exact: true }).click();
+  await expect(page.locator("html")).toHaveClass(/dark/);
+  await expect(page.locator("html")).not.toHaveAttribute("data-theme-reveal");
 });

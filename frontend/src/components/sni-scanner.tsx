@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Rocket, X, Search, Check } from "lucide-react";
 import { Dialog } from "@/components/common/dialog";
 import { Button } from "@/components/ui/button";
@@ -27,16 +27,30 @@ export function SNIScanner({
     [results, setResults] = useState<Result[]>([]),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
+  const request = useRef<AbortController | null>(null);
+  useEffect(() => () => request.current?.abort(), []);
+  function close() {
+    request.current?.abort();
+    request.current = null;
+    setBusy(false);
+    setOpen(false);
+  }
   async function scan(suggest: boolean) {
+    request.current?.abort();
+    const controller = new AbortController();
+    request.current = controller;
+    setResults([]);
     setBusy(true);
     setError("");
     try {
       const out = await api<{ results: Result[] }>(`/nodes/${node}/sni-scan`, {
+        signal: controller.signal,
         method: "POST",
         body: JSON.stringify({
           domains: suggest ? [] : domain.split(/[\s,]+/).filter(Boolean),
         }),
       });
+      if (controller.signal.aborted) return;
       setResults(
         out.results.sort(
           (a, b) =>
@@ -44,9 +58,12 @@ export function SNIScanner({
         ),
       );
     } catch (e: any) {
-      setError(e.message);
+      if (!controller.signal.aborted) setError(e.message);
     } finally {
-      setBusy(false);
+      if (request.current === controller) {
+        request.current = null;
+        setBusy(false);
+      }
     }
   }
   return (
@@ -65,6 +82,8 @@ export function SNIScanner({
           title={t("Scan SNI")}
           onClick={() => {
             setDomain(value);
+            setResults([]);
+            setError("");
             setOpen(true);
           }}
         >
@@ -72,10 +91,15 @@ export function SNIScanner({
         </button>
       </div>
       {open && (
-        <Dialog label={t("SNI scanner")} onClose={() => setOpen(false)}>
+        <Dialog label={t("SNI scanner")} size="sm" onClose={close}>
           <div className="flex items-center justify-between mb-5">
             <h3 className="text-lg font-semibold">{t("SNI scanner")}</h3>
-            <Button variant="ghost" size="icon" onClick={() => setOpen(false)}>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={t("Close")}
+              onClick={close}
+            >
               <X size={16} />
             </Button>
           </div>
@@ -115,12 +139,9 @@ export function SNIScanner({
               {error}
             </p>
           )}
-          <div className="space-y-2">
+          <div className="sni-results space-y-2">
             {results.map((r) => (
-              <div
-                key={r.domain}
-                className="flex items-center justify-between gap-3 rounded-lg border border-[var(--border)] p-3"
-              >
+              <div key={r.domain} className="sni-result">
                 <div>
                   <div className="text-xs font-medium">{r.domain}</div>
                   <div className="text-[10px] text-[var(--muted)] mt-1">
@@ -135,7 +156,7 @@ export function SNIScanner({
                     size="sm"
                     onClick={() => {
                       onChange(r.domain);
-                      setOpen(false);
+                      close();
                     }}
                   >
                     <Check size={14} />

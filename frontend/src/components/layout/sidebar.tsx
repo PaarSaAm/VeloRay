@@ -135,7 +135,7 @@ export function Sidebar({
                         className={cn(
                           "text-[12px] transition-colors",
                           active
-                            ? "text-[var(--brand)]"
+                            ? "text-[var(--fg)]"
                             : "text-[var(--muted-strong)] group-hover:text-[var(--fg)]",
                         )}
                       />

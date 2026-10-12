@@ -29,6 +29,8 @@ Xray as the primary core. sing-box as the secondary core. One interface for both
 | Automation | Telegram owner controls, alerts, scheduled backups and REST API |
 | Interface | Dark and light themes, English and Persian, responsive layouts, local fonts, custom dropdowns, date picker and checkboxes |
 
+Client action menus stay above scrollable tables. SNI and configuration dialogs use bounded, responsive layouts. Theme changes reveal the new palette from the theme button, with reduced-motion and browser fallbacks.
+
 The product version is **1.0**. Maintenance updates retain this version until the project owner requests a version change. The frontend package uses the equivalent npm version `1.0.0`.
 
 ## Installation
@@ -103,7 +105,7 @@ HTTP and SOCKS have no managed per-client quota accounting in this panel. Shadow
 
 **Used** is the amount charged against the quota. A multiplier of `3` means a 1 GiB transfer consumes 3 GiB of quota. The client directory displays this charged amount once, with `3x` beside it.
 
-The subscription's usage header uses the charged amount as well. **Overview** and **Top consumers** show actual transferred bytes without a multiplier. Traffic overview separates **Upload** and **Download**, with a separate chart series for each direction. Transfer rate uses the real bytes recorded in each five-minute interval.
+The subscription's usage header uses the charged amount as well. **Overview** and **Top consumers** show actual transferred bytes without a multiplier. Traffic overview separates **Upload** and **Download**, with a separate chart series for each direction. Transfer rate uses the real bytes recorded in each five-minute interval. The chart has a custom time-range control with draggable handles, keyboard support and a full-range reset.
 
 Existing usage is retained during the upgrade. Traffic collected before directional accounting was available appears as **Earlier traffic**; its direction is not guessed. New transfers are recorded separately. Resetting an account's usage resets its current upload/download counters alongside its quota usage, while lifetime counters and retained traffic history remain intact.
 
@@ -170,6 +172,8 @@ https://YOUR_PANEL/sub/TOKEN
 Clash/Mihomo and sing-box user agents select their respective formats automatically. Other URI clients, including V2Box, receive the Base64 feed by default. Use explicit format URLs when an app does not send a recognizable user agent.
 
 Feeds include `Subscription-Userinfo`, `Profile-Title`, `Profile-Update-Interval`, `Profile-Web-Page-URL`, and configured `Support-URL`, `Announce` and `Announce-URL` headers. Announcement text is Base64 encoded. Configure announcements and portal options in **Settings → Subscription** or **General** as presented in the panel.
+
+The browser portal keeps usage, expiry, subscription formats and a QR code in a compact layout. Connection URIs and app information expand on demand. Settings reports database connectivity independently of host metrics, and its Uptime counter starts with the panel process.
 
 Protocol, transport and header support vary between app releases. Export formats reject configurations that cannot be represented. Announcement rendering depends on the app's support for these headers.
 

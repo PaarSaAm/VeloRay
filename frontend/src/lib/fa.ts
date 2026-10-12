@@ -648,6 +648,18 @@ export const fa: Record<string, string> = Object.fromEntries(
     .map((line) => line.split("|")),
 );
 Object.assign(fa, {
+  "Checking…": "در حال بررسی…",
+  Unavailable: "در دسترس نیست",
+  Connected: "متصل",
+  "Some system information is unavailable":
+    "بخشی از اطلاعات سیستم در دسترس نیست",
+  "No outbounds": "خروجی‌ای وجود ندارد",
+  Inspect: "مشاهده",
+  "Chart start": "شروع بازهٔ نمودار",
+  "Chart end": "پایان بازهٔ نمودار",
+  "Full range": "کل بازه",
+  "{0}s": "{0} ثانیه",
+
   "IP's": "آی‌پی‌ها",
   "Device's": "دستگاه‌ها",
   "No connected IPs": "آی‌پی متصلی وجود ندارد",

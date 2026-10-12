@@ -60,7 +60,13 @@ export function Header({
           title={tx("Theme: {0}", t(theme))}
           variant="ghost"
           size="icon"
-          onClick={() => setTheme(next)}
+          onClick={(event) => {
+            const rect = event.currentTarget.getBoundingClientRect();
+            setTheme(next, {
+              x: rect.left + rect.width / 2,
+              y: rect.top + rect.height / 2,
+            });
+          }}
         >
           <ThemeIcon className="h-4 w-4" />
         </Button>

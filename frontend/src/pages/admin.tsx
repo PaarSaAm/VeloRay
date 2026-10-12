@@ -540,6 +540,7 @@ export function AdminPage() {
       )}
       {editor && (
         <Dialog
+          padded={false}
           label={t("Administrator")}
           onClose={() => {
             if (!busy) setEditor(null);
@@ -736,6 +737,7 @@ export function AdminPage() {
       )}
       {keyEditor && (
         <Dialog
+          padded={false}
           label={t("Create API key")}
           onClose={() => {
             if (!busy) setKeyEditor(null);

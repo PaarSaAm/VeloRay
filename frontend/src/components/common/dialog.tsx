@@ -1,13 +1,22 @@
+import { createPortal } from "react-dom";
 import { useLocale } from "@/lib/i18n";
 import { useEffect, useRef, type ReactNode } from "react";
+let modalLocks = 0;
+let bodyOverflow = "";
 export function Dialog({
   label,
   onClose,
   children,
+  padded = true,
+  size = "md",
+  className = "",
 }: {
   label: string;
   onClose: () => void;
   children: ReactNode;
+  padded?: boolean;
+  size?: "sm" | "md" | "lg";
+  className?: string;
 }) {
   useLocale();
   const root = useRef<HTMLDivElement>(null),
@@ -17,7 +26,8 @@ export function Dialog({
     const previous = document.activeElement as HTMLElement | null;
     const el = root.current;
     if (!el) return;
-    const overflow = document.body.style.overflow;
+    if (modalLocks === 0) bodyOverflow = document.body.style.overflow;
+    modalLocks++;
     document.body.style.overflow = "hidden";
     const focusables = () =>
       Array.from(
@@ -27,6 +37,13 @@ export function Dialog({
       ).filter((x) => x.offsetParent !== null);
     (focusables()[0] || el).focus();
     const key = (e: KeyboardEvent) => {
+      if (
+        document
+          .querySelectorAll(".modal-backdrop")
+          .item(document.querySelectorAll(".modal-backdrop").length - 1) !==
+        el.parentElement
+      )
+        return;
       if (e.key === "Escape") {
         e.preventDefault();
         e.stopPropagation();
@@ -49,14 +66,15 @@ export function Dialog({
         }
       }
     };
-    el.addEventListener("keydown", key);
+    document.addEventListener("keydown", key);
     return () => {
-      el.removeEventListener("keydown", key);
-      document.body.style.overflow = overflow;
+      document.removeEventListener("keydown", key);
+      modalLocks--;
+      if (modalLocks === 0) document.body.style.overflow = bodyOverflow;
       previous?.focus();
     };
   }, []);
-  return (
+  return createPortal(
     <div
       className="modal-backdrop"
       onMouseDown={(e) => {
@@ -65,7 +83,7 @@ export function Dialog({
     >
       <div
         ref={root}
-        className="modal-panel"
+        className={`modal-panel modal-${size} ${padded ? "modal-padded" : ""} ${className}`}
         role="dialog"
         aria-modal="true"
         aria-label={label}
@@ -73,6 +91,7 @@ export function Dialog({
       >
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

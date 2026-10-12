@@ -124,12 +124,6 @@ export function ApiDocsPage() {
           "Session-authenticated REST endpoints used by the VeloRay web panel and automation.",
         )}
       />
-      <div className="rounded-xl border border-blue-500/15 bg-blue-500/5 px-4 py-3 text-[11px] leading-5 text-[var(--muted-strong)]">
-        <FaIcon icon="shield-halved" className="mr-1.5 text-blue-500" />
-        {t(
-          "Browser API uses secure sessions and CSRF protection. Public subscription routes are token-scoped and do not expose panel administration.",
-        )}
-      </div>
       {groups.map((g) => (
         <Card key={g.name}>
           <CardHeader>

@@ -16,7 +16,10 @@ import (
 	"time"
 )
 
+var panelProcessStartedAt = time.Now()
+
 type Server struct {
+	StartedAt    time.Time
 	Config       Config
 	Store        *Store
 	HTTP         *http.Client
@@ -105,10 +108,18 @@ func (s *Server) Handler() http.Handler {
 			ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 			defer cancel()
 			if e := s.Store.Pool.Ping(ctx); e != nil {
-				writeJSON(w, 503, Data{"status": "degraded"})
+				d := s.panelRuntime(time.Now())
+				d["status"] = "degraded"
+				d["database"] = "unavailable"
+				d["version"] = Version
+				writeJSON(w, 503, d)
 				return
 			}
-			writeJSON(w, 200, Data{"status": "ok", "version": Version})
+			d := s.panelRuntime(time.Now())
+			d["status"] = "ok"
+			d["database"] = "ok"
+			d["version"] = Version
+			writeJSON(w, 200, d)
 			return
 		}
 		if path == "version" && r.Method == "GET" {

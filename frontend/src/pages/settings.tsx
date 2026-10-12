@@ -1,12 +1,19 @@
+import { useSession } from "@/lib/session";
 import { Textarea } from "@/components/ui/controls";
 import { ImportsPage } from "@/pages/imports";
 import { Select, Input } from "@/components/ui/controls";
 import { t } from "@/lib/i18n";
 import { useLocale, tx } from "@/lib/i18n";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import {
+  FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   api,
-  currentSession,
   type AppSettings,
   type SystemInfo,
   type TelegramStatus,
@@ -29,9 +36,21 @@ const duration = (s: number) => {
   const d = Math.floor(s / 86400),
     h = Math.floor((s % 86400) / 3600),
     m = Math.floor((s % 3600) / 60);
-  return d ? tx("{0}d {1}h", d, h) : h ? tx("{0}h {1}m", h, m) : tx("{0}m", m);
+  return d
+    ? tx("{0}d {1}h", d, h)
+    : h
+      ? tx("{0}h {1}m", h, m)
+      : s >= 60
+        ? tx("{0}m", m)
+        : tx("{0}s", Math.floor(s));
 };
-type Health = { status: string; version: string; database: string };
+type Health = {
+  status: string;
+  version: string;
+  database?: string;
+  uptime_seconds?: number;
+  started_at?: string;
+};
 const defaults: AppSettings = {
   site_name: "VeloRay",
   support_url: "",
@@ -88,28 +107,94 @@ export function SettingsPage({ initialTab = "general" }: { initialTab?: Tab }) {
     [busy, setBusy] = useState(false),
     [telegramToken, setTelegramToken] = useState(""),
     [clearTelegram, setClearTelegram] = useState(false);
-  async function load() {
-    try {
-      const [a, b, c, u] = await Promise.all([
-        api<Health>("/health"),
-        api<AppSettings>("/settings"),
-        currentSession().then((u) =>
-          u.is_superuser || u.permissions?.includes("nodes.read")
-            ? api<SystemInfo>("/system-info")
-            : null,
-        ),
-        currentSession(),
-      ]);
-      setH(a);
-      setCfg(b);
-      setSys(c);
-      setCanEdit(Boolean(u.is_superuser));
-    } catch (e: any) {
-      setMsg(e.message);
+  const session = useSession();
+  const canReadSystem = Boolean(
+    session?.is_superuser || session?.permissions?.includes("nodes.read"),
+  );
+  const request = useRef<AbortController | null>(null);
+  const [loading, setLoading] = useState(true),
+    [healthSeenAt, setHealthSeenAt] = useState(Date.now()),
+    [clock, setClock] = useState(Date.now());
+  const load = useCallback(async () => {
+    request.current?.abort();
+    const controller = new AbortController();
+    request.current = controller;
+    const timeout = setTimeout(() => controller.abort(), 15000);
+    setLoading(true);
+    setMsg("");
+    setCanEdit(Boolean(session?.is_superuser));
+    const current = () => request.current === controller;
+    const results = await Promise.allSettled([
+      api<Health>("/health", { signal: controller.signal })
+        .then((value) => {
+          if (current()) {
+            setH(value);
+            setHealthSeenAt(Date.now());
+          }
+        })
+        .catch((error) => {
+          if (current()) setH(null);
+          throw error;
+        }),
+      api<AppSettings>("/settings", { signal: controller.signal }).then(
+        (value) => {
+          if (current()) setCfg({ ...defaults, ...value });
+        },
+      ),
+      canReadSystem
+        ? api<SystemInfo>("/system-info", { signal: controller.signal })
+            .then((value) => {
+              if (current()) setSys(value);
+            })
+            .catch((error) => {
+              if (current()) setSys(null);
+              throw error;
+            })
+        : Promise.resolve(null),
+    ]);
+    clearTimeout(timeout);
+    if (current()) {
+      setLoading(false);
+      const failed = results.filter((result) => result.status === "rejected");
+      if (failed.length) setMsg(t("Some system information is unavailable"));
     }
-  }
+  }, [session?.is_superuser, canReadSystem]);
   useEffect(() => {
-    load();
+    void load();
+    return () => {
+      request.current?.abort();
+      request.current = null;
+    };
+  }, [load]);
+  useEffect(() => {
+    let active = true,
+      controller: AbortController | null = null;
+    const clockTimer = setInterval(() => setClock(Date.now()), 1000);
+    const healthTimer = setInterval(async () => {
+      if (document.hidden || controller) return;
+      controller = new AbortController();
+      const timeout = setTimeout(() => controller?.abort(), 10000);
+      try {
+        const value = await api<Health>("/health", {
+          signal: controller.signal,
+        });
+        if (active) {
+          setH(value);
+          setHealthSeenAt(Date.now());
+        }
+      } catch {
+        if (active) setH(null);
+      } finally {
+        clearTimeout(timeout);
+        controller = null;
+      }
+    }, 30000);
+    return () => {
+      active = false;
+      clearInterval(clockTimer);
+      clearInterval(healthTimer);
+      controller?.abort();
+    };
   }, []);
   const [botStatus, setBotStatus] = useState<TelegramStatus | null>(null);
   async function checkBot(action: "status" | "test" | "setup") {
@@ -206,17 +291,40 @@ export function SettingsPage({ initialTab = "general" }: { initialTab?: Tab }) {
         <Info
           icon="database"
           label={t("Database")}
-          value={h?.database || "Checking…"}
+          value={
+            (h?.database ? h.database === "ok" : h?.status === "ok")
+              ? t("Connected")
+              : loading && !h
+                ? t("Checking…")
+                : t("Unavailable")
+          }
         />
         <Info
           icon="server"
           label={t("Host")}
-          value={sys?.hostname || "Checking…"}
+          value={
+            sys?.hostname ||
+            (canReadSystem
+              ? loading
+                ? t("Checking…")
+                : t("Unavailable")
+              : "—")
+          }
         />
         <Info
           icon="clock"
           label={t("Uptime")}
-          value={sys ? duration(sys.uptime_seconds) : "Checking…"}
+          value={
+            typeof h?.uptime_seconds === "number"
+              ? duration(
+                  h.uptime_seconds + Math.max(0, (clock - healthSeenAt) / 1000),
+                )
+              : typeof sys?.panel_uptime_seconds === "number"
+                ? duration(sys.panel_uptime_seconds)
+                : loading
+                  ? t("Checking…")
+                  : t("Unavailable")
+          }
         />
       </div>
       {!canEdit && (

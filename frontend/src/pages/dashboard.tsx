@@ -1,3 +1,4 @@
+import { ChartRange } from "@/components/chart-range";
 import { t } from "@/lib/i18n";
 import { useLocale, tx } from "@/lib/i18n";
 import { can, useSession } from "@/lib/session";
@@ -134,9 +135,46 @@ function TrafficChart({ points }: { points: TrafficPoint[] }) {
     chart = useRef<echarts.ECharts | null>(null);
   const { resolved } = useTheme();
   const [mode, setMode] = useState("usage");
+  const [windowRange, setWindowRange] = useState<[number, number]>([0, 100]);
+  const range = useRef<[number, number]>([0, 100]);
+  const preview = useMemo(
+    () =>
+      points.map((point) => ({
+        at: point.at,
+        bytes:
+          Number(point.raw_upload_traffic_bytes || 0) +
+          Number(point.raw_download_traffic_bytes || 0),
+      })),
+    [points],
+  );
+  const updateRange = (next: [number, number]) => {
+    range.current = next;
+    setWindowRange(next);
+    chart.current?.dispatchAction({
+      type: "dataZoom",
+      start: next[0],
+      end: next[1],
+    });
+  };
   useEffect(() => {
     if (!root.current) return;
     chart.current = echarts.init(root.current);
+    chart.current.on("datazoom", (raw: unknown) => {
+      if (!raw || typeof raw !== "object") return;
+      const event = raw as {
+        start?: number;
+        end?: number;
+        batch?: { start?: number; end?: number }[];
+      };
+      const data = event.batch?.[0] || event;
+      if (typeof data.start !== "number" || typeof data.end !== "number")
+        return;
+      const next: [number, number] = [data.start, data.end];
+      range.current = next;
+      setWindowRange((old) =>
+        old[0] === next[0] && old[1] === next[1] ? old : next,
+      );
+    });
     const observer = new ResizeObserver(() => chart.current?.resize());
     observer.observe(root.current);
     return () => {
@@ -189,7 +227,7 @@ function TrafficChart({ points }: { points: TrafficPoint[] }) {
         animation: !matchMedia("(prefers-reduced-motion: reduce)").matches,
         animationDurationUpdate: 500,
         textStyle: { fontFamily: "Inter, Vazirmatn, sans-serif" },
-        grid: { left: 64, right: 24, top: 40, bottom: 56 },
+        grid: { left: 64, right: 24, top: 40, bottom: 32 },
         legend: {
           top: 0,
           textStyle: { color: css.getPropertyValue("--muted") },
@@ -240,17 +278,11 @@ function TrafficChart({ points }: { points: TrafficPoint[] }) {
           },
         },
         dataZoom: [
-          { type: "inside", zoomOnMouseWheel: false },
           {
-            type: "slider",
-            height: 16,
-            bottom: 4,
-            borderColor: "transparent",
-            showDetail: false,
-            handleSize: "70%",
-            backgroundColor: css.getPropertyValue("--surface-2"),
-            fillerColor: color + "22",
-            dataBackground: { lineStyle: { color }, areaStyle: { color } },
+            type: "inside",
+            zoomOnMouseWheel: false,
+            start: range.current[0],
+            end: range.current[1],
           },
         ],
         series,
@@ -282,6 +314,7 @@ function TrafficChart({ points }: { points: TrafficPoint[] }) {
         role="img"
         aria-label={t("Traffic chart")}
       />
+      <ChartRange points={preview} value={windowRange} onChange={updateRange} />
       {!points.length && (
         <p className="text-center text-xs text-[var(--muted)]">
           {t("No traffic recorded yet.")}

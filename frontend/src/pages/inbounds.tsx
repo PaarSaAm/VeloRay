@@ -648,6 +648,8 @@ export function InboundsPage() {
           <Dialog
             label={editing ? t("Edit inbound") : t("New inbound")}
             onClose={cancelEdit}
+            padded={false}
+            size="lg"
           >
             <Card>
               <CardHeader>
@@ -1474,7 +1476,11 @@ export function InboundsPage() {
         </Card>
       </div>
       {cloning && (
-        <Dialog label={t("Clone inbound")} onClose={() => setCloning(null)}>
+        <Dialog
+          label={t("Clone inbound")}
+          onClose={() => setCloning(null)}
+          padded={false}
+        >
           <div className="flex items-center justify-between border-b border-[var(--border)] px-5 py-4">
             <div>
               <div className="text-[14px] font-semibold">

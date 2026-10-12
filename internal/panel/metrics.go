@@ -102,7 +102,18 @@ func (s *Server) systemInfo(ctx context.Context) (Data, error) {
 	}
 	d["users_total"] = users
 	d["admins_total"] = admins
+	runtime := s.panelRuntime(time.Now())
+	d["panel_uptime_seconds"] = runtime["uptime_seconds"]
+	d["panel_started_at"] = runtime["started_at"]
 	d["panel_version"] = Version
 	d["server_time"] = stamp(time.Now())
 	return d, nil
+}
+
+func (s *Server) panelRuntime(now time.Time) Data {
+	started := s.StartedAt
+	if started.IsZero() {
+		started = panelProcessStartedAt
+	}
+	return Data{"uptime_seconds": max(int64(0), int64(now.Sub(started).Seconds())), "started_at": stamp(started)}
 }

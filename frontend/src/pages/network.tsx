@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import {
+  Code,
   Plus,
   Pencil,
   Trash2,
@@ -262,6 +263,14 @@ function NetworkPage({ kind }: { kind: "outbounds" | "routing_rules" }) {
           value: String(out.protocol || out.type),
           config: out,
         }));
+  const builtinRows =
+    node && !routing
+      ? builtins.filter((item) =>
+          `${item.name} ${item.value} ${JSON.stringify(item.config)}`
+            .toLowerCase()
+            .includes(query.toLowerCase()),
+        )
+      : [];
   const filtered = items
     .filter(
       (item) =>
@@ -390,7 +399,7 @@ function NetworkPage({ kind }: { kind: "outbounds" | "routing_rules" }) {
           />
         </label>
       </div>
-      {node && (
+      {node && routing && (
         <div className="network-builtins">
           {builtins.map((item, i) => (
             <button
@@ -411,10 +420,8 @@ function NetworkPage({ kind }: { kind: "outbounds" | "routing_rules" }) {
       )}
       <Card>
         <CardHeader>
-          <CardTitle>
-            {routing ? t("Rules") : t("Configured outbounds")}
-          </CardTitle>
-          <Badge>{filtered.length}</Badge>
+          <CardTitle>{routing ? t("Rules") : t("Outbounds")}</CardTitle>
+          <Badge>{filtered.length + builtinRows.length}</Badge>
         </CardHeader>
         <CardContent className="p-0">
           <div className="table-wrap">
@@ -430,6 +437,40 @@ function NetworkPage({ kind }: { kind: "outbounds" | "routing_rules" }) {
                 </tr>
               </thead>
               <tbody>
+                {builtinRows.map((item) => (
+                  <tr
+                    key={`builtin-${item.name}`}
+                    className="network-builtin-row"
+                  >
+                    <td>
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-2 font-semibold"
+                        aria-label={`${t("Inspect")} ${item.name}`}
+                        onClick={() => setInspecting(item.config)}
+                      >
+                        <ShieldCheck size={14} />
+                        {item.name}
+                      </button>
+                    </td>
+                    <td>{item.value}</td>
+                    <td>{item.name}</td>
+                    <td>—</td>
+                    <td>
+                      <Badge>{t("Built-in")}</Badge>
+                    </td>
+                    <td>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label={`${t("Configuration")} ${item.name}`}
+                        onClick={() => setInspecting(item.config)}
+                      >
+                        <Code size={14} />
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
                 {filtered.map((item) => (
                   <tr key={item.id}>
                     <td className="font-semibold">
@@ -534,13 +575,13 @@ function NetworkPage({ kind }: { kind: "outbounds" | "routing_rules" }) {
                 ))}
               </tbody>
             </table>
-            {!filtered.length && (
+            {!filtered.length && !builtinRows.length && (
               <div className="empty-state">
                 {loading
                   ? t("Loading…")
                   : routing
                     ? t("No custom rules")
-                    : t("No custom outbounds")}
+                    : t("No outbounds")}
               </div>
             )}
           </div>

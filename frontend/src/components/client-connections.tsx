@@ -72,7 +72,11 @@ export function ClientConnections({
   }, [client.id, kind, revision]);
   const title = kind === "ips" ? t("IP's") : t("Device's");
   return (
-    <Dialog label={`${title} · ${client.name}`} onClose={onClose}>
+    <Dialog
+      label={`${title} · ${client.name}`}
+      onClose={onClose}
+      padded={false}
+    >
       <header className="flex items-center justify-between gap-3 border-b border-[var(--border)] p-5">
         <div className="flex min-w-0 items-center gap-3">
           {kind === "ips" ? (

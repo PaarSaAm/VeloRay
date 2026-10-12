@@ -289,6 +289,8 @@ export type AdminUser = {
   two_factor_enabled: boolean;
 };
 export type SystemInfo = {
+  panel_uptime_seconds?: number;
+  panel_started_at?: string;
   hostname: string;
   platform: string;
   go_version: string;
