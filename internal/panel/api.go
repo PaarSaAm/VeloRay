@@ -121,6 +121,9 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request, path string, a Acto
 	if strings.HasPrefix(path, "webhooks/") {
 		return s.webhooksAPI(w, r, path, a)
 	}
+	if strings.HasPrefix(path, "updates/") {
+		return s.updatesAPI(r, path)
+	}
 	parts := strings.Split(path, "/")
 	if path == "openapi" && r.Method == "GET" {
 		return openAPISpec(s.Config.PublicURL), 200, nil
