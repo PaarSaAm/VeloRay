@@ -554,7 +554,9 @@ export function SettingsPage({ initialTab = "general" }: { initialTab?: Tab }) {
                         }
                       >
                         <option value="default">{t("Modern dashboard")}</option>
-                        <option value="compact">{t("Classic compact portal")}</option>
+                        <option value="compact">
+                          {t("Classic compact portal")}
+                        </option>
                       </Select>
                     </Field>
                     <Field label={t("Portal footer")}>
@@ -576,7 +578,10 @@ export function SettingsPage({ initialTab = "general" }: { initialTab?: Tab }) {
                         max={168}
                         value={cfg.subscription_update_interval_hours}
                         onChange={(e) =>
-                          set("subscription_update_interval_hours", Number(e.target.value))
+                          set(
+                            "subscription_update_interval_hours",
+                            Number(e.target.value),
+                          )
                         }
                       />
                     </Field>
@@ -599,7 +604,9 @@ export function SettingsPage({ initialTab = "general" }: { initialTab?: Tab }) {
                       <Select
                         className="input"
                         value={cfg.subscription_theme}
-                        onChange={(e) => set("subscription_theme", e.target.value)}
+                        onChange={(e) =>
+                          set("subscription_theme", e.target.value)
+                        }
                       >
                         <option value="system">{t("Follow device")}</option>
                         <option value="light">{t("Light")}</option>
@@ -608,13 +615,17 @@ export function SettingsPage({ initialTab = "general" }: { initialTab?: Tab }) {
                     </Field>
                     <Toggle
                       label={t("Traffic chart")}
-                      text={t("Display actual historical traffic in the subscription portal.")}
+                      text={t(
+                        "Display actual historical traffic in the subscription portal.",
+                      )}
                       checked={cfg.subscription_show_analytics}
                       onChange={(v) => set("subscription_show_analytics", v)}
                     />
                     <Toggle
                       label={t("Subscription downloads")}
-                      text={t("Show export buttons for supported client configuration formats.")}
+                      text={t(
+                        "Show export buttons for supported client configuration formats.",
+                      )}
                       checked={cfg.subscription_show_downloads}
                       onChange={(v) => set("subscription_show_downloads", v)}
                     />
