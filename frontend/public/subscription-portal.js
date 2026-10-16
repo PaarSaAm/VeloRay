@@ -7,6 +7,7 @@
     if (!(button instanceof HTMLButtonElement) || !(input instanceof HTMLInputElement) || !result) {
       return;
     }
+    button.dataset.originalLabel = button.textContent || "Copy link";
     button.addEventListener("click", async () => {
       let copied = false;
       try {
@@ -30,6 +31,12 @@
       result.textContent = copied
         ? button.dataset.success || "Copied"
         : button.dataset.error || "Select and copy the link";
+      button.textContent = copied
+        ? button.dataset.success || "Copied"
+        : button.dataset.error || "Copy manually";
+      window.setTimeout(() => {
+        button.textContent = button.dataset.originalLabel || "Copy link";
+      }, 2200);
     });
   };
   if (document.readyState === "loading") {
