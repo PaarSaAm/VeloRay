@@ -150,6 +150,7 @@ func (s *Server) collect(ctx context.Context, q Query, node Data) error {
 	var totalDelta, uploadDelta, downloadDelta int64
 	ownerDeltas := map[int64][3]int64{}
 	chargedClients := map[string]Data{}
+	principalDeltas := map[string][3]int64{}
 	for _, entry := range array(stats, "stat") {
 		b, _ := json.Marshal(entry)
 		v, e := decode(b)
@@ -201,6 +202,15 @@ func (s *Server) collect(ctx context.Context, q Query, node Data) error {
 			continue
 		}
 		key := accountKey(client)
+		series := principalDeltas[key]
+		if delta > int64(^uint64(0)>>1)-series[0] { return errors.New("principal traffic overflow") }
+		series[0] += delta
+		if parts[3] == "uplink" {
+			series[1] += delta
+		} else {
+			series[2] += delta
+		}
+		principalDeltas[key] = series
 		if chargedClients[key] == nil {
 			chargedClients[key] = client
 		}
@@ -234,6 +244,11 @@ func (s *Server) collect(ctx context.Context, q Query, node Data) error {
 		if e != nil {
 			return e
 		}
+	}
+	for key, delta := range principalDeltas {
+		if delta[0] <= 0 { continue }
+		_, err := q.Exec(ctx, `INSERT INTO vr_client_traffic_windows(at,principal_key,bytes,upload_bytes,download_bytes) VALUES($1,$2,$3,$4,$5) ON CONFLICT(principal_key,at) DO UPDATE SET bytes=vr_client_traffic_windows.bytes+excluded.bytes,upload_bytes=vr_client_traffic_windows.upload_bytes+excluded.upload_bytes,download_bytes=vr_client_traffic_windows.download_bytes+excluded.download_bytes`, time.Now().UTC().Truncate(5*time.Minute), key, delta[0], delta[1], delta[2])
+		if err != nil { return err }
 	}
 	for owner, delta := range ownerDeltas {
 		if owner <= 0 || delta[0] <= 0 {

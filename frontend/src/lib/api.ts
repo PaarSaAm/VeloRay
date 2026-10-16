@@ -250,6 +250,11 @@ export type AppSettings = {
   subscription_show_connection_uri: boolean;
   subscription_footer: string;
   subscription_template: "default" | "compact";
+  subscription_update_interval_hours: number;
+  subscription_default_format: "auto" | "base64" | "raw" | "clash" | "singbox";
+  subscription_show_analytics: boolean;
+  subscription_show_downloads: boolean;
+  subscription_theme: "system" | "light" | "dark";
   maintenance_mode: boolean;
   require_2fa_for_admins: boolean;
   api_keys_enabled: boolean;

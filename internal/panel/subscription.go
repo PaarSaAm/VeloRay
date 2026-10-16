@@ -137,7 +137,7 @@ func (s *Server) subscription(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Subscription-Userinfo", fmt.Sprintf("upload=0; download=%d; total=%d; expire=%d", num(c, "used_traffic_bytes"), num(c, "traffic_limit_bytes"), exp))
 	w.Header().Set("Profile-Title", "base64:"+base64.StdEncoding.EncodeToString([]byte(str(cfg, "site_name")+" · "+str(c, "name"))))
-	w.Header().Set("Profile-Update-Interval", "12")
+	w.Header().Set("Profile-Update-Interval", fmt.Sprint(num(cfg, "subscription_update_interval_hours")))
 	w.Header().Set("Profile-Web-Page-URL", strings.TrimRight(s.Config.PublicURL, "/")+"/sub/"+token+"?format=portal")
 	for key, field := range map[string]string{"Support-URL": "support_url", "Announce-URL": "announcement_url"} {
 		if str(cfg, field) != "" {
@@ -159,19 +159,20 @@ func (s *Server) subscription(w http.ResponseWriter, r *http.Request) {
 		} else if strings.Contains(ua, "sing-box") || strings.Contains(ua, "singbox") {
 			format = "singbox"
 		} else {
-			format = "base64"
+			format = str(cfg, "subscription_default_format")
+			if format == "" || format == "auto" { format = "base64" }
 		}
 	}
 	link := shareLink(c, i, n)
 	links := []string{}
-	details := []any{}
+	details := []Data{}
 	for _, item := range connections {
 		client := clone(item.client)
 		uri := shareLink(client, item.inbound, item.node)
 		if uri != "" {
 			links = append(links, uri)
 		}
-		details = append(details, Data{"name": str(item.inbound, "name"), "protocol": str(item.inbound, "protocol"), "link": uri})
+		details = append(details, Data{"name": str(item.inbound, "name"), "protocol": str(item.inbound, "protocol"), "link": uri, "node": str(item.node, "name"), "host": str(item.node, "public_host")})
 	}
 	link = strings.Join(links, "\n")
 	profile := profile(c, i, n)
@@ -207,6 +208,9 @@ func (s *Server) subscription(w http.ResponseWriter, r *http.Request) {
 		raw, _ := json.MarshalIndent(Data{"outbounds": all, "route": Data{"final": "VeloRay"}}, "", "  ")
 		body = string(raw) + "\n"
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	case "stats":
+		s.subscriptionStats(w, r, c)
+		return
 	case "json":
 		if err := s.recordSubscriptionDevice(r, c); err != nil {
 			s.respond(w, r, nil, 0, err)
@@ -241,7 +245,7 @@ func (s *Server) subscription(w http.ResponseWriter, r *http.Request) {
 		body = profile
 		w.Header().Set("Content-Disposition", `attachment; filename="veloray.conf"`)
 	case "portal", "html":
-		s.portal(w, r, c, i, n, cfg, link, profile)
+		s.portal(w, r, c, i, n, cfg, link, profile, details...)
 		return
 	default:
 		writeJSON(w, 400, Data{"detail": "Unknown subscription format"})
@@ -250,6 +254,12 @@ func (s *Server) subscription(w http.ResponseWriter, r *http.Request) {
 	if err := s.recordSubscriptionDevice(r, c); err != nil {
 		s.respond(w, r, nil, 0, err)
 		return
+	}
+	if r.URL.Query().Get("download") == "1" {
+		filenames := map[string]string{"base64":"veloray-subscription.txt","b64":"veloray-subscription.txt","raw":"veloray-links.txt","text":"veloray-links.txt","clash":"veloray-clash.yaml","yaml":"veloray-clash.yaml","singbox":"veloray-singbox.json","sing-box":"veloray-singbox.json"}
+		if filename := filenames[format]; filename != "" {
+			w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+		}
 	}
 	if r.Method != "HEAD" {
 		_, _ = w.Write([]byte(body))
@@ -287,7 +297,7 @@ var portalTemplate = template.Must(template.New("portal").Parse(`<!doctype html>
 </main></body></html>
 `))
 
-func (s *Server) portal(w http.ResponseWriter, r *http.Request, c, i, n, cfg Data, link, profile string) {
+func (s *Server) portal(w http.ResponseWriter, r *http.Request, c, i, n, cfg Data, link, profile string, details ...Data) {
 	url := strings.TrimRight(s.Config.PublicURL, "/") + "/sub/" + str(c, "subscription_token")
 	used, limit := num(c, "used_traffic_bytes"), num(c, "traffic_limit_bytes")
 	expiry := "No expiry"
@@ -333,8 +343,12 @@ func (s *Server) portal(w http.ResponseWriter, r *http.Request, c, i, n, cfg Dat
 		}
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	modern := str(cfg, "subscription_template") != "compact"
+	if modern { modernPortalData(d, c, cfg, details) }
 	if r.Method != "HEAD" {
-		if e := portalTemplate.Execute(w, d); e != nil {
+		tmpl := portalTemplate
+		if modern { tmpl = modernPortalTemplate }
+		if e := tmpl.Execute(w, d); e != nil {
 			s.Logger.Error("subscription render failed", "error", e)
 		}
 	}

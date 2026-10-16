@@ -137,6 +137,7 @@ function TrafficChart({ points }: { points: TrafficPoint[] }) {
   const [mode, setMode] = useState("usage");
   const [windowRange, setWindowRange] = useState<[number, number]>([0, 100]);
   const range = useRef<[number, number]>([0, 100]);
+  const suppressZoomEvent = useRef(false);
   const preview = useMemo(
     () =>
       points.map((point) => ({
@@ -150,17 +151,22 @@ function TrafficChart({ points }: { points: TrafficPoint[] }) {
   const updateRange = (next: [number, number]) => {
     range.current = next;
     setWindowRange(next);
-    chart.current?.dispatchAction({
-      type: "dataZoom",
-      start: next[0],
-      end: next[1],
-    });
+    suppressZoomEvent.current = true;
+    try {
+      chart.current?.dispatchAction({
+        type: "dataZoom",
+        start: next[0],
+        end: next[1],
+      });
+    } finally {
+      suppressZoomEvent.current = false;
+    }
   };
   useEffect(() => {
     if (!root.current) return;
     chart.current = echarts.init(root.current);
     chart.current.on("datazoom", (raw: unknown) => {
-      if (!raw || typeof raw !== "object") return;
+      if (suppressZoomEvent.current || !raw || typeof raw !== "object") return;
       const event = raw as {
         start?: number;
         end?: number;

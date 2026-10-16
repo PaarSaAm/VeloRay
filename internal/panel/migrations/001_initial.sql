@@ -91,6 +91,19 @@ ALTER TABLE vr_owner_traffic_windows ADD COLUMN IF NOT EXISTS upload_bytes bigin
 ALTER TABLE vr_owner_traffic_windows ADD COLUMN IF NOT EXISTS download_bytes bigint NOT NULL DEFAULT 0 CHECK(download_bytes>=0);
 INSERT INTO vr_schema(version) VALUES(3) ON CONFLICT DO NOTHING;
 
+-- Subscription history is scoped to a stable billed principal: account:<id>
+-- for a shared account, client:<id> otherwise. Never store a subscription token.
+CREATE TABLE IF NOT EXISTS vr_client_traffic_windows (
+ at timestamptz NOT NULL,
+ principal_key text NOT NULL CHECK (length(principal_key) <= 80),
+ bytes bigint NOT NULL DEFAULT 0 CHECK(bytes>=0),
+ upload_bytes bigint NOT NULL DEFAULT 0 CHECK(upload_bytes>=0),
+ download_bytes bigint NOT NULL DEFAULT 0 CHECK(download_bytes>=0),
+ PRIMARY KEY(principal_key,at)
+);
+CREATE INDEX IF NOT EXISTS vr_client_traffic_recent ON vr_client_traffic_windows(at);
+INSERT INTO vr_schema(version) VALUES(5) ON CONFLICT DO NOTHING;
+
 -- Durable, authenticated event delivery; safe to apply on existing installs.
 CREATE TABLE IF NOT EXISTS vr_webhook_deliveries (
  id bigserial PRIMARY KEY,

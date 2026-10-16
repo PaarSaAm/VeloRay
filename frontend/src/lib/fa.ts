@@ -883,3 +883,21 @@ Object.assign(fa, {
   "Refresh update status": "به‌روزرسانی وضعیت",
   "View source on GitHub": "مشاهده سورس در گیت‌هاب",
 });
+
+Object.assign(fa, {
+  "Modern dashboard": "داشبورد مدرن",
+  "Classic compact portal": "صفحهٔ کلاسیک فشرده",
+  "Subscription update interval (hours)": "فاصلهٔ به‌روزرسانی اشتراک (ساعت)",
+  "Default subscription format": "فرمت پیش‌فرض اشتراک",
+  "Auto detect": "تشخیص خودکار",
+  "Subscription portal theme": "تم صفحهٔ اشتراک",
+  "Follow device": "هماهنگ با دستگاه",
+  Light: "روشن",
+  Dark: "تیره",
+  "Traffic chart": "نمودار ترافیک",
+  "Display actual historical traffic in the subscription portal.":
+    "نمایش تاریخچهٔ واقعی مصرف ترافیک در صفحهٔ اشتراک.",
+  "Subscription downloads": "دانلود فایل‌های اشتراک",
+  "Show export buttons for supported client configuration formats.":
+    "نمایش دکمه‌های دریافت کانفیگ برای فرمت‌های پشتیبانی‌شده.",
+});

@@ -359,13 +359,16 @@ func validateSettings(d Data) error {
 	if e := require(d, "site_name", 64); e != nil {
 		return e
 	}
-	for k, bounds := range map[string][2]int64{"dashboard_refresh_seconds": {5, 3600}, "traffic_history_days": {1, 365}, "default_client_days": {0, 3650}, "default_traffic_gb": {0, 1000000}, "default_renewal_days": {0, 3650}, "api_key_default_days": {1, 3650}, "audit_retention_days": {1, 3650}, "telegram_alert_cpu_percent": {1, 100}, "telegram_alert_memory_percent": {1, 100}, "telegram_alert_disk_percent": {1, 100}, "telegram_alert_cooldown_minutes": {1, 1440}, "telegram_quota_warning_percent": {1, 100}, "telegram_expiry_warning_days": {1, 30}} {
+	for k, bounds := range map[string][2]int64{"dashboard_refresh_seconds": {5, 3600}, "traffic_history_days": {1, 365}, "default_client_days": {0, 3650}, "default_traffic_gb": {0, 1000000}, "default_renewal_days": {0, 3650}, "api_key_default_days": {1, 3650}, "audit_retention_days": {1, 3650}, "telegram_alert_cpu_percent": {1, 100}, "telegram_alert_memory_percent": {1, 100}, "telegram_alert_disk_percent": {1, 100}, "telegram_alert_cooldown_minutes": {1, 1440}, "telegram_quota_warning_percent": {1, 100}, "telegram_expiry_warning_days": {1, 30}, "subscription_update_interval_hours": {1, 168}} {
 		if num(d, k) < bounds[0] || num(d, k) > bounds[1] {
 			return fmt.Errorf("invalid %s", k)
 		}
 	}
 	if !oneOf(str(d, "accent"), "emerald", "blue", "violet", "rose", "amber") || !oneOf(str(d, "default_locale"), "en", "fa") || !oneOf(str(d, "subscription_template"), "default", "compact") {
 		return errors.New("unsupported accent, locale or subscription template")
+	}
+	if !oneOf(str(d, "subscription_default_format"), "auto", "base64", "raw", "clash", "singbox") || !oneOf(str(d, "subscription_theme"), "system", "light", "dark") {
+		return errors.New("unsupported subscription format or theme")
 	}
 	for _, k := range []string{"support_url", "announcement_url"} {
 		if str(d, k) != "" {

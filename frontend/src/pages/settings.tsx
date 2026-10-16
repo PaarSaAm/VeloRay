@@ -75,6 +75,11 @@ const defaults: AppSettings = {
   subscription_show_connection_uri: true,
   subscription_footer: "",
   subscription_template: "default",
+  subscription_update_interval_hours: 12,
+  subscription_default_format: "auto",
+  subscription_show_analytics: true,
+  subscription_show_downloads: true,
+  subscription_theme: "system",
   maintenance_mode: false,
   require_2fa_for_admins: false,
   api_keys_enabled: true,
@@ -548,8 +553,10 @@ export function SettingsPage({ initialTab = "general" }: { initialTab?: Tab }) {
                           set("subscription_template", e.target.value)
                         }
                       >
-                        <option value="default">{t("Full portal")}</option>
-                        <option value="compact">{t("Compact portal")}</option>
+                        <option value="default">{t("Modern dashboard")}</option>
+                        <option value="compact">
+                          {t("Classic compact portal")}
+                        </option>
                       </Select>
                     </Field>
                     <Field label={t("Portal footer")}>
@@ -563,6 +570,65 @@ export function SettingsPage({ initialTab = "general" }: { initialTab?: Tab }) {
                         placeholder={t("Optional footer")}
                       />
                     </Field>
+                    <Field label={t("Subscription update interval (hours)")}>
+                      <Input
+                        className="input"
+                        type="number"
+                        min={1}
+                        max={168}
+                        value={cfg.subscription_update_interval_hours}
+                        onChange={(e) =>
+                          set(
+                            "subscription_update_interval_hours",
+                            Number(e.target.value),
+                          )
+                        }
+                      />
+                    </Field>
+                    <Field label={t("Default subscription format")}>
+                      <Select
+                        className="input"
+                        value={cfg.subscription_default_format}
+                        onChange={(e) =>
+                          set("subscription_default_format", e.target.value)
+                        }
+                      >
+                        <option value="auto">{t("Auto detect")}</option>
+                        <option value="base64">Base64</option>
+                        <option value="raw">RAW</option>
+                        <option value="clash">Clash</option>
+                        <option value="singbox">sing-box</option>
+                      </Select>
+                    </Field>
+                    <Field label={t("Subscription portal theme")}>
+                      <Select
+                        className="input"
+                        value={cfg.subscription_theme}
+                        onChange={(e) =>
+                          set("subscription_theme", e.target.value)
+                        }
+                      >
+                        <option value="system">{t("Follow device")}</option>
+                        <option value="light">{t("Light")}</option>
+                        <option value="dark">{t("Dark")}</option>
+                      </Select>
+                    </Field>
+                    <Toggle
+                      label={t("Traffic chart")}
+                      text={t(
+                        "Display actual historical traffic in the subscription portal.",
+                      )}
+                      checked={cfg.subscription_show_analytics}
+                      onChange={(v) => set("subscription_show_analytics", v)}
+                    />
+                    <Toggle
+                      label={t("Subscription downloads")}
+                      text={t(
+                        "Show export buttons for supported client configuration formats.",
+                      )}
+                      checked={cfg.subscription_show_downloads}
+                      onChange={(v) => set("subscription_show_downloads", v)}
+                    />
                     <Toggle
                       label={t("Subscriptions enabled")}
                       text={t("Turn public subscription endpoints on or off.")}
