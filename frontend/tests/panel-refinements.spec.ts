@@ -657,38 +657,39 @@ test("PasarGuard-inspired portal supports chart, four languages, search, QR and 
   await page.route("**/portal-modern-preview", (route) =>
     route.fulfill({ contentType: "text/html", body: html }),
   );
-  let chartHits = 0;
-  await page.route("**/sub/**", (route) => {
-    chartHits++;
-    console.log("portal-stats-request:", route.request().url());
-    return route.fulfill({
-      json: {
-        range: "7d",
-        history_available: true,
-        points: [
-          { at: "2026-10-15T00:00:00Z", bytes: 1048576, upload_bytes: 524288, download_bytes: 524288 },
-          { at: "2026-10-16T00:00:00Z", bytes: 2097152, upload_bytes: 1048576, download_bytes: 1048576 },
-        ],
-      },
-    });
+  // Use a deterministic same-origin response so rendering is tested without
+  // depending on the development-server proxy in this HTML fixture test.
+  await page.addInitScript(() => {
+    const originalFetch = window.fetch.bind(window);
+    window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = new URL(
+        typeof input === "string" ? input : input instanceof Request ? input.url : String(input),
+        location.href,
+      );
+      if (path.pathname.startsWith("/sub/") && path.searchParams.get("format") === "stats") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              range: "7d",
+              history_available: true,
+              points: [
+                { at: "2026-10-15T00:00:00Z", bytes: 1048576, upload_bytes: 524288, download_bytes: 524288 },
+                { at: "2026-10-16T00:00:00Z", bytes: 2097152, upload_bytes: 1048576, download_bytes: 1048576 },
+              ],
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+      }
+      return originalFetch(input, init);
+    };
   });
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("/portal-modern-preview");
   await expect(page.locator('[data-portal-version="2"]')).toBeVisible();
   await expect(page.getByRole("heading", { name: "Arman" })).toBeVisible();
-  await expect
-    .poll(async () => {
-      const state = await page.evaluate(() => ({
-        chart: !document.getElementById("traffic-chart")?.hasAttribute("hidden"),
-        empty: document.getElementById("chart-empty")?.textContent,
-        loading: document.getElementById("chart-loading")?.textContent,
-        script: [...document.scripts].map((s) => s.src),
-      }));
-      if (!state.chart) console.log("portal-chart-debug:", JSON.stringify({ ...state, errors, chartHits, emptyHidden: await page.locator("#chart-empty").evaluate(el=>el.hasAttribute("hidden")), loadingHidden: await page.locator("#chart-loading").evaluate(el=>el.hasAttribute("hidden")), lang: await page.locator("html").getAttribute("lang"), theme: await page.locator("html").getAttribute("data-theme"), chartUrl: await page.locator(".portal-shell").getAttribute("data-chart-url"), asset: (await page.request.get("/subscription-modern.js")).status() }));
-      return state.chart;
-    }, { timeout: 10000 })
-    .toBe(true);
+  await expect(page.locator("#traffic-chart")).toBeVisible();
   await expect(page.locator("#chart-total")).toContainText("MB");
   const copy = page.getByRole("button", { name: "Copy link" });
   await copy.click();
