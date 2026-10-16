@@ -567,7 +567,12 @@ test("compact subscription portal fits desktop and mobile while preserving conne
   await page.route("**/portal-preview", (route) =>
     route.fulfill({ contentType: "text/html", body: html }),
   );
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.goto("/portal-preview");
+  const copyButton = page.getByRole("button", { name: "Copy link", exact: true });
+  await expect(copyButton).toBeVisible();
+  await copyButton.click();
+  await expect(page.getByRole("status")).toHaveText("Link copied");
   for (const viewport of [
     { width: 1280, height: 720 },
     { width: 390, height: 844 },
