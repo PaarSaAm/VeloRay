@@ -60,15 +60,15 @@ vr_auto_restore() {
  install -m 0644 "$original_env" /etc/veloray/veloray.env
  chown root:veloray /etc/veloray/veloray.env
  chmod 0640 /etc/veloray/veloray.env
- for unit in veloray-web veloray-agent xray;do
+ for unit in veloray-web veloray-agent xray sing-box;do
   [[ ! -f "$previous/deploy/systemd/$unit.service" ]] || install -m 0644 "$previous/deploy/systemd/$unit.service" "/etc/systemd/system/$unit.service"
  done
  systemctl daemon-reload
- systemctl restart veloray-agent.service veloray-web.service xray.service
+ systemctl restart veloray-agent.service veloray-web.service xray.service sing-box.service
  /usr/local/bin/velorayctl doctor
 }
 
-vr_auto_update_check() {
+vr_auto_update_check() (
  local action="$1" repo="$2" installed="$3"
  local tmp commit previous architecture current backup status
  if [[ "$action" == run ]];then
@@ -77,7 +77,7 @@ vr_auto_update_check() {
  fi
  tmp="$(mktemp -d /var/tmp/veloray-update.XXXXXXXX)"
  chmod 0700 "$tmp"
- trap 'rm -rf -- "$tmp"' RETURN
+ trap 'rm -rf -- "$tmp"' EXIT
  vr_auto_download "https://api.github.com/repos/$repo/commits/main" "$tmp/commit.json" || { echo 'Could not reach GitHub; current version remains active.' >&2;return 1; }
  commit="$(jq -er '.sha' "$tmp/commit.json")" || return 1
  [[ "$commit" =~ ^[a-f0-9]{40}$ ]] || { echo 'GitHub supplied an invalid commit ID.' >&2;return 1; }
@@ -143,4 +143,4 @@ vr_auto_update_check() {
   fi
   return 1
  fi
-}
+)
