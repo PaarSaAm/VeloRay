@@ -657,8 +657,11 @@ test("PasarGuard-inspired portal supports chart, four languages, search, QR and 
   await page.route("**/portal-modern-preview", (route) =>
     route.fulfill({ contentType: "text/html", body: html }),
   );
-  await page.route("**/sub/**", (route) =>
-    route.fulfill({
+  let chartHits = 0;
+  await page.route("**/sub/**", (route) => {
+    chartHits++;
+    console.log("portal-stats-request:", route.request().url());
+    return route.fulfill({
       json: {
         range: "7d",
         history_available: true,
@@ -667,8 +670,8 @@ test("PasarGuard-inspired portal supports chart, four languages, search, QR and 
           { at: "2026-10-16T00:00:00Z", bytes: 2097152, upload_bytes: 1048576, download_bytes: 1048576 },
         ],
       },
-    }),
-  );
+    });
+  });
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("/portal-modern-preview");
@@ -682,7 +685,7 @@ test("PasarGuard-inspired portal supports chart, four languages, search, QR and 
         loading: document.getElementById("chart-loading")?.textContent,
         script: [...document.scripts].map((s) => s.src),
       }));
-      if (!state.chart) console.log("portal-chart-debug:", JSON.stringify({ ...state, errors, lang: await page.locator("html").getAttribute("lang"), theme: await page.locator("html").getAttribute("data-theme"), chartUrl: await page.locator(".portal-shell").getAttribute("data-chart-url"), asset: (await page.request.get("/subscription-modern.js")).status() }));
+      if (!state.chart) console.log("portal-chart-debug:", JSON.stringify({ ...state, errors, chartHits, emptyHidden: await page.locator("#chart-empty").evaluate(el=>el.hasAttribute("hidden")), loadingHidden: await page.locator("#chart-loading").evaluate(el=>el.hasAttribute("hidden")), lang: await page.locator("html").getAttribute("lang"), theme: await page.locator("html").getAttribute("data-theme"), chartUrl: await page.locator(".portal-shell").getAttribute("data-chart-url"), asset: (await page.request.get("/subscription-modern.js")).status() }));
       return state.chart;
     }, { timeout: 10000 })
     .toBe(true);
