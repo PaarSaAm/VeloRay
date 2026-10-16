@@ -35,7 +35,7 @@ usage() {
 VeloRay installer
   install.sh [install|node] [--database postgresql] [--lang en|fa]
              [--repo OWNER/REPOSITORY] [--ref BRANCH_OR_TAG_OR_COMMIT]
-PostgreSQL is the supported database. Default repository: PaarSaAm/VeloRay, ref: main.
+PostgreSQL is the supported database. Default repository: ParsaZali/VeloRay, ref: main.
 HELP
 }
 version_at_least() { [[ "$(printf '%s\n%s\n' "$2" "$1" | sort -V | head -n1)" == "$2" ]]; }
@@ -77,7 +77,7 @@ check_archive() {
 action=install
 database=postgresql
 language=en
-repository="${VELORAY_REPO:-PaarSaAm/VeloRay}"
+repository="${VELORAY_REPO:-ParsaZali/VeloRay}"
 reference="${VELORAY_REF:-main}"
 if [[ "${1:-}" == install || "${1:-}" == node ]];then action="$1";shift;fi
 while [[ $# -gt 0 ]];do
@@ -186,20 +186,24 @@ prepare_build_tools() {
   done
  fi
  if [[ -z "$current" ]]||! version_at_least "$current" "$minimum";then
-  fetch 'https://go.dev/dl/?mode=json' "$temporary/go.json"
-  jq -ce --arg arch "$arch" '.[]|select(.stable==true)|.version as $version|.files[]|select(.os=="linux" and .arch==$arch and .kind=="archive")|. + {version:$version}' "$temporary/go.json" >"$temporary/go-candidates"
+  # include=all gives us older stable patch releases too, so a newly-published
+  # release that has not reached every download edge cannot break installation.
+  fetch 'https://go.dev/dl/?mode=json&include=all' "$temporary/go.json"
+  jq -ce --arg arch "$arch" '[.[]|select(.stable==true)|.version as $version|.files[]|select(.os=="linux" and .arch==$arch and .kind=="archive")|. + {version:$version}][0:24][]' "$temporary/go.json" >"$temporary/go-candidates"
   downloaded=false
   while IFS= read -r descriptor;do
    version="$(jq -er '.version' <<<"$descriptor")";filename="$(jq -er '.filename' <<<"$descriptor")";checksum="$(jq -er '.sha256' <<<"$descriptor")"
    [[ "$version" =~ ^go[0-9]+\.[0-9]+\.[0-9]+$ && "$filename" == "$version.linux-$arch.tar.gz" ]]||fail 'Unexpected Go download metadata.'
    version_at_least "${version#go}" "$minimum"||continue
-   for url in "https://dl.google.com/go/$filename" "https://go.dev/dl/$filename";do
+   # The mirror is only a transport fallback. Integrity is still anchored to
+   # the SHA-256 checksum supplied by the official go.dev release metadata.
+   for url in "https://dl.google.com/go/$filename" "https://go.dev/dl/$filename" "https://mirrors.hust.edu.cn/golang/$filename";do
     if fetch "$url" "$temporary/go.tar.gz";then downloaded=true;break;fi
    done
    if $downloaded;then verify "$checksum" "$temporary/go.tar.gz";break;fi
    printf 'Go %s is unavailable; trying another supported stable release.\n' "${version#go}"
   done <"$temporary/go-candidates"
-  $downloaded||fail "Cannot download a verified Go compiler >= $minimum. Use a package with bundled runtimes or check access to dl.google.com and go.dev."
+  $downloaded||fail "Cannot download a verified Go compiler >= $minimum from the official endpoints or verified mirror."
   target="/opt/veloray/toolchains/$version";mkdir -p "$target"
   mkdir -p "$temporary/go-unpack"
   tar --no-same-owner -xzf "$temporary/go.tar.gz" -C "$temporary/go-unpack"
@@ -258,7 +262,7 @@ if [[ ! -x /usr/local/bin/xray && -z "${VELORAY_XRAY_ARCHIVE:-}" && -z "${VELORA
  fetch "$release_url" "$temporary/xray.json"
  xray_version="$(jq -er '.tag_name' "$temporary/xray.json")"
  [[ "$xray_version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]||fail 'Unexpected Xray release metadata.'
- digest="$(jq -er --arg name "$xray_asset" '.assets[]|select(.name==$name)|.digest' "$temporary/xray.json")"
+ digest="$(jq -er --arg name="$xray_asset" '.assets[]|select(.name==$name)|.digest' "$temporary/xray.json")"
  [[ "$digest" == sha256:* ]]||fail 'The Xray release is missing a SHA-256 asset digest.'
  export VELORAY_XRAY_ARCHIVE="$temporary/$xray_asset" VELORAY_XRAY_SHA256="${digest#sha256:}"
  fetch "https://github.com/XTLS/Xray-core/releases/download/$xray_version/$xray_asset" "$VELORAY_XRAY_ARCHIVE"
