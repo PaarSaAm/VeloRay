@@ -308,7 +308,7 @@ cp -a "$project/deploy" "$host_project/"
 cp "$project/go.mod" "$host_project/";cp "$project/install.sh" "$host_project/"
 cp "$project/frontend/"package{,-lock}.json "$host_project/frontend/"
 touch "$host_project/frontend/dist/index.html"
-for script in scripts/install-panel.sh scripts/velorayctl scripts/xray-install.sh scripts/common.sh;do
+for script in scripts/install-panel.sh scripts/velorayctl scripts/auto-update.sh scripts/xray-install.sh scripts/common.sh;do
  sed -e '/^\[\[ ${EUID:/d' -e "s|/etc/|$HOST_ROOT/etc/|g" -e "s|/opt/|$HOST_ROOT/opt/|g" -e "s|/usr/local/|$HOST_ROOT/usr/local/|g" -e "s|/var/lib/|$HOST_ROOT/var/lib/|g" -e "s|/var/log/|$HOST_ROOT/var/log/|g" -e "s|/run/lock/veloray-install.lock|$HOST_ROOT/install.lock|g" "$project/$script" >"$host_project/$script"
 done
 cat >"$host_project/bin/linux-amd64/veloray" <<'APP'
