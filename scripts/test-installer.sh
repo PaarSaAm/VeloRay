@@ -100,14 +100,14 @@ case "$url" in
  */node-v24.21.0-linux-arm64.tar.xz)
   if [[ "${TEST_BAD_NODE_DIGEST:-}" == 1 ]];then printf broken >"$destination";else cp "$TEST_ROOT/node.tar.xz" "$destination";fi;;
  */commits/*) printf '{"sha":"1111111111111111111111111111111111111111"}' >"$destination";;
- https://codeload.github.com/PaarSaAm/VeloRay/tar.gz/*)
+ https://codeload.github.com/ParsaZali/VeloRay/tar.gz/*)
   if [[ "${TEST_SOURCE_ROUTE:-}" == stalled ]];then echo 'curl: (28) Operation too slow' >&2;exit 28;fi
   [[ "${TEST_SOURCE_ROUTE:-direct}" == direct ]]||exit 22
   cp "$TEST_ROOT/source.tar.gz" "$destination";;
- https://api.github.com/repos/PaarSaAm/VeloRay/tarball/*)
+ https://api.github.com/repos/ParsaZali/VeloRay/tarball/*)
   [[ "${TEST_SOURCE_ROUTE:-direct}" != web && "${TEST_SOURCE_ROUTE:-direct}" != unavailable ]]||exit 22
   cp "$TEST_ROOT/source.tar.gz" "$destination";;
- https://github.com/PaarSaAm/VeloRay/archive/*.tar.gz)
+ https://github.com/ParsaZali/VeloRay/archive/*.tar.gz)
   [[ "${TEST_SOURCE_ROUTE:-direct}" != unavailable ]]||exit 22
   cp "$TEST_ROOT/source.tar.gz" "$destination";;
  */XTLS/Xray-core/releases/latest) printf '{"tag_name":"v26.3.27","assets":[{"name":"Xray-linux-64.zip","digest":"sha256:%s"},{"name":"Xray-linux-arm64-v8a.zip","digest":"sha256:%s"}]}' "$TEST_XRAY_SHA" "$TEST_XRAY_SHA" >"$destination";;
@@ -187,7 +187,7 @@ for route in api web stalled;do
 done
 grep -Fq 'curl: (28) Operation too slow' "$TEST_ROOT/result"
 grep -Fq 'Download failed (curl 28)' "$TEST_ROOT/result"
-grep -Fq 'Download: https://api.github.com/repos/PaarSaAm/VeloRay/commits/main' "$TEST_ROOT/result"
+grep -Fq 'Download: https://api.github.com/repos/ParsaZali/VeloRay/commits/main' "$TEST_ROOT/result"
 grep -Fq 'Resolve GitHub revision' "$TEST_ROOT/result"
 grep -Fq 'Check and extract project archive' "$TEST_ROOT/result"
 grep -Fq 'Log:' "$TEST_ROOT/result"
