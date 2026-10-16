@@ -17,6 +17,9 @@ func TestModernSubscriptionPortalHasNativeStatisticsAndSafeMarkup(t *testing.T) 
  client["used_traffic_bytes"]=int64(2<<30)
  client["raw_used_traffic_bytes"]=int64(1<<30)
  client["traffic_limit_bytes"]=int64(10<<30)
+ client["device_limit"]=int64(3)
+ client["_device_seen"]=Data{"device1":true,"device2":true}
+ client["last_traffic_at"]="2026-10-16T16:30:00Z"
  inbound:=defaults("inbounds")
  inbound["name"]="Main"
  inbound["protocol"]="vless"
@@ -39,7 +42,7 @@ func TestModernSubscriptionPortalHasNativeStatisticsAndSafeMarkup(t *testing.T) 
   "data-chart-url=\"https://panel.example/sub/","format=stats","traffic-chart",
   "profile-list","profile-search","protocol-filter","copy-all","copy-subscription",
   "data-range=\"90d\"","id=\"qr-dialog\"","portal-language","toggle-theme",
-  "2.0 GB","8.0 GB","1.0 GB","Arman","Primary",
+  "2.0 GB","8.0 GB","1.0 GB","Arman","Primary","2 / 3","id=\"last-activity\"",
  } {
   if !strings.Contains(html,needle) {t.Fatalf("modern portal missing %q",needle)}
  }
