@@ -152,7 +152,7 @@ export function Sidebar({
       <div className="border-t border-[var(--border-subtle)] p-3">
         {!compact && (
           <a
-            href="https://github.com/PaarSaAm/VeloRay"
+            href="https://github.com/ParsaZali/VeloRay"
             target="_blank"
             rel="noopener noreferrer"
             className="mb-2 flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[var(--muted-strong)] transition hover:bg-[var(--surface-2)] hover:text-[var(--fg)]"
