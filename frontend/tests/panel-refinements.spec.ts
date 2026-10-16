@@ -691,6 +691,13 @@ test("PasarGuard-inspired portal supports chart, four languages, search, QR and 
   await expect(page.getByRole("heading", { name: "Arman" })).toBeVisible();
   await expect(page.locator("#traffic-chart")).toBeVisible();
   await expect(page.locator("#chart-total")).toContainText("MB");
+  await page.locator('[data-metric="upload_bytes"]').click();
+  await expect(page.locator('[data-metric="upload_bytes"]')).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("#traffic-chart")).toHaveAttribute("aria-label", /Upload/);
+  await page.locator('[data-metric="download_bytes"]').click();
+  await expect(page.locator("#traffic-chart")).toHaveAttribute("aria-label", /Download/);
+  await page.locator('[data-metric="bytes"]').click();
+  await expect(page.locator("#download-traffic")).toHaveAttribute("href", /export=csv.*range=7d/);
   const copy = page.getByRole("button", { name: "Copy link" });
   await copy.click();
   await expect(page.locator("#copy-feedback")).toHaveText("Link copied");
