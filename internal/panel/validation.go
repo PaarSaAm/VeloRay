@@ -367,6 +367,9 @@ func validateSettings(d Data) error {
 	if !oneOf(str(d, "accent"), "emerald", "blue", "violet", "rose", "amber") || !oneOf(str(d, "default_locale"), "en", "fa") || !oneOf(str(d, "subscription_template"), "default", "compact") {
 		return errors.New("unsupported accent, locale or subscription template")
 	}
+	if !oneOf(str(d, "subscription_default_format"), "auto", "base64", "raw", "clash", "singbox") || !oneOf(str(d, "subscription_theme"), "system", "light", "dark") {
+		return errors.New("unsupported subscription format or theme")
+	}
 	for _, k := range []string{"support_url", "announcement_url"} {
 		if str(d, k) != "" {
 			u, e := url.Parse(str(d, k))
