@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="{{.Locale}}" dir="{{.Direction}}" data-default-theme="system">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow,noarchive">
+  <meta name="color-scheme" content="light dark">
+  <meta name="referrer" content="no-referrer">
+  <title>{{.Site}} · {{.Name}}</title>
+  <link rel="stylesheet" href="/subscription-modern.css">
+  <script src="/subscription-modern.js" defer></script>
+</head>
+<body>
+<div class="portal-shell" data-client-expiry="{{.ExpiryISO}}" data-chart-url="{{.ChartURL}}" data-portal-version="2">
+  <header class="topbar" aria-label="Subscription navigation">
+    <div class="brand">
+      <span class="brand-symbol" aria-hidden="true"><svg viewBox="0 0 36 36" fill="none"><path d="M8 18 18 7l10 11-10 11L8 18Z" stroke="currentColor" stroke-width="2.5"/><path d="M13 18h10" stroke="currentColor" stroke-width="2.5"/></svg></span>
+      <div class="brand-word"><span>{{.Site}}</span><small data-i18n="subscriptionCenter">Subscription center</small></div>
+    </div>
+    <div class="toolbar">
+      <label class="language-label" for="portal-language"><span data-i18n="language">Language</span></label>
+      <select id="portal-language" aria-label="Language"><option value="en">EN</option><option value="fa">فارسی</option><option value="ru">RU</option><option value="zh">中文</option></select>
+      <button type="button" id="toggle-theme" class="icon-button" aria-label="Toggle light and dark theme" title="Theme" data-i18n-aria="theme"><span aria-hidden="true">◐</span></button>
+      <button type="button" id="refresh-portal" class="icon-button" aria-label="Refresh subscription details" title="Refresh" data-i18n-aria="refresh"><span aria-hidden="true">↻</span></button>
+    </div>
+  </header>
+
+  <main id="main-content">
+    <div class="welcome">
+      <div class="welcome-text">
+        <div class="eyebrow"><span class="eyebrow-dot"></span><span data-i18n="yourSubscription">YOUR SUBSCRIPTION</span></div>
+        <h1>{{.Name}}</h1>
+        <p class="welcome-sub"><span data-i18n="manageConnection">Manage your subscription and connection profiles in one place.</span></p>
+      </div>
+      <span class="status-pill" role="status"><span class="status-dot"></span><span data-i18n="active">{{.Active}}</span></span>
+    </div>
+
+    {{if .Announcement}}<section class="announcement" aria-label="Service announcement"><span aria-hidden="true">✦</span><p>{{.Announcement}}</p>{{if .AnnouncementURL}}<a href="{{.AnnouncementURL}}" target="_blank" rel="noopener noreferrer" data-i18n="more">More ↗</a>{{end}}</section>{{end}}
+
+    <div class="stat-grid" aria-label="Subscription summary">
+      <section class="stat-card">
+        <div class="stat-heading"><span data-i18n="usedTraffic">Used traffic</span><span class="stat-icon" aria-hidden="true">⇅</span></div>
+        <div class="stat-number" dir="ltr">{{.Used}}</div>
+        <p class="stat-note"><span data-i18n="outOf">out of</span> <b dir="ltr">{{.Quota}}</b></p>
+      </section>
+      <section class="stat-card">
+        <div class="stat-heading"><span data-i18n="remaining">Remaining</span><span class="stat-icon" aria-hidden="true">◌</span></div>
+        <div class="stat-number" dir="ltr">{{.Remaining}}</div>
+        <p class="stat-note" data-i18n="trafficRemaining">Available traffic</p>
+      </section>
+      <section class="stat-card">
+        <div class="stat-heading"><span data-i18n="expiry">Expiry date</span><span class="stat-icon" aria-hidden="true">◷</span></div>
+        <div class="stat-number stat-date">{{.Expiry}}</div>
+        <p class="stat-note" id="expiry-countdown" data-i18n="expiryDescription">Subscription expiration</p>
+      </section>
+      <section class="stat-card">
+        <div class="stat-heading"><span data-i18n="connections">Connections</span><span class="stat-icon" aria-hidden="true">⬡</span></div>
+        <div class="stat-number" dir="ltr">{{.ConnectionCount}}</div>
+        <p class="stat-note" data-i18n="availableProfiles">Available connection profiles</p>
+      </section>
+    </div>
+
+    <div class="dashboard-grid">
+      <section class="panel traffic-panel" aria-labelledby="usage-heading">
+        <div class="panel-heading">
+          <div><div class="section-overline" data-i18n="analytics">ANALYTICS</div><h2 id="usage-heading" data-i18n="trafficOverview">Traffic overview</h2></div>
+          <div class="range-selector" aria-label="Traffic chart period" role="group">
+            <button type="button" data-range="1h">1H</button>
+            <button type="button" data-range="12h">12H</button>
+            <button type="button" data-range="24h">24H</button>
+            <button type="button" data-range="7d" class="is-selected">7D</button>
+            <button type="button" data-range="30d">30D</button>
+            <button type="button" data-range="90d">90D</button>
+          </div>
+        </div>
+        <div class="chart-area" aria-live="polite">
+          <div id="chart-loading" data-i18n="loadingTraffic">Loading real usage history…</div>
+          <svg id="traffic-chart" role="img" aria-label="Traffic history" viewBox="0 0 660 188" preserveAspectRatio="none" hidden>
+            <defs><linearGradient id="traffic-gradient" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="#5085fa" stop-opacity=".26"/><stop offset="100%" stop-color="#5085fa" stop-opacity="0"/></linearGradient></defs>
+            <path id="chart-fill" fill="url(#traffic-gradient)"></path>
+            <path id="chart-line" fill="none" stroke="#5085fa" stroke-width="2.8" stroke-linejoin="round" vector-effect="non-scaling-stroke"></path>
+          </svg>
+          <div id="chart-empty" hidden data-i18n="noHistory">No recorded usage for this period.</div>
+        </div>
+        <div class="chart-footer"><span><i class="chart-dot"></i><span data-i18n="actualUsage">Actual usage, not estimated</span></span><span id="chart-total" dir="ltr"></span></div>
+      </section>
+
+      <section class="panel quota-panel" aria-labelledby="quota-heading">
+        <div class="section-overline" data-i18n="quota">QUOTA</div>
+        <h2 id="quota-heading" data-i18n="dataAllowance">Data allowance</h2>
+        <div class="ring" style="--usage:{{.Percent}}%" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{.Percent}}" aria-label="Traffic quota used">
+          <div><strong>{{.Percent}}%</strong><small data-i18n="consumed">consumed</small></div>
+        </div>
+        <div class="quota-legend"><span data-i18n="rawTraffic">Raw traffic</span><strong dir="ltr">{{.Actual}}</strong></div>
+        <div class="quota-legend"><span data-i18n="billingRate">Billing multiplier</span><strong dir="ltr">{{.Factor}}×</strong></div>
+        <p class="quota-description" data-i18n="quotaNote">Usage is counted from server accounting.</p>
+      </section>
+    </div>
+
+    <section class="panel subscription-card" aria-labelledby="link-heading">
+      <div class="panel-heading">
+        <div><div class="section-overline" data-i18n="subscriptionLink">SUBSCRIPTION LINK</div><h2 id="link-heading" data-i18n="yourLink">Your universal link</h2></div>
+        <span class="sub-tag">SUB</span>
+      </div>
+      <p class="section-description" data-i18n="importHelp">Copy the link and import it into a compatible client to receive configuration updates automatically.</p>
+      <label class="field-caption" for="subscription" data-i18n="url">Subscription URL</label>
+      <div class="subscription-input-row">
+        <input id="subscription" readonly value="{{.URL}}" aria-label="Subscription URL" dir="ltr" autocomplete="off" spellcheck="false">
+        <button type="button" id="copy-subscription" class="primary-button" data-success="Copied" data-error="Select and copy" data-i18n="copyLink">Copy link</button>
+        {{if .ShowQR}}<button type="button" class="outline-button qr-trigger" data-qr="{{.QR}}" data-label="Subscription" data-i18n="qr">QR code</button>{{end}}
+      </div>
+      <span id="copy-feedback" class="sr-only" role="status" aria-live="polite"></span>
+      <div class="format-links" aria-label="Subscription download formats">
+        {{if .Link}}<a href="{{.URL}}?format=base64&download=1">↓ Base64</a><a href="{{.URL}}?format=raw&download=1">↓ RAW</a><a href="{{.URL}}?format=clash&download=1">↓ Clash</a><a href="{{.URL}}?format=singbox&download=1">↓ sing-box</a>{{end}}
+        {{if .Profile}}<a href="{{.URL}}?format=wireguard">↓ WireGuard</a>{{end}}
+        <a href="{{.URL}}?format=json" data-i18n="jsonDetails">JSON details</a>
+      </div>
+    </section>
+
+    {{if .ShowURI}}
+      {{if .Connections}}
+      <section class="panel profiles-panel" aria-labelledby="profiles-heading">
+        <div class="panel-heading">
+          <div><div class="section-overline" data-i18n="profiles">PROFILES</div><h2 id="profiles-heading" data-i18n="connectionProfiles">Connection profiles</h2></div>
+          <button type="button" id="copy-all" class="outline-button" data-i18n="copyAll">Copy all</button>
+        </div>
+        <div class="profile-tools"><label for="profile-search" class="sr-only" data-i18n="search">Search profiles</label><input id="profile-search" type="search" placeholder="Search name, protocol or server" data-i18n-placeholder="searchHint" autocomplete="off"><select id="protocol-filter" aria-label="Filter profiles"><option value="all" data-i18n="allProtocols">All protocols</option>{{range .Protocols}}<option value="{{.}}">{{.}}</option>{{end}}</select></div>
+        <div id="profile-list" class="profile-list">
+          {{range .Connections}}
+          <div class="profile-item" data-search="{{.Search}}" data-protocol="{{.Protocol}}">
+            <div class="profile-icon" aria-hidden="true">◈</div>
+            <div class="profile-description"><strong>{{.Name}}</strong><small><span>{{.Protocol}}</span> · <span dir="ltr">{{.Host}}</span> · <span>{{.Node}}</span></small></div>
+            <div class="profile-buttons">
+              <input class="profile-uri sr-only" readonly value="{{.Link}}" aria-label="Connection URI">
+              <button type="button" class="small-icon-button copy-profile" aria-label="Copy profile" title="Copy profile" data-i18n-aria="copyProfile">⧉</button>
+              {{if .QR}}<button type="button" class="small-icon-button qr-trigger" aria-label="Profile QR code" title="Profile QR code" data-qr="{{.QR}}" data-label="{{.Name}}" data-i18n-aria="qrProfile">▦</button>{{end}}
+            </div>
+          </div>
+          {{end}}
+        </div>
+        <p id="profiles-empty" hidden data-i18n="noProfiles">No profiles match your search.</p>
+        <textarea id="all-configs" class="sr-only" readonly aria-label="All connection links">{{.Link}}</textarea>
+      </section>
+      {{end}}
+    {{end}}
+
+    {{if .ShowApps}}
+    <section class="panel apps-panel" aria-labelledby="apps-heading">
+      <div class="panel-heading"><div><div class="section-overline" data-i18n="compatibleApps">CLIENT SOFTWARE</div><h2 id="apps-heading" data-i18n="recommendedApps">Recommended applications</h2></div><span class="os-tag" id="detected-os"></span></div>
+      <p class="section-description" data-i18n="appsHelp">Choose a trusted application for your device, then import the subscription URL.</p>
+      <div class="app-grid">
+        <a href="https://github.com/hiddify/hiddify-app" rel="noopener noreferrer" target="_blank" data-platforms="windows macos linux android ios"><span class="app-icon">H</span><span><strong>Hiddify</strong><small>Windows · macOS · Linux · Android · iOS</small></span><span class="app-arrow">↗</span></a>
+        <a href="https://github.com/2dust/v2rayNG" rel="noopener noreferrer" target="_blank" data-platforms="android"><span class="app-icon">V</span><span><strong>v2rayNG</strong><small>Android</small></span><span class="app-arrow">↗</span></a>
+        <a href="https://github.com/MetaCubeX/mihomo" rel="noopener noreferrer" target="_blank" data-platforms="windows macos linux"><span class="app-icon">M</span><span><strong>Mihomo</strong><small>Windows · macOS · Linux</small></span><span class="app-arrow">↗</span></a>
+      </div>
+    </section>
+    {{end}}
+
+    <footer class="footer"><span>{{.Site}}<span class="footer-dot">·</span><span data-i18n="powered">Subscription portal</span></span><div>{{if .Support}}<a href="{{.Support}}" rel="noopener noreferrer" target="_blank" data-i18n="contactSupport">Contact support</a>{{end}}{{if .Footer}}<span>{{.Footer}}</span>{{end}}</div></footer>
+  </main>
+</div>
+<dialog id="qr-dialog" aria-labelledby="qr-heading"><div class="modal-header"><h2 id="qr-heading" data-i18n="qr">QR code</h2><button type="button" id="close-qr" aria-label="Close" data-i18n-aria="close">×</button></div><p data-i18n="qrHelp">Scan with a compatible VPN application.</p><img id="qr-preview" alt="Configuration QR code" width="220" height="220"><p class="qr-caption" id="qr-label"></p></dialog>
+</body></html>
