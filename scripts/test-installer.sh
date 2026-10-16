@@ -100,14 +100,14 @@ case "$url" in
  */node-v24.21.0-linux-arm64.tar.xz)
   if [[ "${TEST_BAD_NODE_DIGEST:-}" == 1 ]];then printf broken >"$destination";else cp "$TEST_ROOT/node.tar.xz" "$destination";fi;;
  */commits/*) printf '{"sha":"1111111111111111111111111111111111111111"}' >"$destination";;
- https://codeload.github.com/PaarSaAm/VeloRay/tar.gz/*)
+ https://codeload.github.com/ParsaZali/VeloRay/tar.gz/*)
   if [[ "${TEST_SOURCE_ROUTE:-}" == stalled ]];then echo 'curl: (28) Operation too slow' >&2;exit 28;fi
   [[ "${TEST_SOURCE_ROUTE:-direct}" == direct ]]||exit 22
   cp "$TEST_ROOT/source.tar.gz" "$destination";;
- https://api.github.com/repos/PaarSaAm/VeloRay/tarball/*)
+ https://api.github.com/repos/ParsaZali/VeloRay/tarball/*)
   [[ "${TEST_SOURCE_ROUTE:-direct}" != web && "${TEST_SOURCE_ROUTE:-direct}" != unavailable ]]||exit 22
   cp "$TEST_ROOT/source.tar.gz" "$destination";;
- https://github.com/PaarSaAm/VeloRay/archive/*.tar.gz)
+ https://github.com/ParsaZali/VeloRay/archive/*.tar.gz)
   [[ "${TEST_SOURCE_ROUTE:-direct}" != unavailable ]]||exit 22
   cp "$TEST_ROOT/source.tar.gz" "$destination";;
  */XTLS/Xray-core/releases/latest) printf '{"tag_name":"v26.3.27","assets":[{"name":"Xray-linux-64.zip","digest":"sha256:%s"},{"name":"Xray-linux-arm64-v8a.zip","digest":"sha256:%s"}]}' "$TEST_XRAY_SHA" "$TEST_XRAY_SHA" >"$destination";;
@@ -187,7 +187,7 @@ for route in api web stalled;do
 done
 grep -Fq 'curl: (28) Operation too slow' "$TEST_ROOT/result"
 grep -Fq 'Download failed (curl 28)' "$TEST_ROOT/result"
-grep -Fq 'Download: https://api.github.com/repos/PaarSaAm/VeloRay/commits/main' "$TEST_ROOT/result"
+grep -Fq 'Download: https://api.github.com/repos/ParsaZali/VeloRay/commits/main' "$TEST_ROOT/result"
 grep -Fq 'Resolve GitHub revision' "$TEST_ROOT/result"
 grep -Fq 'Check and extract project archive' "$TEST_ROOT/result"
 grep -Fq 'Log:' "$TEST_ROOT/result"
@@ -308,7 +308,7 @@ cp -a "$project/deploy" "$host_project/"
 cp "$project/go.mod" "$host_project/";cp "$project/install.sh" "$host_project/"
 cp "$project/frontend/"package{,-lock}.json "$host_project/frontend/"
 touch "$host_project/frontend/dist/index.html"
-for script in scripts/install-panel.sh scripts/velorayctl scripts/xray-install.sh scripts/common.sh;do
+for script in scripts/install-panel.sh scripts/velorayctl scripts/auto-update.sh scripts/xray-install.sh scripts/common.sh;do
  sed -e '/^\[\[ ${EUID:/d' -e "s|/etc/|$HOST_ROOT/etc/|g" -e "s|/opt/|$HOST_ROOT/opt/|g" -e "s|/usr/local/|$HOST_ROOT/usr/local/|g" -e "s|/var/lib/|$HOST_ROOT/var/lib/|g" -e "s|/var/log/|$HOST_ROOT/var/log/|g" -e "s|/run/lock/veloray-install.lock|$HOST_ROOT/install.lock|g" "$project/$script" >"$host_project/$script"
 done
 cat >"$host_project/bin/linux-amd64/veloray" <<'APP'
@@ -482,6 +482,9 @@ grep -Fq 'veloray reset' "$TEST_ROOT/host-result";pass management-help
 printf '\nVELORAY_LANGUAGE=fa\n' >>"$HOST_ROOT/etc/veloray/veloray.env"
 bash "$HOST_ROOT/usr/local/bin/velorayctl" menu >"$TEST_ROOT/host-result" 2>&1
 grep -Fq 'Reset administrator password' "$TEST_ROOT/host-result";pass management-menu-stays-english
+bash "$HOST_ROOT/usr/local/bin/velorayctl" status >"$TEST_ROOT/host-result" 2>&1
+grep -Fq 'آدرس پنل:' "$TEST_ROOT/host-result";pass configured-cli-language-preserved
+printf '\nVELORAY_LANGUAGE=en\n' >>"$HOST_ROOT/etc/veloray/veloray.env"
 [[ "$(stat -c '%a' "$HOST_ROOT/var/log/veloray")" == 700 ]]
 if find "$HOST_ROOT/var/log/veloray" -type f ! -perm 0600 | grep -q .;then echo 'Operation log is not private' >&2;exit 1;fi
 pass private-operation-logs

@@ -45,6 +45,7 @@ jobs:
           name: panel-test-results
           path: frontend/test-results
       - run: for script in install.sh scripts/*.sh scripts/velorayctl deploy/node/install.sh; do bash -n "$script"; done
+      - run: bash scripts/test-auto-update.sh
       - run: |
           go build -buildvcs=false -o /tmp/veloray-cli ./cmd/veloray
           VELORAY_TEST_PANEL_BINARY=/tmp/veloray-cli bash scripts/test-installer.sh

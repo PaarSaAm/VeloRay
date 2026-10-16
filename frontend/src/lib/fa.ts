@@ -865,3 +865,21 @@ Object.assign(fa, {
   "Enter a JSON object.": "یک شیء JSON وارد کنید.",
   Create: "ساخت",
 });
+
+Object.assign(fa, {
+  "Verified GitHub auto-update": "به‌روزرسانی خودکار تأییدشده از گیت‌هاب",
+  "Daily commit checks, CI verification, restricted pre-update backup and application rollback.":
+    "بررسی روزانه تغییرات، تأیید تست‌ها، تهیه نسخه پشتیبان امن و امکان بازگشت برنامه.",
+  "Automatic updates enabled": "به‌روزرسانی خودکار فعال است",
+  "Automatic updates disabled": "به‌روزرسانی خودکار غیرفعال است",
+  "Tracked repository": "مخزن تحت نظارت",
+  "Tracked branch": "شاخه تحت نظارت",
+  "Installed GitHub commit": "شناسه نسخه نصب‌شده",
+  "Not recorded yet": "هنوز ثبت نشده",
+  "Run once on the server to activate automatic updates:":
+    "برای فعال‌سازی به‌روزرسانی خودکار، یک بار روی سرور اجرا کنید:",
+  "The panel does not execute root commands from the browser. Once enabled, the Linux systemd timer checks GitHub every day. Updates are installed only after that exact commit passes CI.":
+    "پنل دستورات مدیریتی سرور را از مرورگر اجرا نمی‌کند. پس از فعال‌سازی، زمان‌بند لینوکس هر روز گیت‌هاب را بررسی می‌کند و فقط نسخه‌ای را نصب می‌کند که تست‌های همان تغییر موفق بوده باشند.",
+  "Refresh update status": "به‌روزرسانی وضعیت",
+  "View source on GitHub": "مشاهده سورس در گیت‌هاب",
+});

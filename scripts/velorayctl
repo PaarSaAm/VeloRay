@@ -16,6 +16,7 @@ VeloRay 1.0 · Server management
   veloray backup [FILE] | restore FILE
   veloray backup-schedule daily|off
   veloray repair | update [DIRECTORY] | uninstall
+  veloray auto-update enable|disable|status|check|run
   veloray ports | inbounds | inbound-port ID PORT
   veloray language en|fa
 HELP
@@ -25,8 +26,9 @@ fi
 set -a
 source "$ENV_FILE"
 set +a
-export VELORAY_LANGUAGE=en
+export VELORAY_LANGUAGE="${VELORAY_LANGUAGE:-en}"
 source /opt/veloray/current/scripts/common.sh
+source /opt/veloray/current/scripts/auto-update.sh
 vr_log_init
 WEB=veloray-web.service
 AGENT=veloray-agent.service
@@ -85,6 +87,7 @@ menu() {
   15  Recover Xray
   16  Update VeloRay
   17  Uninstall VeloRay
+  18  Automatic updates
 
   NETWORK
   19  Inspect VPN ports
@@ -107,6 +110,7 @@ MENU
    12) read -rp "$(vr_text 'Backup path: ' 'مسیر فایل پشتیبان: ')" value;operation=(restore "$value");;
    13) read -rp "$(vr_text 'Daily backups [daily/off]: ' 'پشتیبان روزانه [daily/off]: ')" value;operation=(backup-schedule "$value");;
    14) operation=(doctor);;15) operation=(repair);;16) operation=(update);;17) operation=(uninstall);;
+   18) read -rp "$(vr_text 'Auto-update [enable/disable/status/check/run]: ' 'به‌روزرسانی خودکار [enable/disable/status/check/run]: ')" value;operation=(auto-update "${value:-status}");;
    19) operation=(ports);;
    20) veloray host-inbounds|jq -r '.[]|"ID=\(.id)  \(.name)  :\(.port)"';read -rp "$(vr_text 'Inbound ID: ' 'شناسه اتصال: ')" value;read -rp "$(vr_text 'New VPN port: ' 'پورت جدید VPN: ')" port;operation=(inbound-port "$value" "$port");;
    21) operation=(inbounds);;
@@ -114,7 +118,7 @@ MENU
   esac
   "$0" "${operation[@]}"||true
   [[ "$selection" != 17 || -x "$0" ]]||return 0
-  set -a;source "$ENV_FILE";set +a;export VELORAY_LANGUAGE=en
+  set -a;source "$ENV_FILE";set +a;export VELORAY_LANGUAGE="${VELORAY_LANGUAGE:-en}"
   read -rp "$(vr_text 'Press Enter to return…' 'برای بازگشت Enter بزنید…')" value||return 0
  done
 }
@@ -157,7 +161,7 @@ case "$command" in
  chown root:veloray "$(dirname "$ENV_FILE")";chmod 0750 "$(dirname "$ENV_FILE")"
  # Discard old application keys before loading the restored environment.
  while IFS='=' read -r key _;do [[ "$key" =~ ^(VELORAY_[A-Z0-9_]+|DATABASE_URL)$ ]]&&unset "$key"||true;done < "$ENV_FILE"
- set -a;source "$ENV_FILE";set +a;export VELORAY_LANGUAGE=en
+ set -a;source "$ENV_FILE";set +a;export VELORAY_LANGUAGE="${VELORAY_LANGUAGE:-en}"
  if [[ -d /usr/local/etc/xray ]];then
   find /usr/local/etc/xray -type d -exec chmod 0755 {} +
   find /usr/local/etc/xray -type f -exec chown root:nogroup {} + -exec chmod 0640 {} +
@@ -186,7 +190,7 @@ case "$command" in
  if [[ "$command" == domain ]];then [[ "$1" =~ ^[a-zA-Z0-9.-]+$ ]]||exit 2;host="$1";port="$VELORAY_PANEL_PORT";else [[ "$1" =~ ^[0-9]+$ ]]&&(( $1>0&&$1<65536 ))||exit 2;host="$VELORAY_PUBLIC_HOST";port="$1";fi
  # Reject reserved/listening inbound ports via the Go command before changing host files.
  veloray configure-origin "$host" "$port"
- set -a;source "$ENV_FILE";set +a;export VELORAY_LANGUAGE=en
+ set -a;source "$ENV_FILE";set +a;export VELORAY_LANGUAGE="${VELORAY_LANGUAGE:-en}"
  if ! veloray render-nginx;then veloray set-env VELORAY_PUBLIC_URL "$old_origin";veloray set-env VELORAY_PUBLIC_HOST "$old_host";veloray set-env VELORAY_PANEL_PORT "$old_port";echo 'Nginx rejected the change. Environment origin restored.' >&2;exit 1;fi
  systemctl restart "$WEB"
  ;;
@@ -237,10 +241,8 @@ TIMER
  *) echo 'Usage: veloray backup-schedule daily|off' >&2;exit 2;;esac;;
  update)
  if [[ $# -gt 0 ]];then [[ $# -eq 1 && -f "$1/install.sh" ]]||exit 2;exec bash "$1/install.sh" install --lang "${VELORAY_LANGUAGE:-en}";fi
- vr_step 'Download installer' 'دریافت نصب‌کنندهٔ به‌روزرسانی'
- temporary="$(mktemp -d)";trap 'rm -rf -- "$temporary"' EXIT
- vr_run curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL --retry 3 --connect-timeout 15 --max-time 60 "https://raw.githubusercontent.com/${VELORAY_REPO:-PaarSaAm/VeloRay}/${VELORAY_REF:-main}/install.sh" -o "$temporary/install.sh"
- bash "$temporary/install.sh" install --repo "${VELORAY_REPO:-PaarSaAm/VeloRay}" --ref "${VELORAY_REF:-main}" --lang "${VELORAY_LANGUAGE:-en}";;
+ vr_autoupdate run;;
+ auto-update) vr_autoupdate "${1:-status}";;
  uninstall)
   vr_say 'Remove services and program files. Configuration, database and backups are preserved.' 'سرویس‌ها و فایل‌های برنامه حذف می‌شوند؛ تنظیمات، پایگاه داده و پشتیبان‌ها حفظ می‌شوند.'
   read -rp "$(vr_text 'Type REMOVE to continue: ' 'برای ادامه REMOVE را وارد کنید: ')" confirmation

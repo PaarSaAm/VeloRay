@@ -46,9 +46,13 @@ export function FloatingMenu({
       });
     };
     update();
-    menu.current
-      ?.querySelector<HTMLButtonElement>("button:not(:disabled)")
-      ?.focus();
+    // The portaled menu is initially hidden until its position is measured.
+    // Move keyboard focus after React has committed the visible position.
+    const focusFrame = requestAnimationFrame(() => {
+      menu.current
+        ?.querySelector<HTMLButtonElement>("button:not(:disabled)")
+        ?.focus();
+    });
     const outside = (event: PointerEvent) => {
       const target = event.target as Node;
       if (!menu.current?.contains(target) && !anchor.current?.contains(target))
@@ -61,8 +65,10 @@ export function FloatingMenu({
         trigger?.focus();
       }
       if (event.key === "Tab") {
+        event.preventDefault();
         close.current();
         trigger?.focus();
+        return;
       }
       if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
       const buttons = Array.from(
@@ -92,6 +98,7 @@ export function FloatingMenu({
     document.addEventListener("pointerdown", outside);
     document.addEventListener("keydown", key);
     return () => {
+      cancelAnimationFrame(focusFrame);
       observer.disconnect();
       removeEventListener("resize", update);
       removeEventListener("scroll", update, true);

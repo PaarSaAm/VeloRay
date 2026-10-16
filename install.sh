@@ -35,7 +35,7 @@ usage() {
 VeloRay installer
   install.sh [install|node] [--database postgresql] [--lang en|fa]
              [--repo OWNER/REPOSITORY] [--ref BRANCH_OR_TAG_OR_COMMIT]
-PostgreSQL is the supported database. Default repository: PaarSaAm/VeloRay, ref: main.
+PostgreSQL is the supported database. Default repository: ParsaZali/VeloRay, ref: main.
 HELP
 }
 version_at_least() { [[ "$(printf '%s\n%s\n' "$2" "$1" | sort -V | head -n1)" == "$2" ]]; }
@@ -77,7 +77,7 @@ check_archive() {
 action=install
 database=postgresql
 language=en
-repository="${VELORAY_REPO:-PaarSaAm/VeloRay}"
+repository="${VELORAY_REPO:-ParsaZali/VeloRay}"
 reference="${VELORAY_REF:-main}"
 if [[ "${1:-}" == install || "${1:-}" == node ]];then action="$1";shift;fi
 while [[ $# -gt 0 ]];do
@@ -128,6 +128,7 @@ if [[ -z "$source_directory" || ! -f "$source_directory/go.mod" || ! -f "$source
  vr_step 'Resolve GitHub revision' 'دریافت نسخهٔ گیت‌هاب'
  fetch "https://api.github.com/repos/$repository/commits/$reference" "$temporary/commit.json" 45
  commit="$(jq -er '.sha' "$temporary/commit.json")"
+ export VELORAY_INSTALL_COMMIT="$commit"
  [[ "$commit" =~ ^[a-f0-9]{40}$ ]]||fail 'GitHub did not return a valid source commit.'
  printf 'Repository=%s commit=%s\n' "$repository" "$commit" >>"$VELORAY_INSTALL_LOG"
  vr_step 'Download source and runtimes' 'دریافت سورس و بسته‌های آماده'

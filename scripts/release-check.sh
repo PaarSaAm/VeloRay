@@ -9,3 +9,4 @@ for script in install.sh scripts/*.sh scripts/velorayctl deploy/node/install.sh;
 [[ -n "${VELORAY_TEST_DATABASE_URL:-}" ]]||echo 'Set VELORAY_TEST_DATABASE_URL to run database integration tests.' >&2
 
 bash scripts/test-installer.sh
+bash scripts/test-auto-update.sh

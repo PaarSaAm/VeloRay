@@ -88,7 +88,7 @@ POSTGRES_DB=veloray
 POSTGRES_USER=veloray
 POSTGRES_PASSWORD=$dbpass
 VELORAY_LANGUAGE=${VELORAY_INSTALL_LANG:-en}
-VELORAY_REPO=${VELORAY_REPO:-PaarSaAm/VeloRay}
+VELORAY_REPO=${VELORAY_REPO:-ParsaZali/VeloRay}
 VELORAY_REF=${VELORAY_REF:-main}
 ENV
  mv "$env_temporary" /etc/veloray/veloray.env
@@ -108,8 +108,8 @@ public_url_host="$VELORAY_PUBLIC_HOST";[[ "$public_url_host" != *:* ]]||public_u
 export VELORAY_PUBLIC_URL="https://$public_url_host:$VELORAY_PANEL_PORT"
 vr_step 'Configure panel and administrator' 'تنظیم پنل و حساب مدیر'
 vr_run veloray set-env VELORAY_LANGUAGE "${VELORAY_INSTALL_LANG:-${VELORAY_LANGUAGE:-en}}"
-vr_run veloray set-env VELORAY_REPO "${VELORAY_INSTALL_REPO:-${VELORAY_REPO:-PaarSaAm/VeloRay}}"
-vr_run veloray set-env VELORAY_REF "${VELORAY_INSTALL_REF:-${VELORAY_REF:-main}}"
+vr_run veloray set-env VELORAY_REPO "${VELORAY_INSTALL_REPO:-${VELORAY_REPO:-ParsaZali/VeloRay}}"
+vr_run veloray set-env VELORAY_REF "${VELORAY_TRACKING_REF:-${VELORAY_INSTALL_REF:-${VELORAY_REF:-main}}}"
 veloray set-env VELORAY_PUBLIC_URL "$VELORAY_PUBLIC_URL"
 veloray set-env VELORAY_FRONTEND_DIR /opt/veloray/current/frontend/dist
 veloray set-env VELORAY_LOCAL_NODE_TOKEN "$VELORAY_LOCAL_NODE_TOKEN"
@@ -186,6 +186,11 @@ vr_step 'Verify panel, Xray and traffic accounting' 'بررسی سلامت پن�
 vr_wait http://127.0.0.1:8610/api/health
 vr_wait http://127.0.0.1:9191/health "$VELORAY_LOCAL_NODE_TOKEN"
 vr_run velorayctl doctor
+# Record the immutable source revision only after all post-install health checks pass.
+if [[ "${VELORAY_INSTALL_COMMIT:-}" =~ ^[a-f0-9]{40}$ ]];then
+ printf '%s\n' "$VELORAY_INSTALL_COMMIT" >/var/lib/veloray/installed-commit
+ chmod 0644 /var/lib/veloray/installed-commit
+fi
 vr_say 'Installation completed. All health checks passed.' 'نصب کامل شد و تمام بررسی‌های سلامت موفق بود.'
 printf '\n  %s\n' "$VELORAY_PUBLIC_URL"
 vr_say 'Management menu: sudo veloray' 'منوی مدیریت: sudo veloray'
