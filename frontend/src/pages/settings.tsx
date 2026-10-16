@@ -281,7 +281,8 @@ export function SettingsPage({ initialTab = "general" }: { initialTab?: Tab }) {
       const payload: any = { ...cfg };
       delete payload.telegram_configured;
       delete payload.webhook_configured;
-      if (webhookSecret.trim()) payload.webhook_signing_secret = webhookSecret.trim();
+      if (webhookSecret.trim())
+        payload.webhook_signing_secret = webhookSecret.trim();
       if (clearWebhook) payload.webhook_clear_secret = true;
       if (telegramToken.trim())
         payload.telegram_bot_token = telegramToken.trim();
@@ -976,9 +977,9 @@ export function SettingsPage({ initialTab = "general" }: { initialTab?: Tab }) {
                     </div>
                     {webhookStats && (
                       <div className="sm:col-span-2 rounded-lg border border-[var(--border)] p-3 text-[12px]">
-                        {t("Queued")}: {webhookStats.pending} ·{" "}
-                        {t("Failed")}: {webhookStats.failed} ·{" "}
-                        {t("Delivered (7 days)")}: {webhookStats.delivered}
+                        {t("Queued")}: {webhookStats.pending} · {t("Failed")}:{" "}
+                        {webhookStats.failed} · {t("Delivered (7 days)")}:{" "}
+                        {webhookStats.delivered}
                       </div>
                     )}
                     <div className="sm:col-span-2 flex flex-wrap gap-2">
