@@ -19,6 +19,10 @@ var modernPortalTemplate = template.Must(template.New("modern-portal").Parse(mod
 func modernPortalData(d map[string]any, c Data, cfg Data, details []Data) {
  d["ChartURL"] = d["URL"].(string) + "?format=stats"
  d["ConnectionCount"] = len(details)
+ d["ShowAnalytics"] = flag(cfg,"subscription_show_analytics")
+ d["ShowDownloads"] = flag(cfg,"subscription_show_downloads")
+ d["SubscriptionTheme"] = str(cfg,"subscription_theme")
+ d["Accent"] = str(cfg,"accent")
  d["Remaining"] = "Unlimited"
  if limit := num(c,"traffic_limit_bytes");limit>0 {
   used:=num(c,"used_traffic_bytes")
