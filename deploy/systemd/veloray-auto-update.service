@@ -1,0 +1,16 @@
+[Unit]
+Description=VeloRay verified GitHub auto-update
+Wants=network-online.target
+After=network-online.target postgresql.service
+ConditionPathExists=/etc/veloray/veloray.env
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+UMask=0077
+ExecStart=/usr/local/bin/velorayctl auto-update run
+TimeoutStartSec=90min
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
