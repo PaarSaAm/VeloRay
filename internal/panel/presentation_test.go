@@ -67,7 +67,7 @@ func TestCompactPortalPreservesDownloadsAndEscapesNames(t *testing.T) {
 	}
 	w := render("GET")
 	html := w.Body.String()
-	for _, needle := range []string{"connection-layout", "<details>", "?format=base64", "?format=clash", "?format=json", "readonly", "3x", "3.0 GB", "/ 20.0 GB"} {
+	for _, needle := range []string{"connection-layout", "<details>", "?format=base64", "?format=clash", "?format=json", "readonly", "3x", "3.0 GB", "/ 20.0 GB", "copy-subscription", "Link copied", "/subscription-portal.js"} {
 		if !strings.Contains(html, needle) {
 			t.Fatal("portal missing", needle)
 		}
@@ -80,6 +80,10 @@ func TestCompactPortalPreservesDownloadsAndEscapesNames(t *testing.T) {
 	client["name"] = "<script>alert(1)</script>"
 	if strings.Contains(render("GET").Body.String(), "<script>alert") {
 		t.Fatal("unescaped client name")
+	}
+	cfg["default_locale"] = "fa"
+	if !strings.Contains(render("GET").Body.String(), "کپی لینک") {
+		t.Fatal("Persian portal copy action is missing")
 	}
 	if render("HEAD").Body.Len() != 0 {
 		t.Fatal("HEAD returned a portal body")
