@@ -350,6 +350,10 @@ func (s *Server) maintain(ctx context.Context) error {
 	if e != nil {
 		return e
 	}
+	_, e = s.Store.Pool.Exec(ctx, `DELETE FROM vr_client_traffic_windows WHERE at<now()-$1*interval '1 day'`, num(cfg, "traffic_history_days"))
+	if e != nil {
+		return e
+	}
 	if flag(cfg, "telegram_enabled") {
 		if e = s.telegram(ctx, cfg); e != nil {
 			s.Logger.Warn("Telegram unavailable", "error", fmt.Sprintf("%T", e))
