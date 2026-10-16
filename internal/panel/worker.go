@@ -279,6 +279,9 @@ func (s *Server) Worker(ctx context.Context) {
 			if e := s.maintain(ctx); e != nil && ctx.Err() == nil {
 				s.Logger.Warn("housekeeping failed", "error", e)
 			}
+			if e := s.deliverWebhookQueue(ctx); e != nil && ctx.Err() == nil {
+				s.Logger.Warn("webhook queue failed", "error", e)
+			}
 			select {
 			case <-ctx.Done():
 				return
