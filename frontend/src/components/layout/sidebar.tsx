@@ -96,7 +96,7 @@ export function Sidebar({
       <div className="mx-3 h-px bg-[var(--border-subtle)]" />
       <nav className="scrollbar-none flex-1 overflow-y-auto px-3 py-4">
         {groups.map((g) => (
-          <div key={t(g.label)} className="mb-5">
+          <div key={g.label} className="mb-5">
             {!compact && (
               <div className="mb-1.5 px-2 text-[9px] font-medium text-[var(--muted)]">
                 {t(g.label)}
