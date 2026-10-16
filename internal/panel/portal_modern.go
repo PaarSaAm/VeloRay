@@ -2,6 +2,8 @@ package panel
 
 import (
  _ "embed"
+ "encoding/base64"
+ qrcode "github.com/skip2/go-qrcode"
  "html/template"
  "sort"
  "strings"
@@ -55,4 +57,10 @@ func subscriptionQRCode(uri string) template.URL {
  data,err:=makeQRCode(uri)
  if err!=nil {return ""}
  return template.URL("data:image/png;base64,"+data)
+}
+
+func makeQRCode(uri string) (string,error) {
+ data,err:=qrcode.Encode(uri,qrcode.Medium,240)
+ if err!=nil {return "",err}
+ return base64.StdEncoding.EncodeToString(data),nil
 }
