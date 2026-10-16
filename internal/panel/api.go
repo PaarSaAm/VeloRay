@@ -118,6 +118,9 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request, path string, a Acto
 	if strings.HasPrefix(path, "telegram/") {
 		return s.telegramAPI(w, r, path, a)
 	}
+	if strings.HasPrefix(path, "webhooks/") {
+		return s.webhooksAPI(w, r, path, a)
+	}
 	parts := strings.Split(path, "/")
 	if path == "openapi" && r.Method == "GET" {
 		return openAPISpec(s.Config.PublicURL), 200, nil
@@ -580,6 +583,9 @@ func (s *Server) settingsAPI(w http.ResponseWriter, r *http.Request, a Actor) (a
 			}
 		}
 		out["telegram_configured"] = str(d, "_telegram_token") != ""
+		if flag(a.User, "is_superuser") {
+			out["webhook_configured"] = str(d, "_webhook_secret") != ""
+		}
 		return out, 200, e
 	}
 	if r.Method != "PATCH" && r.Method != "PUT" {
@@ -589,7 +595,7 @@ func (s *Server) settingsAPI(w http.ResponseWriter, r *http.Request, a Actor) (a
 	if e != nil {
 		return nil, 0, e
 	}
-	keys := []string{"telegram_bot_token", "telegram_clear_bot_token"}
+	keys := []string{"telegram_bot_token", "telegram_clear_bot_token", "webhook_signing_secret", "webhook_clear_secret"}
 	for k := range defaultSettings() {
 		if !strings.HasPrefix(k, "_") {
 			keys = append(keys, k)
@@ -628,6 +634,20 @@ func (s *Server) settingsAPI(w http.ResponseWriter, r *http.Request, a Actor) (a
 	}
 	delete(d, "telegram_bot_token")
 	delete(d, "telegram_clear_bot_token")
+	if secret := str(in, "webhook_signing_secret"); secret != "" {
+		if len(secret) < 32 || len(secret) > 1024 {
+			return nil, 0, fail(400, "webhook signing secret must contain 32–1024 characters")
+		}
+		d["_webhook_secret"], e = seal(s.Config.FieldKey, secret)
+		if e != nil {
+			return nil, 0, e
+		}
+	}
+	if flag(in, "webhook_clear_secret") {
+		d["_webhook_secret"] = ""
+	}
+	delete(d, "webhook_signing_secret")
+	delete(d, "webhook_clear_secret")
 	if e = validateSettings(d); e != nil {
 		return nil, 0, fail(400, e.Error())
 	}
@@ -642,6 +662,7 @@ func (s *Server) settingsAPI(w http.ResponseWriter, r *http.Request, a Actor) (a
 	}
 	out := public(d)
 	out["telegram_configured"] = str(d, "_telegram_token") != ""
+	out["webhook_configured"] = str(d, "_webhook_secret") != ""
 	return out, 200, nil
 }
 func (s *Server) action(w http.ResponseWriter, r *http.Request, kind string, id int64, action string, a Actor) (any, int, error) {
