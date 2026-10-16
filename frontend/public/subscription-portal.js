@@ -20,7 +20,11 @@
       if (!copied) {
         input.focus();
         input.select();
-        copied = document.execCommand("copy");
+        try {
+          copied = document.execCommand("copy");
+        } catch {
+          copied = false;
+        }
         input.setSelectionRange(0, 0);
       }
       result.textContent = copied
