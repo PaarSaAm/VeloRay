@@ -98,6 +98,8 @@
         </div>
         <div class="quota-legend"><span data-i18n="rawTraffic">Raw traffic</span><strong dir="ltr">{{.Actual}}</strong></div>
         <div class="quota-legend"><span data-i18n="billingRate">Billing multiplier</span><strong dir="ltr">{{.Factor}}×</strong></div>
+        <div class="quota-legend"><span data-i18n="registeredDevices">Registered devices</span><strong dir="ltr">{{.DeviceCount}}{{if .HasDeviceLimit}} / {{.DeviceLimit}}{{else}} / ∞{{end}}</strong></div>
+        {{if .LastUsedISO}}<div class="quota-legend"><span data-i18n="lastActivity">Last usage</span><time id="last-activity" datetime="{{.LastUsedISO}}" dir="ltr">{{.LastUsedISO}}</time></div>{{end}}
         <p class="quota-description" data-i18n="quotaNote">Usage is counted from server accounting.</p>
       </section>
     </div>
