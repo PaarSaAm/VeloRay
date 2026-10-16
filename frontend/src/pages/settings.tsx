@@ -81,6 +81,9 @@ const defaults: AppSettings = {
   telegram_quota_warning_percent: 80,
   telegram_expiry_warning_days: 3,
   telegram_configured: false,
+  webhook_enabled: false,
+  webhook_url: "",
+  webhook_configured: false,
   telegram_owner_ids: [],
   telegram_alert_cpu_percent: 90,
   telegram_alert_memory_percent: 90,
@@ -95,6 +98,7 @@ type Tab =
   | "defaults"
   | "security"
   | "telegram"
+  | "webhooks"
   | "system";
 export function SettingsPage({ initialTab = "general" }: { initialTab?: Tab }) {
   useLocale();
@@ -106,7 +110,14 @@ export function SettingsPage({ initialTab = "general" }: { initialTab?: Tab }) {
     [msg, setMsg] = useState(""),
     [busy, setBusy] = useState(false),
     [telegramToken, setTelegramToken] = useState(""),
-    [clearTelegram, setClearTelegram] = useState(false);
+    [clearTelegram, setClearTelegram] = useState(false),
+    [webhookSecret, setWebhookSecret] = useState(""),
+    [clearWebhook, setClearWebhook] = useState(false),
+    [webhookStats, setWebhookStats] = useState<{
+      pending: number;
+      failed: number;
+      delivered: number;
+    } | null>(null);
   const session = useSession();
   const canReadSystem = Boolean(
     session?.is_superuser || session?.permissions?.includes("nodes.read"),
@@ -218,6 +229,45 @@ export function SettingsPage({ initialTab = "general" }: { initialTab?: Tab }) {
       setBusy(false);
     }
   }
+  async function webhookAction(action: "status" | "test" | "retry") {
+    setBusy(true);
+    setMsg("");
+    try {
+      const data = await api<{
+        pending?: number;
+        failed?: number;
+        delivered?: number;
+        queued?: boolean;
+        retried?: number;
+      }>(`/webhooks/${action}`, {
+        method: action === "status" ? "GET" : "POST",
+      });
+      if (action === "status") {
+        setWebhookStats({
+          pending: data.pending || 0,
+          failed: data.failed || 0,
+          delivered: data.delivered || 0,
+        });
+        setMsg(t("Webhook status loaded."));
+      } else {
+        setMsg(
+          action === "test"
+            ? t("Signed test event added to delivery queue.")
+            : t("Failed webhook deliveries scheduled for retry."),
+        );
+        const status = await api<{
+          pending: number;
+          failed: number;
+          delivered: number;
+        }>("/webhooks/status");
+        setWebhookStats(status);
+      }
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : t("Webhook operation failed"));
+    } finally {
+      setBusy(false);
+    }
+  }
   const diskPct = useMemo(() => Math.round(sys?.disk_percent ?? 0), [sys]);
   async function save(e: FormEvent) {
     e.preventDefault();
@@ -230,6 +280,10 @@ export function SettingsPage({ initialTab = "general" }: { initialTab?: Tab }) {
     try {
       const payload: any = { ...cfg };
       delete payload.telegram_configured;
+      delete payload.webhook_configured;
+      if (webhookSecret.trim())
+        payload.webhook_signing_secret = webhookSecret.trim();
+      if (clearWebhook) payload.webhook_clear_secret = true;
       if (telegramToken.trim())
         payload.telegram_bot_token = telegramToken.trim();
       if (clearTelegram) payload.telegram_clear_bot_token = true;
@@ -240,6 +294,8 @@ export function SettingsPage({ initialTab = "general" }: { initialTab?: Tab }) {
       setCfg(next);
       setTelegramToken("");
       setClearTelegram(false);
+      setWebhookSecret("");
+      setClearWebhook(false);
       setMsg(t("Settings saved."));
     } catch (e: any) {
       setMsg(e.message);
@@ -255,6 +311,7 @@ export function SettingsPage({ initialTab = "general" }: { initialTab?: Tab }) {
     ["defaults", t("Client defaults"), "sliders"],
     ["security", t("Security & API"), "shield-halved"],
     ["telegram", t("Telegram"), "paper-plane"],
+    ["webhooks", t("Webhooks"), "code-branch"],
     ["system", t("System"), "server"],
     ...(canEdit
       ? ([["imports", t("Import data"), "download"]] as [Tab, string, string][])
@@ -858,6 +915,104 @@ export function SettingsPage({ initialTab = "general" }: { initialTab?: Tab }) {
                         )}
                       </div>
                     )}
+                    <Actions busy={busy} />
+                  </CardContent>
+                </Card>
+              )}
+              {tab === "webhooks" && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>{t("Signed event webhooks")}</CardTitle>
+                  </CardHeader>
+                  <CardContent className="grid gap-4 sm:grid-cols-2">
+                    <Toggle
+                      label={t("Enable webhooks")}
+                      text={t(
+                        "Deliver signed administrative audit events to your HTTPS endpoint. Save settings before sending a test.",
+                      )}
+                      checked={cfg.webhook_enabled}
+                      onChange={(value) => set("webhook_enabled", value)}
+                    />
+                    <Field
+                      label={t("HTTPS destination URL")}
+                      className="sm:col-span-2"
+                    >
+                      <Input
+                        className="input"
+                        type="url"
+                        placeholder="https://example.com/hooks/veloray"
+                        value={cfg.webhook_url}
+                        onChange={(e) => set("webhook_url", e.target.value)}
+                      />
+                    </Field>
+                    <Field
+                      label={t("HMAC signing secret")}
+                      className="sm:col-span-2"
+                    >
+                      <Input
+                        className="input"
+                        type="password"
+                        autoComplete="new-password"
+                        value={webhookSecret}
+                        onChange={(e) => setWebhookSecret(e.target.value)}
+                        placeholder={
+                          cfg.webhook_configured
+                            ? t("Leave blank to keep the stored secret")
+                            : t("At least 32 random characters")
+                        }
+                      />
+                    </Field>
+                    {cfg.webhook_configured && (
+                      <Toggle
+                        label={t("Remove stored signing secret")}
+                        text={t("Disable webhooks before removing the secret.")}
+                        checked={clearWebhook}
+                        onChange={setClearWebhook}
+                      />
+                    )}
+                    <div className="sm:col-span-2 rounded-lg border border-[var(--border)] p-3 text-[11px] leading-5 text-[var(--muted)]">
+                      {t(
+                        "Requests are signed using HMAC-SHA256 over timestamp + '.' + raw JSON body. Verify X-VeloRay-Timestamp and X-VeloRay-Signature. Event bodies exclude credentials, tokens, configuration and audit details. Failed deliveries are retried up to eight times.",
+                      )}
+                    </div>
+                    {webhookStats && (
+                      <div className="sm:col-span-2 rounded-lg border border-[var(--border)] p-3 text-[12px]">
+                        {t("Queued")}: {webhookStats.pending} · {t("Failed")}:{" "}
+                        {webhookStats.failed} · {t("Delivered (7 days)")}:{" "}
+                        {webhookStats.delivered}
+                      </div>
+                    )}
+                    <div className="sm:col-span-2 flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={busy || !canEdit}
+                        onClick={() => void webhookAction("status")}
+                      >
+                        {t("Queue status")}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={
+                          busy ||
+                          !canEdit ||
+                          !cfg.webhook_configured ||
+                          !cfg.webhook_enabled
+                        }
+                        onClick={() => void webhookAction("test")}
+                      >
+                        {t("Queue test event")}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={busy || !canEdit || !cfg.webhook_configured}
+                        onClick={() => void webhookAction("retry")}
+                      >
+                        {t("Retry failed")}
+                      </Button>
+                    </div>
                     <Actions busy={busy} />
                   </CardContent>
                 </Card>

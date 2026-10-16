@@ -35,12 +35,12 @@ func typed(input, template Data) error {
 				}
 			}
 		}
-		if oneOf(k, "password", "agent_token", "telegram_bot_token") {
+		if oneOf(k, "password", "agent_token", "telegram_bot_token", "webhook_signing_secret") {
 			if _, ok := v.(string); !ok {
 				return fmt.Errorf("%s must be text", k)
 			}
 		}
-		if k == "telegram_clear_bot_token" {
+		if oneOf(k, "telegram_clear_bot_token", "webhook_clear_secret") {
 			if _, ok := v.(bool); !ok {
 				return fmt.Errorf("%s must be boolean", k)
 			}
@@ -350,6 +350,12 @@ func metered(p string) bool {
 	return oneOf(p, "vless", "vmess", "trojan", "shadowsocks", "hysteria", "wireguard")
 }
 func validateSettings(d Data) error {
+	if e := validateWebhookURL(str(d, "webhook_url")); e != nil {
+		return e
+	}
+	if flag(d, "webhook_enabled") && (str(d, "webhook_url") == "" || str(d, "_webhook_secret") == "") {
+		return errors.New("enabled webhooks require an HTTPS URL and signing secret")
+	}
 	if e := require(d, "site_name", 64); e != nil {
 		return e
 	}

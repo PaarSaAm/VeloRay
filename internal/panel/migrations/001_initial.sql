@@ -90,3 +90,16 @@ ALTER TABLE vr_traffic_windows ADD COLUMN IF NOT EXISTS download_bytes bigint NO
 ALTER TABLE vr_owner_traffic_windows ADD COLUMN IF NOT EXISTS upload_bytes bigint NOT NULL DEFAULT 0 CHECK(upload_bytes>=0);
 ALTER TABLE vr_owner_traffic_windows ADD COLUMN IF NOT EXISTS download_bytes bigint NOT NULL DEFAULT 0 CHECK(download_bytes>=0);
 INSERT INTO vr_schema(version) VALUES(3) ON CONFLICT DO NOTHING;
+
+-- Durable, authenticated event delivery; safe to apply on existing installs.
+CREATE TABLE IF NOT EXISTS vr_webhook_deliveries (
+ id bigserial PRIMARY KEY,
+ payload jsonb NOT NULL CHECK (jsonb_typeof(payload)='object'),
+ attempts integer NOT NULL DEFAULT 0,
+ next_at timestamptz NOT NULL DEFAULT now(),
+ last_error text NOT NULL DEFAULT '',
+ delivered_at timestamptz,
+ created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS vr_webhook_ready ON vr_webhook_deliveries(next_at, id)
+ WHERE delivered_at IS NULL AND attempts < 8;

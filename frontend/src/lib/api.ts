@@ -263,6 +263,9 @@ export type AppSettings = {
   telegram_quota_warning_percent: number;
   telegram_expiry_warning_days: number;
   telegram_configured: boolean;
+  webhook_enabled: boolean;
+  webhook_url: string;
+  webhook_configured: boolean;
   telegram_owner_ids: string[];
   telegram_alert_cpu_percent: number;
   telegram_alert_memory_percent: number;

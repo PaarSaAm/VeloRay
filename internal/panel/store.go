@@ -255,7 +255,10 @@ func audit(ctx context.Context, q Query, actor int64, action, target string, det
 	if ip := str(detail, "ip"); ip != "" {
 		d["ip_address"] = ip
 	}
-	return save(ctx, q, "audit", d)
+	if err := save(ctx, q, "audit", d); err != nil {
+		return err
+	}
+	return enqueueAuditWebhook(ctx, q, d)
 }
 func databaseError(err error) error {
 	var pg *pgconn.PgError
