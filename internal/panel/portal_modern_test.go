@@ -2,6 +2,7 @@ package panel
 
 import (
  "net/http/httptest"
+ "time"
  "os"
  "strings"
  "testing"
@@ -77,4 +78,26 @@ func TestModernConnectionScoping(t *testing.T) {
  if d["ConnectionCount"]!=2||d["Remaining"]!="0 B" {t.Fatal("unexpected shared accounting",d)}
  if len(d["Connections"].([]Data))!=1 {t.Fatal("non-exportable URI surfaced")}
  if !strings.Contains(d["ChartURL"].(string),"format=stats"){t.Fatal("bad stats URL")}
+}
+
+func TestSubscriptionStatsReadOnlyTokenScopedIntegration(t *testing.T) {
+ s,ctx:=integration(t)
+ principal:="client:9900042"
+ _,err:=s.Store.Pool.Exec(ctx,`INSERT INTO vr_client_traffic_windows(at,principal_key,bytes,upload_bytes,download_bytes) VALUES($1,$2,$3,$4,$5) ON CONFLICT(principal_key,at) DO UPDATE SET bytes=excluded.bytes,upload_bytes=excluded.upload_bytes,download_bytes=excluded.download_bytes`,time.Now().UTC().Truncate(5*time.Minute),principal,int64(1024),int64(256),int64(768))
+ if err!=nil{t.Fatal(err)}
+ defer s.Store.Pool.Exec(ctx,`DELETE FROM vr_client_traffic_windows WHERE principal_key=$1`,principal)
+ req:=httptest.NewRequest("GET","/sub/secret?format=stats&range=7d",nil)
+ w:=httptest.NewRecorder()
+ s.subscriptionStats(w,req,Data{"id":int64(9900042)})
+ if w.Code!=200{t.Fatalf("stats http status %d: %s",w.Code,w.Body.String())}
+ d,e:=decode(w.Body.Bytes())
+ if e!=nil||!flag(d,"history_available")||len(array(d,"points"))==0{t.Fatalf("stats missing %v %v",d,e)}
+ point:=asData(array(d,"points")[0])
+ if num(point,"bytes")!=1024||num(point,"upload_bytes")!=256||num(point,"download_bytes")!=768{t.Fatalf("unexpected history: %v",point)}
+ w=httptest.NewRecorder()
+ s.subscriptionStats(w,httptest.NewRequest("HEAD","/sub/secret?format=stats&range=7d",nil),Data{"id":int64(9900042)})
+ if w.Code!=200||w.Body.Len()!=0{t.Fatalf("HEAD returned body / bad status %d %q",w.Code,w.Body.String())}
+ w=httptest.NewRecorder()
+ s.subscriptionStats(w,httptest.NewRequest("GET","/sub/secret?format=stats&range=DROP",nil),Data{"id":int64(9900042)})
+ if w.Code!=400{t.Fatalf("unsafe range accepted %d",w.Code)}
 }
