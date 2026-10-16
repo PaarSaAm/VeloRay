@@ -1,0 +1,11 @@
+[Unit]
+Description=Check VeloRay GitHub main for verified updates daily
+
+[Timer]
+OnCalendar=*-*-* 05:00:00
+RandomizedDelaySec=45min
+Persistent=true
+Unit=veloray-auto-update.service
+
+[Install]
+WantedBy=timers.target
