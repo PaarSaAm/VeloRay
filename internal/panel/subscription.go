@@ -137,7 +137,7 @@ func (s *Server) subscription(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Subscription-Userinfo", fmt.Sprintf("upload=0; download=%d; total=%d; expire=%d", num(c, "used_traffic_bytes"), num(c, "traffic_limit_bytes"), exp))
 	w.Header().Set("Profile-Title", "base64:"+base64.StdEncoding.EncodeToString([]byte(str(cfg, "site_name")+" · "+str(c, "name"))))
-	w.Header().Set("Profile-Update-Interval", "12")
+	w.Header().Set("Profile-Update-Interval", fmt.Sprint(num(cfg, "subscription_update_interval_hours")))
 	w.Header().Set("Profile-Web-Page-URL", strings.TrimRight(s.Config.PublicURL, "/")+"/sub/"+token+"?format=portal")
 	for key, field := range map[string]string{"Support-URL": "support_url", "Announce-URL": "announcement_url"} {
 		if str(cfg, field) != "" {
@@ -159,7 +159,8 @@ func (s *Server) subscription(w http.ResponseWriter, r *http.Request) {
 		} else if strings.Contains(ua, "sing-box") || strings.Contains(ua, "singbox") {
 			format = "singbox"
 		} else {
-			format = "base64"
+			format = str(cfg, "subscription_default_format")
+			if format == "" || format == "auto" { format = "base64" }
 		}
 	}
 	link := shareLink(c, i, n)
