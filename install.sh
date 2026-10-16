@@ -193,13 +193,15 @@ prepare_build_tools() {
    version="$(jq -er '.version' <<<"$descriptor")";filename="$(jq -er '.filename' <<<"$descriptor")";checksum="$(jq -er '.sha256' <<<"$descriptor")"
    [[ "$version" =~ ^go[0-9]+\.[0-9]+\.[0-9]+$ && "$filename" == "$version.linux-$arch.tar.gz" ]]||fail 'Unexpected Go download metadata.'
    version_at_least "${version#go}" "$minimum"||continue
-   for url in "https://dl.google.com/go/$filename" "https://go.dev/dl/$filename";do
+   # Alternate transport only; the archive is still verified against the
+   # SHA-256 checksum supplied by the official go.dev release metadata.
+   for url in "https://dl.google.com/go/$filename" "https://go.dev/dl/$filename" "https://mirrors.hust.edu.cn/golang/$filename";do
     if fetch "$url" "$temporary/go.tar.gz";then downloaded=true;break;fi
    done
    if $downloaded;then verify "$checksum" "$temporary/go.tar.gz";break;fi
    printf 'Go %s is unavailable; trying another supported stable release.\n' "${version#go}"
   done <"$temporary/go-candidates"
-  $downloaded||fail "Cannot download a verified Go compiler >= $minimum. Use a package with bundled runtimes or check access to dl.google.com and go.dev."
+  $downloaded||fail "Cannot download a verified Go compiler >= $minimum from the official endpoints or verified mirror."
   target="/opt/veloray/toolchains/$version";mkdir -p "$target"
   mkdir -p "$temporary/go-unpack"
   tar --no-same-owner -xzf "$temporary/go.tar.gz" -C "$temporary/go-unpack"
