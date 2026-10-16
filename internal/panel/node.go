@@ -202,6 +202,15 @@ func (s *Server) collect(ctx context.Context, q Query, node Data) error {
 			continue
 		}
 		key := accountKey(client)
+		series := principalDeltas[key]
+		if delta > int64(^uint64(0)>>1)-series[0] { return errors.New("principal traffic overflow") }
+		series[0] += delta
+		if parts[3] == "uplink" {
+			series[1] += delta
+		} else {
+			series[2] += delta
+		}
+		principalDeltas[key] = series
 		if chargedClients[key] == nil {
 			chargedClients[key] = client
 		}
