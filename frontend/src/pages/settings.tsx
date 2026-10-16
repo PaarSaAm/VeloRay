@@ -1047,7 +1047,7 @@ export function SettingsPage({ initialTab = "general" }: { initialTab?: Tab }) {
                             </CardTitle>
                             <p className="mt-1 text-[12px] text-[var(--muted)]">
                               {t(
-                                "Daily commit checks, CI verification, encrypted-credential backup and application rollback.",
+                                "Daily commit checks, CI verification, restricted pre-update backup and application rollback.",
                               )}
                             </p>
                           </div>
