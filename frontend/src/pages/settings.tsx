@@ -51,6 +51,13 @@ type Health = {
   uptime_seconds?: number;
   started_at?: string;
 };
+type UpdateInfo = {
+  repository: string;
+  tracking_branch: string;
+  installed_commit: string;
+  auto_update_enabled: boolean;
+  verification: string;
+};
 const defaults: AppSettings = {
   site_name: "VeloRay",
   support_url: "",
@@ -105,6 +112,7 @@ export function SettingsPage({ initialTab = "general" }: { initialTab?: Tab }) {
   const [h, setH] = useState<Health | null>(null),
     [cfg, setCfg] = useState<AppSettings>(defaults),
     [sys, setSys] = useState<SystemInfo | null>(null),
+    [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null),
     [canEdit, setCanEdit] = useState(false),
     [tab, setTab] = useState<Tab>(initialTab),
     [msg, setMsg] = useState(""),
@@ -159,6 +167,16 @@ export function SettingsPage({ initialTab = "general" }: { initialTab?: Tab }) {
             })
             .catch((error) => {
               if (current()) setSys(null);
+              throw error;
+            })
+        : Promise.resolve(null),
+      session?.is_superuser
+        ? api<UpdateInfo>("/updates/status", { signal: controller.signal })
+            .then((value) => {
+              if (current()) setUpdateInfo(value);
+            })
+            .catch((error) => {
+              if (current()) setUpdateInfo(null);
               throw error;
             })
         : Promise.resolve(null),
@@ -1019,6 +1037,44 @@ export function SettingsPage({ initialTab = "general" }: { initialTab?: Tab }) {
               )}
               {tab === "system" && (
                 <div className="space-y-4">
+                  {session?.is_superuser && (
+                    <Card>
+                      <CardHeader>
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div>
+                            <CardTitle>{t("Verified GitHub auto-update")}</CardTitle>
+                            <p className="mt-1 text-[12px] text-[var(--muted)]">
+                              {t("Daily commit checks, CI verification, encrypted-credential backup and application rollback.")}
+                            </p>
+                          </div>
+                          <span className={`rounded-full border px-3 py-1 text-[11px] font-semibold ${updateInfo?.auto_update_enabled ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300" : "border-[var(--border)] bg-[var(--surface-2)] text-[var(--muted-strong)]"}`}>
+                            {updateInfo?.auto_update_enabled ? t("Automatic updates enabled") : t("Automatic updates disabled")}
+                          </span>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        <div className="grid gap-3 md:grid-cols-3">
+                          <Read label={t("Tracked repository")} value={updateInfo?.repository || "ParsaZali/VeloRay"} />
+                          <Read label={t("Tracked branch")} value={updateInfo?.tracking_branch || "main"} />
+                          <Read label={t("Installed GitHub commit")} value={updateInfo?.installed_commit ? updateInfo.installed_commit.slice(0, 12) : t("Not recorded yet")} />
+                        </div>
+                        <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-4">
+                          <p className="mb-3 text-[12px] font-semibold">{t("Run once on the server to activate automatic updates:")}</p>
+                          <code className="block select-all overflow-x-auto rounded-md border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-[12px] text-[var(--fg)]" dir="ltr">sudo veloray auto-update enable</code>
+                          <p className="mt-3 text-[12px] text-[var(--muted)]">{t("The panel does not execute root commands from the browser. Once enabled, the Linux systemd timer checks GitHub every day. Updates are installed only after that exact commit passes CI.")}</p>
+                        </div>
+                        <div className="grid gap-2 sm:grid-cols-3">
+                          {["sudo veloray auto-update status", "sudo veloray auto-update check", "sudo veloray auto-update disable"].map((cmd) => (
+                            <code key={cmd} dir="ltr" className="overflow-x-auto rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-[11px] text-[var(--muted-strong)]">{cmd}</code>
+                          ))}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-3">
+                          <Button type="button" variant="outline" onClick={() => void load()} disabled={loading}>{t("Refresh update status")}</Button>
+                          <a className="text-[12px] font-medium text-[var(--brand)] underline underline-offset-4" href="https://github.com/ParsaZali/VeloRay" target="_blank" rel="noopener noreferrer">{t("View source on GitHub")}</a>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
                   <Card>
                     <CardHeader>
                       <div>
