@@ -46,7 +46,7 @@ The product version is **1.0**. Maintenance updates retain this version until th
 ### Install from GitHub
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/PaarSaAm/VeloRay/main/install.sh -o /tmp/veloray-install.sh
+curl -fsSL https://raw.githubusercontent.com/ParsaZali/VeloRay/main/install.sh -o /tmp/veloray-install.sh
 sudo bash /tmp/veloray-install.sh install --lang en
 ```
 
