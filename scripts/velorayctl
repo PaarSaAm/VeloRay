@@ -190,7 +190,7 @@ case "$command" in
  if [[ "$command" == domain ]];then [[ "$1" =~ ^[a-zA-Z0-9.-]+$ ]]||exit 2;host="$1";port="$VELORAY_PANEL_PORT";else [[ "$1" =~ ^[0-9]+$ ]]&&(( $1>0&&$1<65536 ))||exit 2;host="$VELORAY_PUBLIC_HOST";port="$1";fi
  # Reject reserved/listening inbound ports via the Go command before changing host files.
  veloray configure-origin "$host" "$port"
- set -a;source "$ENV_FILE";set +a;export VELORAY_LANGUAGE=en
+ set -a;source "$ENV_FILE";set +a;export VELORAY_LANGUAGE="${VELORAY_LANGUAGE:-en}"
  if ! veloray render-nginx;then veloray set-env VELORAY_PUBLIC_URL "$old_origin";veloray set-env VELORAY_PUBLIC_HOST "$old_host";veloray set-env VELORAY_PANEL_PORT "$old_port";echo 'Nginx rejected the change. Environment origin restored.' >&2;exit 1;fi
  systemctl restart "$WEB"
  ;;
