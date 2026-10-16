@@ -70,7 +70,7 @@ vr_auto_restore() {
 
 vr_auto_update_check() {
  local action="$1" repo="$2" installed="$3"
- local tmp commit previous architecture current last backup status
+ local tmp commit previous architecture current backup status
  if [[ "$action" == run ]];then
   exec 8>/run/lock/veloray-auto-update.lock
   flock -n 8 || { echo 'An automatic update is already running; skipping.';return 0; }
@@ -90,7 +90,7 @@ vr_auto_update_check() {
   echo 'CI verification unavailable; not updating.' >&2
   return 1
  }
- status="$(jq -r --arg sha "$commit" '[.workflow_runs[] | select(.head_sha==$sha) | .conclusion] | first // "missing"' "$tmp/ci.json")" || return 1
+ status="$(jq -r --arg sha "$commit" '[.workflow_runs[] | select(.head_sha==$sha and .head_branch=="main" and .event=="push" and .status=="completed") | .conclusion] | first // "missing"' "$tmp/ci.json")" || return 1
  if [[ "$status" != success ]];then
   echo "GitHub main at $commit, but CI is $status; skipping unsafe update."
   return 0
@@ -118,6 +118,7 @@ vr_auto_update_check() {
  /usr/local/bin/velorayctl backup "$backup" || { echo 'Backup failed; refusing to update.' >&2;return 1; }
  cp -p /etc/veloray/veloray.env "$tmp/original.env"
  chmod 0600 "$tmp/original.env"
+ if [[ -f "$installed" ]];then cp -p "$installed" "$tmp/original-commit";fi
  echo "Starting pinned update $commit (backup: $backup)"
  if VELORAY_INSTALL_REPO="$repo" VELORAY_TRACKING_REF=main \
      bash "$tmp/install.sh" install --repo "$repo" --ref "$commit" --lang en \
@@ -128,6 +129,13 @@ vr_auto_update_check() {
   echo "Automatic update succeeded: $commit"
  else
   echo "Update failed. Attempting application/service rollback to $previous." >&2
+  # The installer may have already recorded the candidate commit. Restore the
+  # original marker or future checks could mistake a rolled-back build as new.
+  if [[ -f "$tmp/original-commit" ]];then
+   install -m 0644 "$tmp/original-commit" "$installed"
+  else
+   rm -f -- "$installed"
+  fi
   if vr_auto_restore "$previous" "$tmp/original.env" "$architecture";then
    echo 'Previous binaries and services were restored. Review the PostgreSQL backup before any database rollback.' >&2
   else
