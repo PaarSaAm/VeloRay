@@ -20,7 +20,7 @@ vr_auto_download() {
    printf '{"sha":"%s"}\n' "$TEST_COMMIT" >"$output"
    ;;
   */actions/workflows/ci.yml/runs*)
-   printf '{"workflow_runs":[{"head_sha":"%s","status":"completed","conclusion":"%s"}]}\n' "$TEST_COMMIT" "$mode" >"$output"
+   printf '{"workflow_runs":[{"head_sha":"%s","head_branch":"main","event":"push","status":"completed","conclusion":"%s"}]}\n' "$TEST_COMMIT" "$mode" >"$output"
    ;;
   *) echo "Unexpected GitHub endpoint: $url" >&2;return 1;;
  esac
@@ -45,7 +45,25 @@ mode=failure
 output="$(vr_auto_update_check check ParsaZali/VeloRay "$installed")"
 expect 'skipping unsafe update' "$output"
 
+mode=workflow_dispatch
+# A green manual run must never authorize deployment of a commit.
+vr_auto_download() {
+ local url="$1" output="$2"
+ case "$url" in
+  */commits/main) printf '{"sha":"%s"}\n' "$TEST_COMMIT" >"$output";;
+  */actions/workflows/ci.yml/runs*) printf '{"workflow_runs":[{"head_sha":"%s","head_branch":"main","event":"workflow_dispatch","status":"completed","conclusion":"success"}]}\n' "$TEST_COMMIT" >"$output";;
+  *) return 1;;
+ esac
+}
+output="$(vr_auto_update_check check ParsaZali/VeloRay "$installed")"
+expect 'skipping unsafe update' "$output"
+
 mode=outage
+vr_auto_download() {
+ local url="$1" output="$2"
+ if [[ "$url" == */commits/main ]];then return 22;fi
+ return 1
+}
 if vr_auto_update_check check ParsaZali/VeloRay "$installed" >"$TEST_HOME/output" 2>&1;then
  echo 'Network outage was incorrectly treated as a safe update.' >&2
  exit 1
