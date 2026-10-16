@@ -2,6 +2,8 @@ package panel
 
 import (
  "context"
+ "encoding/csv"
+ "strconv"
  "net/http"
  "time"
 )
@@ -12,7 +14,9 @@ import (
 func (s *Server) subscriptionStats(w http.ResponseWriter, r *http.Request, client Data) {
  duration, bucket, ok := subscriptionRange(r.URL.Query().Get("range"))
  if !ok { writeJSON(w, 400, Data{"detail":"unsupported chart range"}); return }
- if r.Method == http.MethodHead { w.Header().Set("Content-Type","application/json; charset=utf-8"); w.Header().Set("Cache-Control","private, no-store"); w.WriteHeader(http.StatusOK);return }
+ export:=r.URL.Query().Get("export")
+ if export!="" && export!="csv" { writeJSON(w,400,Data{"detail":"unsupported stats export"});return }
+ if r.Method == http.MethodHead { if export=="csv" {w.Header().Set("Content-Type","text/csv; charset=utf-8")} else {w.Header().Set("Content-Type","application/json; charset=utf-8")}; w.Header().Set("Cache-Control","private, no-store"); w.WriteHeader(http.StatusOK);return }
  ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
  defer cancel()
  rows, err := s.Store.Pool.Query(ctx,
@@ -37,6 +41,17 @@ func (s *Server) subscriptionStats(w http.ResponseWriter, r *http.Request, clien
  }
  if err=rows.Err();err!=nil {s.respond(w,r,nil,0,err);return}
  w.Header().Set("Cache-Control","private, no-store")
+ if export=="csv" {
+  w.Header().Set("Content-Type","text/csv; charset=utf-8")
+  w.Header().Set("Content-Disposition",`attachment; filename="veloray-traffic.csv"`)
+  writer:=csv.NewWriter(w)
+  if err:=writer.Write([]string{"timestamp_utc","total_bytes","upload_bytes","download_bytes"});err!=nil{return}
+  for _,row:=range result {
+   if err:=writer.Write([]string{str(row,"at"),strconv.FormatInt(num(row,"bytes"),10),strconv.FormatInt(num(row,"upload_bytes"),10),strconv.FormatInt(num(row,"download_bytes"),10)});err!=nil{return}
+  }
+  writer.Flush()
+  return
+ }
  writeJSON(w,200,Data{"range":r.URL.Query().Get("range"),"points":result,"history_available":len(result)>0})
 }
 
