@@ -100,4 +100,15 @@ func TestSubscriptionStatsReadOnlyTokenScopedIntegration(t *testing.T) {
  w=httptest.NewRecorder()
  s.subscriptionStats(w,httptest.NewRequest("GET","/sub/secret?format=stats&range=DROP",nil),Data{"id":int64(9900042)})
  if w.Code!=400{t.Fatalf("unsafe range accepted %d",w.Code)}
+ w=httptest.NewRecorder()
+ s.subscriptionStats(w,httptest.NewRequest("GET","/sub/secret?format=stats&range=7d&export=csv",nil),Data{"id":int64(9900042)})
+ if w.Code!=200 || !strings.Contains(w.Header().Get("Content-Type"),"text/csv") || !strings.Contains(w.Body.String(),"timestamp_utc,total_bytes,upload_bytes,download_bytes") || !strings.Contains(w.Body.String(),",1024,256,768") {
+  t.Fatalf("csv export invalid: status=%d content=%q",w.Code,w.Body.String())
+ }
+ w=httptest.NewRecorder()
+ s.subscriptionStats(w,httptest.NewRequest("GET","/sub/secret?format=stats&range=7d&export=invalid",nil),Data{"id":int64(9900042)})
+ if w.Code!=400 {t.Fatal("unknown export accepted")}
+ w=httptest.NewRecorder()
+ s.subscriptionStats(w,httptest.NewRequest("HEAD","/sub/secret?format=stats&range=7d&export=csv",nil),Data{"id":int64(9900042)})
+ if w.Code!=200 || w.Body.Len()!=0 || !strings.Contains(w.Header().Get("Content-Type"),"text/csv"){t.Fatal("CSV HEAD is invalid")}
 }
