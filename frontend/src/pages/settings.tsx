@@ -553,8 +553,8 @@ export function SettingsPage({ initialTab = "general" }: { initialTab?: Tab }) {
                           set("subscription_template", e.target.value)
                         }
                       >
-                        <option value="default">{t("Full portal")}</option>
-                        <option value="compact">{t("Compact portal")}</option>
+                        <option value="default">{t("Modern dashboard")}</option>
+                        <option value="compact">{t("Classic compact portal")}</option>
                       </Select>
                     </Field>
                     <Field label={t("Portal footer")}>
