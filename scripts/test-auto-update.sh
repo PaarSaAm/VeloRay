@@ -6,7 +6,7 @@ source scripts/auto-update.sh
 
 TEST_HOME="$(mktemp -d)"
 trap 'rm -rf -- "$TEST_HOME"' EXIT
-commit=1111111111111111111111111111111111111111
+TEST_COMMIT=1111111111111111111111111111111111111111
 installed="$TEST_HOME/installed"
 mode=success
 calls=0
@@ -17,10 +17,10 @@ vr_auto_download() {
  case "$url" in
   */commits/main)
    if [[ "$mode" == outage ]];then return 22;fi
-   printf '{"sha":"%s"}\n' "$commit" >"$output"
+   printf '{"sha":"%s"}\n' "$TEST_COMMIT" >"$output"
    ;;
   */actions/workflows/ci.yml/runs*)
-   printf '{"workflow_runs":[{"head_sha":"%s","status":"completed","conclusion":"%s"}]}\n' "$commit" "$mode" >"$output"
+   printf '{"workflow_runs":[{"head_sha":"%s","status":"completed","conclusion":"%s"}]}\n' "$TEST_COMMIT" "$mode" >"$output"
    ;;
   *) echo "Unexpected GitHub endpoint: $url" >&2;return 1;;
  esac
@@ -33,7 +33,7 @@ expect() {
  pass=$((pass + 1))
 }
 
-printf '%s\n' "$commit" >"$installed"
+printf '%s\n' "$TEST_COMMIT" >"$installed"
 output="$(vr_auto_update_check check ParsaZali/VeloRay "$installed")"
 expect 'Already up to date' "$output"
 
