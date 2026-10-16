@@ -9,6 +9,7 @@ trap 'rm -rf -- "$TEST_HOME"' EXIT
 TEST_COMMIT=1111111111111111111111111111111111111111
 installed="$TEST_HOME/installed"
 mode=success
+ci_status=completed
 calls=0
 
 vr_auto_download() {
@@ -20,7 +21,7 @@ vr_auto_download() {
    printf '{"sha":"%s"}\n' "$TEST_COMMIT" >"$output"
    ;;
   */actions/workflows/ci.yml/runs*)
-   printf '{"workflow_runs":[{"head_sha":"%s","head_branch":"main","event":"push","status":"completed","conclusion":"%s"}]}\n' "$TEST_COMMIT" "$mode" >"$output"
+   printf '{"workflow_runs":[{"head_sha":"%s","head_branch":"main","event":"push","status":"%s","conclusion":"%s"}]}\n' "$TEST_COMMIT" "$ci_status" "$mode" >"$output"
    ;;
   *) echo "Unexpected GitHub endpoint: $url" >&2;return 1;;
  esac
@@ -45,6 +46,13 @@ mode=failure
 output="$(vr_auto_update_check check ParsaZali/VeloRay "$installed")"
 expect 'skipping unsafe update' "$output"
 
+mode=success
+ci_status=in_progress
+output="$(vr_auto_update_check check ParsaZali/VeloRay "$installed")"
+expect 'CI is in_progress' "$output"
+expect 'update is not ready yet' "$output"
+ci_status=completed
+
 mode=workflow_dispatch
 # A green manual run must never authorize deployment of a commit.
 vr_auto_download() {
@@ -56,7 +64,7 @@ vr_auto_download() {
  esac
 }
 output="$(vr_auto_update_check check ParsaZali/VeloRay "$installed")"
-expect 'skipping unsafe update' "$output"
+expect 'update is not ready yet' "$output"
 
 mode=outage
 vr_auto_download() {
