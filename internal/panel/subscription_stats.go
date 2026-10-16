@@ -12,6 +12,7 @@ import (
 func (s *Server) subscriptionStats(w http.ResponseWriter, r *http.Request, client Data) {
  duration, bucket, ok := subscriptionRange(r.URL.Query().Get("range"))
  if !ok { writeJSON(w, 400, Data{"detail":"unsupported chart range"}); return }
+ if r.Method == http.MethodHead { w.Header().Set("Content-Type","application/json; charset=utf-8"); w.Header().Set("Cache-Control","private, no-store"); w.WriteHeader(http.StatusOK);return }
  ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
  defer cancel()
  rows, err := s.Store.Pool.Query(ctx,
