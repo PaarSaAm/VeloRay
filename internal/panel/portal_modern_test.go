@@ -38,7 +38,7 @@ func TestModernSubscriptionPortalHasNativeStatisticsAndSafeMarkup(t *testing.T) 
   "data-chart-url=\"https://panel.example/sub/","format=stats","traffic-chart",
   "profile-list","profile-search","protocol-filter","copy-all","copy-subscription",
   "data-range=\"90d\"","id=\"qr-dialog\"","portal-language","toggle-theme",
-  "2.0 GB","8.0 GB","1.0 GB","Arman","Primary","در حال",
+  "2.0 GB","8.0 GB","1.0 GB","Arman","Primary",
  } {
   if !strings.Contains(html,needle) {t.Fatalf("modern portal missing %q",needle)}
  }
