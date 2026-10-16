@@ -37,7 +37,7 @@ The product version is **1.0**. Maintenance updates retain this version until th
 
 ### Requirements
 
-- A Linux server with systemd and apt; Debian/Ubuntu installation workflow.
+- Ubuntu 24.04 with systemd and apt (currently the explicitly supported installation target).
 - `amd64` or `arm64` architecture.
 - Root access for service installation.
 - PostgreSQL. The installer can configure a local database.
@@ -73,7 +73,23 @@ sudo veloray update
 sudo veloray doctor
 ```
 
-The update preserves the database, administrator accounts, encryption keys, agent identity and traffic ledgers. Schema changes are idempotent. Previous frontend assets are retained during the switch so open browser sessions can finish loading their existing files.
+The updater checks the latest **ParsaZali/VeloRay** `main` commit and proceeds only after the exact commit passes GitHub Actions CI. It downloads the installer at the immutable commit, verifies its Git blob hash, creates a restricted pre-upgrade backup and performs a post-install health check. If installation fails, it attempts an application binary/service rollback and preserves the backup for manual database recovery. Schema changes are idempotent; a database rollback is **not** performed automatically.
+
+#### Automatic updates from GitHub
+
+After deploying a version containing the auto-update feature, enable daily automatic checks on the server **once**:
+
+```bash
+sudo veloray auto-update enable
+sudo veloray auto-update status
+sudo veloray auto-update check
+```
+
+To stop the timer while retaining your current installation, run `sudo veloray auto-update disable`. To perform an immediate CI-verified update, run `sudo veloray auto-update run` (or `sudo veloray update`). The systemd timer checks once per day around 05:00 server time with a randomized delay. Updating does not require any future user action once this timer is enabled.
+
+This feature is **disabled by default**. It never applies untested commits, never performs unattended updates when GitHub CI status is unknown, and does not automatically restore PostgreSQL data after a failure. It follows `main`, so review permissions for everyone able to push to that branch. For a sensitive production environment, protecting `main` and requiring code review before merges is essential. You can monitor the installation under **Settings → System → Verified GitHub auto-update**. No administrator endpoint directly runs root update commands. See [the maintenance notes](docs/maintenance-audit.md).
+
+Previous frontend assets are retained during the switch so open browser sessions can finish loading their existing files.
 
 The second core requires the complete 1.0 runtime. Upgrade remote agents before assigning sing-box inbounds to them.
 
