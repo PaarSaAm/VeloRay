@@ -58,6 +58,7 @@ func TestCompactPortalPreservesDownloadsAndEscapesNames(t *testing.T) {
 	inbound["name"] = "main"
 	node := Data{"public_host": "vpn.example"}
 	cfg := defaultSettings()
+	cfg["subscription_template"] = "compact"
 	cfg["site_name"] = "VeloRay"
 	cfg["support_url"] = "https://support.example"
 	render := func(method string) *httptest.ResponseRecorder {
