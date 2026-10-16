@@ -133,6 +133,32 @@ function formatBytes(bytes){
  return new Intl.NumberFormat(lang,{maximumFractionDigits:2}).format(bytes/1024**exponent)+" "+sizes[exponent];
 }
 let statsController=null;
+let activeMetric="bytes",currentPoints=[];
+function drawTrafficChart(){
+ const points=currentPoints,chart=byId("traffic-chart");
+ if(!chart||!points.length)return;
+ const values=points.map(p=>Math.max(0,Number(p[activeMetric])||0));
+ const max=Math.max(1,...values);
+ const x=index=>8+index*644/Math.max(1,points.length-1);
+ const y=value=>172-value*150/max;
+ const path=values.map((value,i)=>(i===0?"M":"L")+x(i).toFixed(2)+" "+y(value).toFixed(2)).join(" ");
+ const start=x(0).toFixed(2),end=x(points.length-1).toFixed(2);
+ byId("chart-line").setAttribute("d",path);
+ byId("chart-fill").setAttribute("d",path+" L"+end+" 182 L"+start+" 182 Z");
+ const summed=values.reduce((a,b)=>a+b,0);
+ chart.setAttribute("aria-label",dict()[activeMetric==="bytes"?"totalTraffic":activeMetric==="upload_bytes"?"uploadTraffic":"downloadTraffic"]+": "+formatBytes(summed));
+ chart.removeAttribute("hidden");
+ byId("chart-total").textContent=formatBytes(summed);
+}
+document.querySelectorAll("[data-metric]").forEach(button=>button.addEventListener("click",()=>{
+ activeMetric=button.dataset.metric;
+ document.querySelectorAll("[data-metric]").forEach(option=>{
+  const selected=option===button;
+  option.classList.toggle("is-selected",selected);
+  option.setAttribute("aria-pressed",String(selected));
+ });
+ drawTrafficChart();
+}));
 async function loadChart(range){
  statsController?.abort();statsController=new AbortController();
  const loading=byId("chart-loading"),empty=byId("chart-empty"),chart=byId("traffic-chart");
@@ -144,16 +170,9 @@ async function loadChart(range){
   const response=await fetch(endpoint,{signal:statsController.signal,cache:"no-store",headers:{"Accept":"application/json"}});
   if(!response.ok)throw new Error("HTTP "+response.status);
   const data=await response.json(),points=Array.isArray(data.points)?data.points:[];
+  currentPoints=points;
   if(!points.length){chart.setAttribute("hidden","");empty.hidden=false;byId("chart-total").textContent="";return}
-  const max=Math.max(1,...points.map(p=>Number(p.bytes)||0));
-  const x=index=>8+index*644/Math.max(1,points.length-1);
-  const y=bytes=>172-Math.max(0,Number(bytes)||0)*150/max;
-  const path=points.map((p,i)=>(i===0?"M":"L")+x(i).toFixed(2)+" "+y(p.bytes).toFixed(2)).join(" ");
-  const start=x(0).toFixed(2),end=x(points.length-1).toFixed(2);
-  byId("chart-line").setAttribute("d",path);
-  byId("chart-fill").setAttribute("d",path+" L"+end+" 182 L"+start+" 182 Z");
-  chart.removeAttribute("hidden");
-  byId("chart-total").textContent=formatBytes(points.reduce((sum,p)=>sum+(Number(p.bytes)||0),0));
+  drawTrafficChart();
  }catch(err){
   if(err.name==="AbortError")return;
   empty.hidden=false;empty.textContent=dict().refreshFailed;byId("chart-total").textContent="";
