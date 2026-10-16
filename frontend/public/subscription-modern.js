@@ -136,14 +136,14 @@ let statsController=null;
 async function loadChart(range){
  statsController?.abort();statsController=new AbortController();
  const loading=byId("chart-loading"),empty=byId("chart-empty"),chart=byId("traffic-chart");
- loading.hidden=false;chart.hidden=true;empty.hidden=true;
+ loading.hidden=false;chart.setAttribute("hidden","");empty.hidden=true;
  document.querySelectorAll("[data-range]").forEach(btn=>{const selected=btn.dataset.range===range;btn.classList.toggle("is-selected",selected);btn.setAttribute("aria-pressed",String(selected))});
  try{
   const endpoint=new URL(root.dataset.chartUrl,location.href);endpoint.searchParams.set("range",range);
   const response=await fetch(endpoint,{signal:statsController.signal,cache:"no-store",headers:{"Accept":"application/json"}});
   if(!response.ok)throw new Error("HTTP "+response.status);
   const data=await response.json(),points=Array.isArray(data.points)?data.points:[];
-  if(!points.length){chart.hidden=true;empty.hidden=false;byId("chart-total").textContent="";return}
+  if(!points.length){chart.setAttribute("hidden","");empty.hidden=false;byId("chart-total").textContent="";return}
   const max=Math.max(1,...points.map(p=>Number(p.bytes)||0));
   const x=index=>8+index*644/Math.max(1,points.length-1);
   const y=bytes=>172-Math.max(0,Number(bytes)||0)*150/max;
@@ -151,7 +151,7 @@ async function loadChart(range){
   const start=x(0).toFixed(2),end=x(points.length-1).toFixed(2);
   byId("chart-line").setAttribute("d",path);
   byId("chart-fill").setAttribute("d",path+" L"+end+" 182 L"+start+" 182 Z");
-  chart.hidden=false;
+  chart.removeAttribute("hidden");
   byId("chart-total").textContent=formatBytes(points.reduce((sum,p)=>sum+(Number(p.bytes)||0),0));
  }catch(err){
   if(err.name==="AbortError")return;
