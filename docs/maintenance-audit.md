@@ -18,6 +18,13 @@ or modified. Production smoke tests remain necessary.
 | RTL nav rendering | Navigation groups used translated strings as React keys | Keep group identity stable across language changes | React build |
 | Mobile dialogs | Viewport height and padding could crop or crowd forms | Use dynamic viewport height and tighter mobile modal spacing | Browser responsive smoke review required |
 | Focus feedback | Menu items lacked the shared visible focus ring selector | Apply :focus-visible to menu items | Browser keyboard review required |
+| Subscription template | Copying links required selecting text; a visible status line caused 320px viewport overflow | Localized copy button, screen-reader feedback and smaller mobile layout | Go portal test + Playwright |
+| Development proxy | Vite `/sub` proxy prefix incorrectly captured `/subscription-portal.js` | Restrict proxy to actual subscription URL path | Playwright portal test |
+| Failed updater rollback | Installer could record a new commit before final health failure, leaving stale installed-version metadata | Restore prior commit marker with binaries and environment | Bash check and staging rollback test needed |
+| CI approval specificity | Generic successful workflow run could authorize a non-push candidate | Require completed successful `main` push for the exact SHA | Mocked CI authorization tests |
+| Updater cleanup | Function-scope cleanup trap could remain installed after returning | Run the update check in a subshell with `EXIT` cleanup | Bash tests |
+| Interface localization | New maintenance card had no Persian translations | Translate all update-status labels and instructions | Frontend build |
+
 
 ## Auto-update threat model and operational contract
 
