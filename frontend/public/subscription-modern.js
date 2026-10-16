@@ -136,6 +136,7 @@ let statsController=null;
 async function loadChart(range){
  statsController?.abort();statsController=new AbortController();
  const loading=byId("chart-loading"),empty=byId("chart-empty"),chart=byId("traffic-chart");
+ const csvLink=byId("download-traffic");if(csvLink){const address=new URL(root.dataset.chartUrl,location.href);address.searchParams.set("export","csv");address.searchParams.set("range",range);csvLink.href=address.href}
  loading.hidden=false;chart.setAttribute("hidden","");empty.hidden=true;
  document.querySelectorAll("[data-range]").forEach(btn=>{const selected=btn.dataset.range===range;btn.classList.toggle("is-selected",selected);btn.setAttribute("aria-pressed",String(selected))});
  try{
