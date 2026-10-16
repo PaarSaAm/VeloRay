@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="{{.Locale}}" dir="{{.Direction}}" data-default-theme="system">
+<html lang="{{.Locale}}" dir="{{.Direction}}" data-default-theme="{{.SubscriptionTheme}}" data-accent="{{.Accent}}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -61,7 +61,7 @@
     </div>
 
     <div class="dashboard-grid">
-      <section class="panel traffic-panel" aria-labelledby="usage-heading">
+      {{if .ShowAnalytics}}<section class="panel traffic-panel" aria-labelledby="usage-heading">
         <div class="panel-heading">
           <div><div class="section-overline" data-i18n="analytics">ANALYTICS</div><h2 id="usage-heading" data-i18n="trafficOverview">Traffic overview</h2></div>
           <div class="range-selector" aria-label="Traffic chart period" role="group">
@@ -83,7 +83,7 @@
           <div id="chart-empty" hidden data-i18n="noHistory">No recorded usage for this period.</div>
         </div>
         <div class="chart-footer"><span><i class="chart-dot"></i><span data-i18n="actualUsage">Actual usage, not estimated</span></span><span id="chart-total" dir="ltr"></span></div>
-      </section>
+      </section>{{end}}
 
       <section class="panel quota-panel" aria-labelledby="quota-heading">
         <div class="section-overline" data-i18n="quota">QUOTA</div>
@@ -110,11 +110,11 @@
         {{if .ShowQR}}<button type="button" class="outline-button qr-trigger" data-qr="{{.QR}}" data-label="Subscription" data-i18n="qr">QR code</button>{{end}}
       </div>
       <span id="copy-feedback" class="sr-only" role="status" aria-live="polite"></span>
-      <div class="format-links" aria-label="Subscription download formats">
+      {{if .ShowDownloads}}<div class="format-links" aria-label="Subscription download formats">
         {{if .Link}}<a href="{{.URL}}?format=base64&download=1">↓ Base64</a><a href="{{.URL}}?format=raw&download=1">↓ RAW</a><a href="{{.URL}}?format=clash&download=1">↓ Clash</a><a href="{{.URL}}?format=singbox&download=1">↓ sing-box</a>{{end}}
         {{if .Profile}}<a href="{{.URL}}?format=wireguard">↓ WireGuard</a>{{end}}
         <a href="{{.URL}}?format=json" data-i18n="jsonDetails">JSON details</a>
-      </div>
+      </div>{{end}}
     </section>
 
     {{if .ShowURI}}
