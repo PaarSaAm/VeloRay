@@ -28,7 +28,7 @@ function translate(){
 }
 byId("portal-language").value=lang;
 byId("portal-language").addEventListener("change",ev=>{const next=ev.target.value;if(allowedLanguages.includes(next)){lang=next;storageSet("veloray-subscription-lang",lang);translate()}});
-function preferredTheme(){const manual=storageGet("veloray-subscription-theme");if(manual==="light"||manual==="dark")return manual;return matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"}
+function preferredTheme(){const manual=storageGet("veloray-subscription-theme");if(manual==="light"||manual==="dark")return manual;const configured=document.documentElement.dataset.defaultTheme;if(configured==="dark"||configured==="light")return configured;return matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"}
 function applyTheme(){document.documentElement.dataset.theme=preferredTheme()}
 applyTheme();
 byId("toggle-theme").addEventListener("click",()=>{storageSet("veloray-subscription-theme",preferredTheme()==="dark"?"light":"dark");applyTheme()});
@@ -137,5 +137,5 @@ async function loadChart(range){
  }finally{loading.hidden=true}
 }
 document.querySelectorAll("[data-range]").forEach(btn=>btn.addEventListener("click",()=>loadChart(btn.dataset.range)));
-loadChart("7d");
+if(document.querySelector("[data-range]"))loadChart("7d");
 })();
