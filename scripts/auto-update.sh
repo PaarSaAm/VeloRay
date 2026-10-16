@@ -68,9 +68,21 @@ vr_auto_restore() {
  /usr/local/bin/velorayctl doctor
 }
 
+vr_auto_ci_state() {
+ local repo="$1" commit="$2" output="$3"
+ vr_auto_download "https://api.github.com/repos/$repo/actions/workflows/ci.yml/runs?branch=main&per_page=30" "$output" || return 2
+ jq -r --arg sha "$commit" '
+  [.workflow_runs[] | select(.head_sha==$sha and .head_branch=="main" and .event=="push")] | first
+  | if . == null then "missing"
+    elif .status != "completed" then .status
+    else (.conclusion // "missing")
+    end
+ ' "$output"
+}
+
 vr_auto_update_check() (
  local action="$1" repo="$2" installed="$3"
- local tmp commit previous architecture current backup status
+ local tmp commit previous architecture current backup status attempts delay attempt
  if [[ "$action" == run ]];then
   exec 8>/run/lock/veloray-auto-update.lock
   flock -n 8 || { echo 'An automatic update is already running; skipping.';return 0; }
@@ -86,15 +98,38 @@ vr_auto_update_check() (
  if [[ "$commit" == "$current" ]];then echo "Already up to date: $commit";return 0;fi
 
  # Do not deploy a branch head until that exact revision has passed the main CI.
- vr_auto_download "https://api.github.com/repos/$repo/actions/workflows/ci.yml/runs?branch=main&per_page=30" "$tmp/ci.json" || {
+ status="$(vr_auto_ci_state "$repo" "$commit" "$tmp/ci.json")" || {
   echo 'CI verification unavailable; not updating.' >&2
   return 1
  }
- status="$(jq -r --arg sha "$commit" '[.workflow_runs[] | select(.head_sha==$sha and .head_branch=="main" and .event=="push" and .status=="completed") | .conclusion] | first // "missing"' "$tmp/ci.json")" || return 1
- if [[ "$status" != success ]];then
-  echo "GitHub main at $commit, but CI is $status; skipping unsafe update."
-  return 0
+ if [[ "$action" == run ]];then
+  attempts="${VELORAY_CI_WAIT_ATTEMPTS:-20}"
+  delay="${VELORAY_CI_WAIT_SECONDS:-15}"
+  [[ "$attempts" =~ ^[0-9]+$ ]] || attempts=20
+  [[ "$delay" =~ ^[0-9]+$ ]] || delay=15
+  attempt=0
+  while [[ "$status" == missing || "$status" == queued || "$status" == in_progress || "$status" == requested || "$status" == waiting || "$status" == pending ]];do
+   ((attempt >= attempts)) && break
+   attempt=$((attempt + 1))
+   echo "GitHub main at $commit; CI is $status. Waiting for verification ($attempt/$attempts)..."
+   sleep "$delay"
+   status="$(vr_auto_ci_state "$repo" "$commit" "$tmp/ci.json")" || {
+    echo 'CI verification unavailable; not updating.' >&2
+    return 1
+   }
+  done
  fi
+ case "$status" in
+  success) ;;
+  missing|queued|in_progress|requested|waiting|pending)
+   echo "GitHub main at $commit, but CI is $status; update is not ready yet."
+   return 0
+   ;;
+  *)
+   echo "GitHub main at $commit, but CI is $status; skipping unsafe update."
+   return 0
+   ;;
+ esac
  echo "Verified GitHub update available: $current -> $commit"
  [[ "$action" == run ]] || return 0
  previous="$(readlink -f /opt/veloray/current)"
