@@ -150,6 +150,7 @@ func (s *Server) collect(ctx context.Context, q Query, node Data) error {
 	var totalDelta, uploadDelta, downloadDelta int64
 	ownerDeltas := map[int64][3]int64{}
 	chargedClients := map[string]Data{}
+	principalDeltas := map[string][3]int64{}
 	for _, entry := range array(stats, "stat") {
 		b, _ := json.Marshal(entry)
 		v, e := decode(b)
