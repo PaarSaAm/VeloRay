@@ -262,7 +262,7 @@ if [[ ! -x /usr/local/bin/xray && -z "${VELORAY_XRAY_ARCHIVE:-}" && -z "${VELORA
  fetch "$release_url" "$temporary/xray.json"
  xray_version="$(jq -er '.tag_name' "$temporary/xray.json")"
  [[ "$xray_version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]||fail 'Unexpected Xray release metadata.'
- digest="$(jq -er --arg name="$xray_asset" '.assets[]|select(.name==$name)|.digest' "$temporary/xray.json")"
+ digest="$(jq -er --arg name "$xray_asset" '.assets[]|select(.name==$name)|.digest' "$temporary/xray.json")"
  [[ "$digest" == sha256:* ]]||fail 'The Xray release is missing a SHA-256 asset digest.'
  export VELORAY_XRAY_ARCHIVE="$temporary/$xray_asset" VELORAY_XRAY_SHA256="${digest#sha256:}"
  fetch "https://github.com/XTLS/Xray-core/releases/download/$xray_version/$xray_asset" "$VELORAY_XRAY_ARCHIVE"
