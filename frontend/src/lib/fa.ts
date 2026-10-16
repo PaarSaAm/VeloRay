@@ -892,8 +892,8 @@ Object.assign(fa, {
   "Auto detect": "تشخیص خودکار",
   "Subscription portal theme": "تم صفحهٔ اشتراک",
   "Follow device": "هماهنگ با دستگاه",
-  "Light": "روشن",
-  "Dark": "تیره",
+  Light: "روشن",
+  Dark: "تیره",
   "Traffic chart": "نمودار ترافیک",
   "Display actual historical traffic in the subscription portal.":
     "نمایش تاریخچهٔ واقعی مصرف ترافیک در صفحهٔ اشتراک.",
