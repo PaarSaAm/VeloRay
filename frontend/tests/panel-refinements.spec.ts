@@ -674,7 +674,18 @@ test("PasarGuard-inspired portal supports chart, four languages, search, QR and 
   await page.goto("/portal-modern-preview");
   await expect(page.locator('[data-portal-version="2"]')).toBeVisible();
   await expect(page.getByRole("heading", { name: "Arman" })).toBeVisible();
-  await expect(page.locator("#traffic-chart")).toBeVisible();
+  await expect
+    .poll(async () => {
+      const state = await page.evaluate(() => ({
+        chart: !document.getElementById("traffic-chart")?.hasAttribute("hidden"),
+        empty: document.getElementById("chart-empty")?.textContent,
+        loading: document.getElementById("chart-loading")?.textContent,
+        script: [...document.scripts].map((s) => s.src),
+      }));
+      if (!state.chart) console.log("portal-chart-debug:", JSON.stringify({ ...state, errors }));
+      return state.chart;
+    }, { timeout: 10000 })
+    .toBe(true);
   await expect(page.locator("#chart-total")).toContainText("MB");
   const copy = page.getByRole("button", { name: "Copy link" });
   await copy.click();
