@@ -682,7 +682,7 @@ test("PasarGuard-inspired portal supports chart, four languages, search, QR and 
         loading: document.getElementById("chart-loading")?.textContent,
         script: [...document.scripts].map((s) => s.src),
       }));
-      if (!state.chart) console.log("portal-chart-debug:", JSON.stringify({ ...state, errors }));
+      if (!state.chart) console.log("portal-chart-debug:", JSON.stringify({ ...state, errors, lang: await page.locator("html").getAttribute("lang"), theme: await page.locator("html").getAttribute("data-theme"), chartUrl: await page.locator(".portal-shell").getAttribute("data-chart-url"), asset: (await page.request.get("/subscription-modern.js")).status() }));
       return state.chart;
     }, { timeout: 10000 })
     .toBe(true);
