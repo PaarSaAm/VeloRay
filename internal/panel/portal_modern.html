@@ -82,7 +82,7 @@
           </svg>
           <div id="chart-empty" hidden data-i18n="noHistory">No recorded usage for this period.</div>
         </div>
-        <div class="chart-footer"><span><i class="chart-dot"></i><span data-i18n="actualUsage">Actual usage, not estimated</span></span><span id="chart-total" dir="ltr"></span></div>
+        <div class="chart-footer"><span><i class="chart-dot"></i><span data-i18n="actualUsage">Actual usage, not estimated</span></span><span id="chart-total" dir="ltr"></span><a id="download-traffic" href="{{.ChartURL}}&amp;export=csv&amp;range=7d" download="veloray-traffic.csv" data-i18n="downloadCsv">Download CSV</a></div>
       </section>{{end}}
 
       <section class="panel quota-panel" aria-labelledby="quota-heading">
