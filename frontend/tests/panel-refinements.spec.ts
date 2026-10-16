@@ -638,3 +638,74 @@ test("theme reveals a circular palette and respects reduced motion", async ({
   await expect(page.locator("html")).toHaveClass(/dark/);
   await expect(page.locator("html")).not.toHaveAttribute("data-theme-reveal");
 });
+
+
+test("PasarGuard-inspired portal supports chart, four languages, search, QR and mobile", async ({
+  page,
+}) => {
+  const fixture = process.env.VELORAY_TEST_MODERN_PORTAL_HTML;
+  test.skip(!fixture, "Modern subscription HTML fixture is required");
+  const html = readFileSync(fixture!, "utf8").replaceAll(
+    "https://panel.example/sub/",
+    "http://127.0.0.1:8861/sub/",
+  );
+  await page.addInitScript(() => {
+    localStorage.setItem("veloray-subscription-lang", "en");
+    localStorage.setItem("veloray-subscription-theme", "light");
+  });
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.route("**/portal-modern-preview", (route) =>
+    route.fulfill({ contentType: "text/html", body: html }),
+  );
+  await page.route("**/sub/**", (route) =>
+    route.fulfill({
+      json: {
+        range: "7d",
+        history_available: true,
+        points: [
+          { at: "2026-10-15T00:00:00Z", bytes: 1048576, upload_bytes: 524288, download_bytes: 524288 },
+          { at: "2026-10-16T00:00:00Z", bytes: 2097152, upload_bytes: 1048576, download_bytes: 1048576 },
+        ],
+      },
+    }),
+  );
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("/portal-modern-preview");
+  await expect(page.locator('[data-portal-version="2"]')).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Arman" })).toBeVisible();
+  await expect(page.locator("#traffic-chart")).toBeVisible();
+  await expect(page.locator("#chart-total")).toContainText("MB");
+  const copy = page.getByRole("button", { name: "Copy link" });
+  await copy.click();
+  await expect(page.locator("#copy-feedback")).toHaveText("Link copied");
+  await expect(page.getByRole("button", { name: "QR code" }).first()).toBeVisible();
+  await page.getByRole("button", { name: "QR code" }).first().click();
+  await expect(page.locator("#qr-dialog")).toBeVisible();
+  await page.locator("#close-qr").click();
+  await page.getByPlaceholder("Search name, protocol or server").fill("missing");
+  await expect(page.locator(".profile-item:visible")).toHaveCount(0);
+  await expect(page.locator("#profiles-empty")).toBeVisible();
+  await page.getByPlaceholder("Search name, protocol or server").fill("primary");
+  await expect(page.locator(".profile-item:visible")).toHaveCount(1);
+  await page.locator("#portal-language").selectOption("fa");
+  await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+  await expect(page.getByText("نمودار مصرف ترافیک")).toBeVisible();
+  await page.locator("#portal-language").selectOption("ru");
+  await expect(page.getByText("Использование трафика")).toBeVisible();
+  await page.locator("#portal-language").selectOption("zh");
+  await expect(page.getByText("流量概览")).toBeVisible();
+  await page.locator("#toggle-theme").click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  for (const width of [390, 320]) {
+    await page.setViewportSize({ width, height: 700 });
+    await expect.poll(() =>
+      page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+    ).toBe(true);
+  }
+  await page.screenshot({
+    path: "test-results/modern-subscription-mobile.png",
+    fullPage: true,
+  });
+  expect(errors).toEqual([]);
+});
