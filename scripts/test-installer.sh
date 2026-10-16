@@ -484,7 +484,7 @@ bash "$HOST_ROOT/usr/local/bin/velorayctl" menu >"$TEST_ROOT/host-result" 2>&1
 grep -Fq 'Reset administrator password' "$TEST_ROOT/host-result";pass management-menu-stays-english
 bash "$HOST_ROOT/usr/local/bin/velorayctl" status >"$TEST_ROOT/host-result" 2>&1
 grep -Fq 'آدرس پنل:' "$TEST_ROOT/host-result";pass configured-cli-language-preserved
-printf '\\nVELORAY_LANGUAGE=en\\n' >>"$HOST_ROOT/etc/veloray/veloray.env"
+printf '\nVELORAY_LANGUAGE=en\n' >>"$HOST_ROOT/etc/veloray/veloray.env"
 [[ "$(stat -c '%a' "$HOST_ROOT/var/log/veloray")" == 700 ]]
 if find "$HOST_ROOT/var/log/veloray" -type f ! -perm 0600 | grep -q .;then echo 'Operation log is not private' >&2;exit 1;fi
 pass private-operation-logs
