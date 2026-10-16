@@ -19,6 +19,11 @@ var modernPortalTemplate = template.Must(template.New("modern-portal").Parse(mod
 func modernPortalData(d map[string]any, c Data, cfg Data, details []Data) {
  d["ChartURL"] = d["URL"].(string) + "?format=stats"
  d["ConnectionCount"] = len(details)
+ d["DeviceCount"] = len(obj(c,"_device_seen"))
+ d["DeviceLimit"] = num(c,"device_limit")
+ d["HasDeviceLimit"] = num(c,"device_limit")>0
+ d["LastUsedISO"] = ""
+ if value,err:=timestamp(c,"last_traffic_at");err==nil { d["LastUsedISO"]=value.UTC().Format("2006-01-02T15:04:05Z") }
  d["ShowAnalytics"] = flag(cfg,"subscription_show_analytics")
  d["ShowDownloads"] = flag(cfg,"subscription_show_downloads")
  d["SubscriptionTheme"] = str(cfg,"subscription_theme")
