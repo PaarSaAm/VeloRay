@@ -88,7 +88,7 @@ POSTGRES_DB=veloray
 POSTGRES_USER=veloray
 POSTGRES_PASSWORD=$dbpass
 VELORAY_LANGUAGE=${VELORAY_INSTALL_LANG:-en}
-VELORAY_REPO=${VELORAY_REPO:-PaarSaAm/VeloRay}
+VELORAY_REPO=${VELORAY_REPO:-ParsaZali/VeloRay}
 VELORAY_REF=${VELORAY_REF:-main}
 ENV
  mv "$env_temporary" /etc/veloray/veloray.env
